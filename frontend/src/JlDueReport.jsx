@@ -9,14 +9,18 @@ const getAcronym = (name) => {
     const n = name.trim().toLowerCase();
     if (n === 'surge capital solution' || n.includes('surge capital')) return 'SCS';
     if (n === 'growth capital' || n.includes('growth capital')) return 'GC';
+    if (n === 'growth capital enterprises' || n.includes('growth capital corp') || n.includes('gce')) return 'GCE';
+    if (n === 'jubilant capital' || n.includes('jubilant capital')) return 'JC';
     if (n === 'finova capital' || n.includes('finova capital')) return 'FC';
     if (n === 'ascend solutions' || n.includes('ascend solutions')) return 'AS';
     if (n === 'as enterprises' || n.includes('as enterprises')) return 'ASE';
+    if (n === 'fortune enterprises' || n.includes('fortune enterprises')) return 'FE';
     if (n === 'sc enterprises' || n.includes('sc enterprises')) return 'SCE';
     if (n === 'a square enterprises' || n.includes('square enterprises')) return 'ASQ';
     if (n === 's nirmala' || n.includes('nirmala')) return 'SN';
+    if (n === 'raja priya' || n.includes('raja priya')) return 'RP';
     return name;
-};
+};  
 
 const parseINR = (val) => {
     if (typeof val === 'number') return val;
@@ -149,7 +153,7 @@ const getLoanStatus = (loan) => {
     return { label: 'ACTIVE', color: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800/50' };
 };
 
-const JlDueReport = () => {
+const JlDueReport = ({ user }) => {
     const navigate = useNavigate();
     const [showModal, setShowModal] = useState(false);
     const [showSuccessPopup, setShowSuccessPopup] = useState(false);
@@ -218,6 +222,7 @@ const JlDueReport = () => {
             formData.append('docx_file', selectedFile);
             formData.append('remaining_accounts', JSON.stringify(formattedAccounts));
             formData.append('loan_ref_id', loanRefId.trim());
+            formData.append('employee_code', user?.employee_code || "");
 
             const response = await fetch('/api/upload-docx', { method: 'POST', body: formData });
             const result = await response.json();
@@ -294,6 +299,15 @@ const JlDueReport = () => {
 
     const filteredData = useMemo(() => {
         let result = data;
+
+        // Apply Permissions Filter: If not admin and doesn't have all permissions, show only which primary account acronym is in their list
+        if (user?.role !== 'admin' && user?.permissions?.length < 10) {
+            const userPerms = user?.permissions || [];
+            result = result.filter(row => {
+                const acronym = getAcronym(row.primary_account_name);
+                return userPerms.includes(acronym);
+            });
+        }
 
         if (searchTerm) {
             const term = searchTerm.toUpperCase();
@@ -754,6 +768,9 @@ const JlDueReport = () => {
                                 <option value="SCE">SC Enterprises - SCE</option>
                                 <option value="ASQ">A Square Enterprises - ASQ</option>
                                 <option value="SN">S Nirmala - SN</option>
+                                <option value="FE">Fortune Enterprises - FE</option>
+                                <option value="JC">Jubilant Capital - JC</option>
+                                <option value="RP">Raja Priya - RP</option>
                             </select>
                             <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">expand_more</span>
                         </div>
@@ -799,7 +816,7 @@ const JlDueReport = () => {
                             </button>
 
                             {isExportDropdownOpen && (
-                                <div className="absolute right-0 mt-2 w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+                                <div className="absolute right-0 mt-2 w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
                                     <button
                                         onClick={() => handleExport('JL_Report')}
                                         className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2"
@@ -821,7 +838,7 @@ const JlDueReport = () => {
                 </div>
 
                 {/* Table Section */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm flex flex-col flex-1">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm flex flex-col flex-1">
                     <div className="overflow-x-auto flex-1">
                         <table className="w-full text-left border-collapse">
                             <thead>
@@ -847,15 +864,19 @@ const JlDueReport = () => {
                                             </div>
                                         </td>
                                     </tr>
-                                ) : data.length === 0 ? (
+                                ) : filteredData.length === 0 ? (
                                     <tr>
-                                        <td colSpan="9" className="py-12 text-center bg-white dark:bg-slate-900 border-x border-slate-200/50 dark:border-slate-800/50">
-                                            <div className="flex flex-col items-center justify-center text-slate-500">
-                                                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 inner-shadow">
-                                                    <span className="material-symbols-outlined text-[32px] text-slate-400">database</span>
+                                        <td colSpan="9" className="py-20 text-center bg-white dark:bg-slate-900/50 border-x border-slate-200/50 dark:border-slate-800/50">
+                                            <div className="flex flex-col items-center justify-center">
+                                                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 transition-transform hover:scale-110 duration-300">
+                                                    <span className="material-symbols-outlined text-[32px] text-slate-400">search_off</span>
                                                 </div>
-                                                <p className="text-slate-900 dark:text-white font-bold mb-1">No Loans Found</p>
-                                                <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto">Upload a .docx file using the Import button to populate your first loan record seamlessly.</p>
+                                                <p className="text-slate-900 dark:text-white text-lg font-bold mb-1">No Results Found</p>
+                                                <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto px-10">
+                                                    {searchTerm || selectedDate 
+                                                        ? "We couldn't find any loans matching your current search or date filters. Try adjusting your criteria."
+                                                        : "There are no loan records to display based on your access level or account activity."}
+                                                </p>
                                             </div>
                                         </td>
                                     </tr>
@@ -915,7 +936,7 @@ const JlDueReport = () => {
                                                     e.stopPropagation();
                                                     handleDeleteClick(row.id);
                                                 }}
-                                                className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg transition-all"
+                                                className="p-1.5 text-slate-400 hover:text-rose-500 rounded-2xl transition-all"
                                                 title="Delete Loan"
                                             >
                                                 <span className="material-symbols-outlined text-[20px]">delete</span>
@@ -928,7 +949,7 @@ const JlDueReport = () => {
                     </div>
                     {/* Pagination Footer */}
                     {filteredData.length > 0 && (
-                        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/10 rounded-b-xl mt-auto">
+                        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/10 rounded-b-2xl mt-auto">
                             <p className="text-sm text-slate-500 dark:text-slate-400">
                                 Showing <span className="font-semibold text-slate-700 dark:text-slate-200">{startIndex + 1}</span> to <span className="font-semibold text-slate-700 dark:text-slate-200">{endIndex}</span> of <span className="font-semibold text-slate-700 dark:text-slate-200">{filteredData.length}</span> results
                             </p>
@@ -995,7 +1016,7 @@ const JlDueReport = () => {
                             </button>
                         </div>
 
-                        <div className="p-6 overflow-y-auto max-h-[60vh] space-y-4">
+                        <div className="p-6 overflow-y-auto max-h-[60vh] space-y-4 custom-scrollbar">
                             <p className="text-sm text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
                                 File selected: <strong className="text-slate-700 dark:text-slate-200">{selectedFile?.name}</strong>
                             </p>

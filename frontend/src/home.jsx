@@ -154,7 +154,7 @@ function Home() {
                     {/* Cloud Storage Drop Zone */}
                     <div className="flex flex-col gap-1">
                         <div
-                            className={`group relative flex flex-col items-center justify-center p-10 border-2 border-dashed rounded-xl bg-white dark:bg-slate-900 transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md ${cloudError ? 'border-red-400 bg-red-50 dark:bg-red-900/10' :
+                            className={`group relative flex flex-col items-center justify-center p-10 border-2 border-dashed rounded-2xl bg-white dark:bg-slate-900 transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md ${cloudError ? 'border-red-400 bg-red-50 dark:bg-red-900/10' :
                                 cloudFile ? 'border-primary bg-primary/5' :
                                     'border-slate-300 dark:border-slate-700 hover:border-primary dark:hover:border-primary'
                                 }`}
@@ -200,7 +200,7 @@ function Home() {
                     <button
                         onClick={handleUpload}
                         disabled={isUploading}
-                        className={`w-full max-w-sm h-14 bg-primary hover:bg-primary/90 text-white font-bold text-lg rounded-xl shadow-lg shadow-primary/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${isUploading ? 'opacity-70 cursor-not-allowed' : ''}`}
+                        className={`w-full max-w-sm h-14 bg-primary hover:bg-primary/90 text-white font-bold text-lg rounded-2xl shadow-lg shadow-primary/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${isUploading ? 'opacity-70 cursor-not-allowed' : ''}`}
                     >
                         <span className="material-symbols-outlined">{isUploading ? 'pending' : 'upload'}</span>
                         {isUploading ? 'Processing...' : 'Process Files'}
@@ -252,7 +252,7 @@ function Home() {
                         </div>
                         <button
                             onClick={() => setPopupError('')}
-                            className="w-full py-3 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl transition-colors shadow-md shadow-red-500/20 active:scale-[0.98]"
+                            className="w-full py-3 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-2xl transition-colors shadow-md shadow-red-500/20 active:scale-[0.98]"
                         >
                             Close
                         </button>

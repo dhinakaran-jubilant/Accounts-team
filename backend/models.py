@@ -43,3 +43,16 @@ class RepaymentSchedule(db.Model):
     remarks = db.Column(db.Text, nullable=True)
     type = db.Column(db.String(50), default='system')
     splits = db.Column(db.Text, nullable=True)
+
+class User(db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    employee_code = db.Column(db.String(50), unique=True, nullable=False)
+    password = db.Column(db.String(255), nullable=False)
+    name = db.Column(db.String(100), nullable=True)
+    role = db.Column(db.String(50), default='admin')
+    is_initial_password = db.Column(db.Boolean, default=True)
+    email = db.Column(db.String(255), nullable=True)
+    permissions = db.Column(db.Text, nullable=True) # JSON array of codes
+    security_question = db.Column(db.String(255), nullable=True)
+    security_answer = db.Column(db.String(255), nullable=True)

@@ -172,7 +172,7 @@ const RepaymentTable = ({
     return (
         <div className="mb-10 last:mb-0">
             <SectionHeader title={title} icon={icon} />
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
                 <div className="overflow-x-auto scrollbar-premium">
                     <table className="min-w-full w-max border-collapse">
                         <thead>
@@ -506,7 +506,7 @@ const RepaymentTable = ({
                                                                         ].filter(Boolean);
                                                                         if (remarksList.length === 0) return null;
                                                                         return (
-                                                                            <span className="text-[12px] italic text-slate-500 dark:text-slate-400 truncate max-w-[400px] border-r border-slate-300 dark:border-slate-700 pr-3 mr-1" title={remarksList.join(" | ")}>
+                                                                            <span className="text-[12px] text-slate-500 dark:text-slate-400 truncate max-w-[400px] border-r border-slate-300 dark:border-slate-700 pr-3 mr-1" title={remarksList.join(" | ")}>
                                                                                 {remarksList.join(" | ")}
                                                                             </span>
                                                                         );
@@ -562,7 +562,7 @@ const RepaymentTable = ({
                                                                         <td className="p-0">
                                                                             <div className="flex justify-end items-center py-2.5 px-5 h-full">
                                                                                 {partial?.tds ? (
-                                                                                    <span className="text-sm font-medium text-red-600 dark:text-red-400 px-1.5 italic text-right w-full">
+                                                                                    <span className="text-sm font-medium text-red-600 dark:text-red-400 px-1.5 text-right w-full">
                                                                                         {fmtINR(partial.tds, false)}
                                                                                     </span>
                                                                                 ) : (
@@ -647,7 +647,7 @@ const RepaymentTable = ({
                                 })
                             ) : (
                                 <tr>
-                                    <td colSpan={isManual ? 8 + (loan.remaining_accounts?.length || 0) : 8 + (loan.remaining_accounts?.length || 0) * 2} className="py-8 text-center text-slate-500 italic text-sm">No data available.</td>
+                                    <td colSpan={isManual ? 8 + (loan.remaining_accounts?.length || 0) : 8 + (loan.remaining_accounts?.length || 0) * 2} className="py-8 text-center text-slate-500 text-sm">No data available.</td>
                                 </tr>
                             )}
                         </tbody>
@@ -1562,7 +1562,7 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                     action={!isPanel && (
                         <button
                             onClick={() => setIsEditModalOpen(true)}
-                            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-lg active:scale-95"
+                            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all font-bold shadow-lg active:scale-95"
                         >
                             <span className="material-symbols-outlined text-[18px]">edit</span>
                             Edit Accounts
@@ -1572,7 +1572,7 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
 
 
 
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm mb-6">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm mb-6">
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                             <thead>

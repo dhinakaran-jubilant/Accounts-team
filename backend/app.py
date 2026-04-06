@@ -1,4 +1,5 @@
-from models import db, Loan, RemainingAccount, RepaymentSchedule
+from models import db, Loan, RemainingAccount, RepaymentSchedule, User
+from werkzeug.security import generate_password_hash, check_password_hash
 from read_word import extract_word_data, build_final_output
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from google.oauth2.service_account import Credentials
@@ -22,14 +23,71 @@ CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:1234@localhost:5432/accounts_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+def ensure_database_exists():
+    try:
+        # Connect to default postgres database to check/create accounts_db
+        conn = psycopg2.connect(
+            dbname='postgres',
+            user='postgres',
+            password='1234',
+            host='localhost',
+            port='5432'
+        )
+        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        cur = conn.cursor()
+        
+        # Check if accounts_db exists
+        cur.execute("SELECT 1 FROM pg_catalog.pg_database WHERE datname = 'accounts_db'")
+        exists = cur.fetchone()
+        if not exists:
+            cur.execute('CREATE DATABASE accounts_db')
+            print("Database 'accounts_db' created successfully.")
+        else:
+            print("Database 'accounts_db' already exists.")
+            
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"PostgreSQL connection/creation error: {e}. Ensure PostgreSQL is running on port 5432.")
+
+# Pre-flight check: Create database if not exists
+ensure_database_exists()
+
 db.init_app(app)
 
 with app.app_context():
     try:
         db.create_all()
         print("Connected to PostgreSQL and verified tables.")
+        
+        # Robust Seed Logic: Check for each user individually
+        # 1. Requested Admin User
+        if not User.query.filter_by(employee_code='admin').first():
+            admin_user = User(
+                employee_code='admin',
+                password=generate_password_hash('Admin@123'),
+                name='System Admin',
+                role='admin',
+                is_initial_password=False # Ready to use
+            )
+            db.session.add(admin_user)
+            print("Seeded requested user: admin / Admin@123")
+
+        # 2. Default E001 User (Reserved for recovery/initial setup)
+        if not User.query.filter_by(employee_code='E001').first():
+            e001_user = User(
+                employee_code='E001',
+                password=generate_password_hash('admin123'),
+                name='Senior Administrator',
+                role='admin',
+                is_initial_password=True # Forces setup
+            )
+            db.session.add(e001_user)
+            print("Seeded recovery user: E001 / admin123")
+
+        db.session.commit()
     except Exception as e:
-        print(f"PostgreSQL connection warning: {e}")
+        print(f"PostgreSQL connection warning or seeding error: {e}")
 
 
 UPLOAD_FOLDER = 'uploads'
@@ -66,6 +124,24 @@ def update_google_sheet(user_name, bank_file_name, cloud_file_name, total_entrie
         print("Successfully updated Google Sheet.")
     except Exception as e:
         print(f"Error updating Google Sheet: {e}")
+
+def get_acronym(name):
+    if not name:
+        return '—'
+    n = name.strip().lower()
+    if 'surge capital' in n: return 'SCS'
+    if 'growth capital enterprises' in n or 'growth capital corp' in n or 'gce' in n: return 'GCE'
+    if 'growth capital' in n: return 'GC'
+    if 'jubilant capital' in n: return 'JC'
+    if 'finova capital' in n: return 'FC'
+    if 'ascend solutions' in n: return 'AS'
+    if 'as enterprises' in n: return 'ASE'
+    if 'fortune enterprises' in n: return 'FE'
+    if 'sc enterprises' in n: return 'SCE'
+    if 'square enterprises' in n: return 'ASQ'
+    if 'nirmala' in n: return 'SN'
+    if 'raja priya' in n: return 'RP'
+    return name.upper()
 
 # Serve React frontend
 @app.route('/', defaults={'path': ''})
@@ -337,6 +413,23 @@ def handle_docx_upload():
         # Parse actual Document text inside read_word
         extracted_data = extract_word_data(file_path)
         final_output = build_final_output(extracted_data, remaining_accounts)
+        
+        # --- PERMISSION VALIDATION ---
+        emp_code = request.form.get('employee_code')
+        if emp_code:
+            user = User.query.filter_by(employee_code=emp_code).first()
+            if user and user.role != 'admin':
+                primary_acc = final_output.get('primary_account_name')
+                acronym = get_acronym(primary_acc)
+                user_perms = json.loads(user.permissions) if user.permissions else []
+                
+                # If the acronym is not in the user's permission list, REJECT
+                if acronym not in user_perms:
+                    return jsonify({
+                        'success': False, 
+                        'error': f"Unauthorized: You do not have permission to upload loans for '{primary_acc}' ({acronym}). Please contact your administrator for access."
+                    }), 403
+        # -----------------------------
         
         # Commit into Postgres utilizing our models!
         loan = Loan(
@@ -670,6 +763,188 @@ def delete_repayment_schedule(schedule_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
+# --- User Management API ---
+
+@app.route('/api/users', methods=['GET'])
+def get_users():
+    try:
+        # Exclude 'E001' which is reserved for system/recovery
+        users = User.query.filter(User.employee_code != 'E001').all()
+        return jsonify({
+            'success': True,
+            'users': [{
+                'id': u.id,
+                'employee_code': u.employee_code,
+                'name': u.name,
+                'role': u.role,
+                'email': u.email,
+                'permissions': json.loads(u.permissions) if u.permissions else [],
+                'is_initial_password': u.is_initial_password
+            } for u in users]
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/users', methods=['POST'])
+def add_user():
+    try:
+        data = request.json
+        emp_code = str(data.get('employee_code')).upper()
+        name = data.get('name')
+        email = data.get('email')
+        password = data.get('password') or 'Admin@123'
+        permissions = data.get('permissions', [])
+        role = data.get('role', 'user') # Default to user as requested
+
+        # Check if already exists
+        if User.query.filter_by(employee_code=emp_code).first():
+            return jsonify({'success': False, 'message': f'User {emp_code} already exists'}), 400
+
+        # Create user
+        new_user = User(
+            employee_code=emp_code,
+            password=generate_password_hash(password),
+            name=name,
+            email=email,
+            permissions=json.dumps(permissions),
+            role=role,
+            is_initial_password=True # Forces setup on first login
+        )
+        db.session.add(new_user)
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'User {emp_code} created successfully'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/users/<int:user_id>', methods=['PATCH'])
+def update_user(user_id):
+    try:
+        data = request.json
+        user = db.session.get(User, user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+        
+        # Don't allow renaming admin code or E001
+        if user.employee_code in ['admin', 'E001'] and 'employee_code' in data:
+            return jsonify({'success': False, 'message': 'Cannot modify system codes'}), 403
+
+        if 'name' in data:
+            user.name = data['name']
+        if 'role' in data:
+            user.role = data['role']
+        if 'email' in data:
+            user.email = data['email']
+        if 'permissions' in data:
+            user.permissions = json.dumps(data['permissions'])
+        if 'password' in data and data['password'].strip():
+            user.password = generate_password_hash(data['password'].strip())
+            user.is_initial_password = True # Force re-setup if admin resets password
+            
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'User updated successfully'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+def delete_user(user_id):
+    try:
+        user = db.session.get(User, user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+        
+        # Prevent deleting system accounts
+        if user.employee_code in ['admin', 'E001']:
+            return jsonify({'success': False, 'message': 'Cannot delete system accounts'}), 403
+
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'User deleted successfully'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+# --- Authentication & Security Flow ---
+
+@app.route('/api/login/', methods=['POST'])
+def login():
+    try:
+        data = request.json
+        emp_code = data.get('employee_code')
+        password = data.get('password')
+        
+        user = User.query.filter_by(employee_code=emp_code).first()
+        if user and check_password_hash(user.password, password):
+            return jsonify({
+                'success': True,
+                'user': {
+                    'employee_code': user.employee_code,
+                    'name': user.name,
+                    'role': user.role,
+                    'is_initial_password': user.is_initial_password,
+                    'permissions': json.loads(user.permissions) if user.permissions else []
+                }
+            })
+        return jsonify({'success': False, 'message': 'Invalid employee code or password'}), 401
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/users/initial-setup/', methods=['POST'])
+def initial_setup():
+    try:
+        data = request.json
+        emp_code = data.get('employee_code')
+        new_password = data.get('new_password')
+        question = data.get('q1')
+        answer = data.get('a1')
+        
+        user = User.query.filter_by(employee_code=emp_code).first()
+        if not user:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+            
+        user.password = generate_password_hash(new_password)
+        user.is_initial_password = False
+        user.security_question = question
+        user.security_answer = generate_password_hash(answer.lower().strip())
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Setup completed successfully'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/forgot-password/request/', methods=['POST'])
+def forgot_password_request():
+    try:
+        data = request.json
+        emp_code = data.get('employee_code')
+        
+        user = User.query.filter_by(employee_code=emp_code).first()
+        if user and user.security_question:
+            return jsonify({'success': True, 'question': user.security_question})
+        return jsonify({'success': False, 'message': 'User not found or security questions not set'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/forgot-password/reset/', methods=['POST'])
+def forgot_password_reset():
+    try:
+        data = request.json
+        emp_code = data.get('employee_code')
+        answer = data.get('answer', '').lower().strip()
+        new_password = data.get('new_password')
+        
+        user = User.query.filter_by(employee_code=emp_code).first()
+        if user and user.security_answer and check_password_hash(user.security_answer, answer):
+            user.password = generate_password_hash(new_password)
+            db.session.commit()
+            return jsonify({'success': True, 'message': 'Password reset successful'})
+        return jsonify({'success': False, 'message': 'Incorrect answer or user not found'}), 401
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='127.0.0.1', port=1000)
