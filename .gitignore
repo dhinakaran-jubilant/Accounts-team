@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+backend/env/
+backend/venv/
+backend/.venv/
+**/__pycache__/
+
+# Build artifacts
+frontend/dist/
+frontend/dist-ssr/
+*.py[cod]
+*$py.class
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+backend/.env
+backend/.env.local
+
+# Database & Instances (Flask)
+backend/instance/
+*.sqlite3
+
+# Uploads & Temp
+backend/uploads/
+*.tmp
+*.log
+
+# Sensitive Files
+# (Specifically ignoring the GCP key found in the backend directory)
+backend/robust-shadow-471605-k1-6152c9ae90ff.json
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
