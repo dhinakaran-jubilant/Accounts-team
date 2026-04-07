@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import ExcelJS from 'exceljs';
 
 const fmtINR = (val, showSymbol = true) =>
     val != null ? (showSymbol ? `₹ ${Number(val).toLocaleString('en-IN')}` : Number(val).toLocaleString('en-IN')) : '—';
@@ -1444,6 +1445,224 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
         await handleFieldChange(scheduleId, 'splits', splitsJson);
     };
 
+    const handleDownloadExcel = async () => {
+        if (!loan) return;
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Loan Report');
+
+        // Styles
+        const headerStyle = {
+            font: { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 },
+            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF538DD5' } },
+            alignment: { horizontal: 'center', vertical: 'middle' },
+            border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+        };
+
+        const thickBorder = {
+            top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
+        };
+
+        const currencyFmt = '#,##0';
+
+        // Title Section
+        worksheet.mergeCells('A1:F1');
+        const mainTitle = worksheet.getCell('A1');
+        mainTitle.value = `LOAN REPORT: ${loan.client_name.toUpperCase()}`;
+        mainTitle.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+        mainTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF538DD5' } };
+        mainTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+        mainTitle.border = thickBorder;
+
+        // Metadata Grid
+        worksheet.addRow([]);
+        const infoRow1 = ['Loan ID:', loan.loan_ref_id || '—', 'Loan Date:', loan.loan_date, 'Total Amount:', loan.loan_amount];
+        const r1 = worksheet.addRow(infoRow1);
+        r1.eachCell(cell => {
+            cell.border = thickBorder;
+            if (cell.value === loan.loan_amount) cell.numFmt = currencyFmt;
+        });
+        ['A', 'C', 'E'].forEach(col => r1.getCell(col).font = { bold: true });
+        
+        worksheet.addRow([]); // Gap
+        
+        // Account Details Table
+        const accTitleRow = worksheet.addRow(['ACCOUNT DETAILS']);
+        const accTitle = accTitleRow.getCell(1);
+        accTitle.value = 'ACCOUNT DETAILS';
+        accTitle.font = { bold: true, size: 12 };
+        accTitle.border = thickBorder;
+
+        const accHeaders = ['ACCOUNT NAME', 'PRINCIPAL', 'INTEREST', 'INTEREST %', 'REPAYMENT AMOUNT'];
+        const accHeadRow = worksheet.addRow(accHeaders);
+        accHeadRow.eachCell(cell => cell.style = headerStyle);
+
+        const totalInterest = (loan.primary_account_interest || 0) + (loan.remaining_accounts || []).reduce((s, a) => s + (a.interest_amount || 0), 0);
+
+        // Primary Row
+        const pTotalRepay = (loan.primary_account_amount || 0) + (loan.primary_account_interest || 0);
+        const pIntPercent = totalInterest > 0 ? (loan.primary_account_interest / totalInterest * 100) : 0;
+        const pAccRow = worksheet.addRow([
+            loan.primary_account_name,
+            loan.primary_account_amount,
+            loan.primary_account_interest,
+            pIntPercent.toFixed(2) + '%',
+            pTotalRepay
+        ]);
+        pAccRow.eachCell((cell, colIdx) => {
+            cell.border = thickBorder;
+            if (colIdx === 2 || colIdx === 3 || colIdx === 5) cell.numFmt = currencyFmt;
+        });
+
+        // Secondary Rows
+        (loan.remaining_accounts || []).forEach(acc => {
+            const sTotalRepay = (acc.share || 0) + (acc.interest_amount || 0);
+            const sIntPercent = totalInterest > 0 ? (acc.interest_amount / totalInterest * 100) : 0;
+            const sAccRow = worksheet.addRow([
+                acc.account_name,
+                acc.share,
+                acc.interest_amount,
+                sIntPercent.toFixed(2) + '%',
+                sTotalRepay
+            ]);
+            sAccRow.eachCell((cell, colIdx) => {
+                cell.border = thickBorder;
+                if (colIdx === 2 || colIdx === 3 || colIdx === 5) cell.numFmt = currencyFmt;
+            });
+        });
+
+        worksheet.addRow([]); // Gap
+        worksheet.addRow([]); // Gap
+
+        // Repayment Schedule Table
+        // Pre-check for TDS columns
+        const systemData = (loan.repayment_schedule || []).filter(s => s.type !== 'manual');
+        const hasAnyTDS = systemData.some(entry => {
+            if (getSplitTDS(entry.splits, loan.primary_account_name) > 0) return true;
+            return (loan.remaining_accounts || []).some(acc => getSplitTDS(entry.splits, acc.account_name) > 0);
+        });
+
+        const headers = ['S.NO', 'DATE', 'CHQ NO', 'AMOUNT', 'RECEIVED DATE', getAcronym(loan.primary_account_name)];
+        if (hasAnyTDS) headers.push('TDS(10%)');
+        headers.push('DUE DATE');
+        
+        (loan.remaining_accounts || []).forEach(acc => {
+            headers.push(getAcronym(acc.account_name));
+            if (hasAnyTDS) headers.push('TDS(10%)');
+        });
+
+        const schedTitleRow = worksheet.addRow(['REPAYMENT SCHEDULE']);
+        const scheduleTitle = schedTitleRow.getCell(1);
+        scheduleTitle.font = { bold: true, size: 12 };
+        scheduleTitle.border = thickBorder;
+
+        const headRow = worksheet.addRow(headers);
+        headRow.eachCell(cell => cell.style = headerStyle);
+
+        systemData.forEach((entry, idx) => {
+            const isInterestRow = entry.id === systemData[0]?.id;
+            const primaryPercent = loan.primary_account_share || 0;
+            const primaryGross = parseINR(entry.amount) * (primaryPercent / 100);
+            
+            const pOverrideAmt = getSplitAmount(entry.splits, loan.primary_account_name);
+            const pOverrideTDS = getSplitTDS(entry.splits, loan.primary_account_name);
+            
+            let pVal, pTdsVal;
+            if (pOverrideAmt !== null) {
+                pVal = pOverrideAmt;
+                pTdsVal = pOverrideTDS;
+            } else {
+                pTdsVal = isInterestRow ? (loan.primary_account_interest || 0) * 0.10 : 0;
+                pVal = primaryGross - pTdsVal;
+            }
+
+            const rowData = [
+                idx + 1,
+                entry.date || '—',
+                entry.cheque_no || '—',
+                parseINR(entry.amount),
+                entry.received_date || '—',
+                pVal
+            ];
+            if (hasAnyTDS) rowData.push(pTdsVal);
+            rowData.push(entry.payment_date || '—');
+
+            (loan.remaining_accounts || []).forEach(acc => {
+                const sGross = parseINR(entry.amount) * ((acc.percentage || 0) / 100);
+                const sOverrideAmt = getSplitAmount(entry.splits, acc.account_name);
+                const sOverrideTDS = getSplitTDS(entry.splits, acc.account_name);
+                
+                let sVal, sTdsVal;
+                if (sOverrideAmt !== null) {
+                    sVal = sOverrideAmt;
+                    sTdsVal = sOverrideTDS;
+                } else {
+                    sTdsVal = isInterestRow ? (acc.interest_amount || 0) * 0.10 : 0;
+                    sVal = sGross - sTdsVal;
+                }
+                rowData.push(sVal);
+                if (hasAnyTDS) rowData.push(sTdsVal);
+            });
+
+            const r = worksheet.addRow(rowData);
+            r.eachCell((cell, colIdx) => {
+                cell.border = thickBorder;
+                if (typeof cell.value === 'number') cell.numFmt = currencyFmt;
+            });
+        });
+
+        // Manual Payments Table
+        const manualData = (loan.repayment_schedule || []).filter(s => s.type === 'manual');
+        if (manualData.length > 0) {
+            worksheet.addRow([]); // Gap
+            const mTitleRow = worksheet.addRow(['ADDITIONAL OVERRIDES / MANUAL PAYMENTS']);
+            const manualTitle = mTitleRow.getCell(1);
+            manualTitle.font = { bold: true, size: 12 };
+            manualTitle.border = thickBorder;
+
+            const mHeaders = ['S.NO', 'DATE', 'CHQ NO', 'AMOUNT', 'REMARKS', 'RECEIVED DATE', getAcronym(loan.primary_account_name)];
+            mHeaders.push('DUE DATE');
+            (loan.remaining_accounts || []).forEach(acc => mHeaders.push(getAcronym(acc.account_name)));
+
+            const mHeadRow = worksheet.addRow(mHeaders);
+            mHeadRow.eachCell(cell => cell.style = headerStyle);
+
+            manualData.forEach((entry, idx) => {
+                const rowData = [
+                    idx + 1,
+                    entry.date || '—',
+                    entry.cheque_no || '—',
+                    parseINR(entry.amount),
+                    entry.remarks || '—',
+                    entry.received_date || '—',
+                    getSplitAmount(entry.splits, loan.primary_account_name) || 0,
+                    entry.payment_date || '—'
+                ];
+                (loan.remaining_accounts || []).forEach(acc => {
+                    rowData.push(getSplitAmount(entry.splits, acc.account_name) || 0);
+                });
+
+                const r = worksheet.addRow(rowData);
+                r.eachCell((cell, colIdx) => {
+                    cell.border = thickBorder;
+                    if (typeof cell.value === 'number') cell.numFmt = currencyFmt;
+                });
+            });
+        }
+
+        // Finalize
+        worksheet.columns.forEach(column => column.width = 18);
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const namePart = loan.client_name.replace(/\s+/g, '_');
+        const idPart = loan.loan_ref_id ? `_${loan.loan_ref_id.replace(/\s+/g, '_')}` : '';
+        a.download = `${namePart}${idPart}_SCHEDULE.xlsx`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
     const handleSaveAccounts = async (updatedData) => {
         try {
             const res = await fetch(`/api/loans/${id}/accounts`, {
@@ -1560,13 +1779,22 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                     title="Account Details"
                     icon="account_balance"
                     action={!isPanel && (
-                        <button
-                            onClick={() => setIsEditModalOpen(true)}
-                            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all font-bold shadow-lg active:scale-95"
-                        >
-                            <span className="material-symbols-outlined text-[18px]">edit</span>
-                            Edit Accounts
-                        </button>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setIsEditModalOpen(true)}
+                                className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all font-bold shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">edit</span>
+                                Edit Accounts
+                            </button>
+                            <button
+                                onClick={handleDownloadExcel}
+                                className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all font-bold shadow-lg shadow-emerald-200 dark:shadow-none active:scale-95"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">download</span>
+                                Download
+                            </button>
+                        </div>
                     )}
                 />
 

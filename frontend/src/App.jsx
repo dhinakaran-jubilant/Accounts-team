@@ -31,6 +31,8 @@ function App() {
     const handleLogout = () => {
         setUser(null);
         localStorage.removeItem('user');
+        // Hard replace to clear React history context and disable forward button
+        window.location.replace('/login');
     };
 
     if (loading) return null;
