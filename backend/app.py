@@ -947,4 +947,4 @@ def forgot_password_reset():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='127.0.0.1', port=1000)
+    app.run(debug=True, host='0.0.0.0', port=1000)
