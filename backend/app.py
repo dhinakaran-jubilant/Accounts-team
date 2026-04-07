@@ -549,6 +549,7 @@ def get_loan_detail(loan_id):
                 'date': s.date,
                 'cheque_no': s.cheque_no,
                 'amount': s.amount,
+                'interest_amount': s.interest_amount,
                 'received_date': s.received_date,
                 'payment_date': s.payment_date,
                 'remarks': s.remarks,
@@ -703,6 +704,7 @@ def add_repayment_schedule(loan_id):
         new_entry = RepaymentSchedule(
             loan_id=loan_id,
             amount=float(data.get('amount', 0)),
+            interest_amount=float(data.get('interest_amount', 0)),
             date=data.get('date', ''),
             cheque_no=data.get('cheque_no', ''),
             remarks=data.get('remarks', ''),
@@ -736,6 +738,8 @@ def patch_repayment_schedule(schedule_id):
             schedule_item.remarks = data['remarks']
         if 'amount' in data:
             schedule_item.amount = float(data['amount'])
+        if 'interest_amount' in data:
+            schedule_item.interest_amount = float(data['interest_amount'])
         if 'date' in data:
             schedule_item.date = data['date']
         if 'cheque_no' in data:
@@ -785,6 +789,118 @@ def get_users():
         })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+def extract_due_interest(file_path):
+    # Read without header
+    df = pd.read_excel(file_path, header=None)
+
+    start_row = None
+    # Step 1: Find "Amortization Schedule" in column A (index 0)
+    for i in range(len(df)):
+        val = str(df.iloc[i, 0]).strip().lower()
+        if "amortization schedule" in val:
+            start_row = i + 1  # next row is table start
+            break
+
+    if start_row is None:
+        raise Exception("Amortization Schedule not found")
+
+    result = []
+    # Step 2: Loop from start_row
+    for i in range(start_row, len(df)):
+        due_date = df.iloc[i, 1]   # Column B
+        interest = df.iloc[i, 5]   # Column F
+
+        # Stop if both empty
+        if pd.isna(due_date) and pd.isna(interest):
+            break
+
+        # Skip invalid rows
+        if pd.isna(due_date) or pd.isna(interest):
+            continue
+
+        # Format date
+        try:
+            # First try parsing with dayfirst=True for Indian formats
+            dt = pd.to_datetime(due_date, dayfirst=True, errors='coerce')
+            if pd.isna(dt):
+                # Fallback to generic parsing
+                dt = pd.to_datetime(due_date, errors='coerce')
+            
+            if pd.isna(dt):
+                continue
+                
+            formatted_date = dt.strftime("%d-%m-%Y")
+        except:
+            continue
+
+        result.append({
+            "date": formatted_date,
+            "interest": float(interest)
+        })
+
+    return result
+
+@app.route('/api/loans/<int:loan_id>/import-interest', methods=['POST'])
+def import_loan_interest(loan_id):
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+        
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    try:
+        loan = db.session.get(Loan, loan_id)
+        if not loan:
+            return jsonify({'error': 'Loan not found'}), 404
+
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_interest_{loan_id}_{file.filename}")
+        file.save(file_path)
+        
+        # Extract using the notebook logic
+        data = extract_due_interest(file_path)
+        
+        # PRE-VALIDATE DATES
+        unmatched_dates = []
+        for entry in data:
+            target_date = entry['date']
+            existing = RepaymentSchedule.query.filter_by(loan_id=loan_id, date=target_date).first()
+            if not existing:
+                unmatched_dates.append(target_date)
+                
+        if unmatched_dates:
+            os.remove(file_path)
+            return jsonify({
+                'success': False,
+                'error': f'Due dates do not match please check and upload again.'
+            }), 400
+
+        # Process each entry
+        updated_count = 0
+        
+        for entry in data:
+            target_date = entry['date']
+            target_amount = entry['interest']
+            
+            # Look for existing schedule entry by date (exact string match in DB)
+            existing = RepaymentSchedule.query.filter_by(loan_id=loan_id, date=target_date).first()
+            
+            if existing:
+                existing.interest_amount = target_amount
+                updated_count += 1
+                
+        db.session.commit()
+        os.remove(file_path) # Cleanup
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Interest schedule imported. Updated Interest: {updated_count}'
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/users', methods=['POST'])
 def add_user():

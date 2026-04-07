@@ -51,7 +51,7 @@ function App() {
                     path="/db-ac-report" 
                     element={
                         user ? (
-                            <Layout user={user} onLogout={handleLogout} activeMenu="db-ac-report">
+                            <Layout user={user} onLogout={handleLogout} activeMenu="db-ac-report" showFooter={true}>
                                 <Home />
                             </Layout>
                         ) : <Navigate to="/login" replace />

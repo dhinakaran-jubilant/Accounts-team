@@ -115,13 +115,13 @@ const UsersManager = () => {
         setShowAddModal(false);
         setIsEditing(false);
         setEditingUserId(null);
-        setFormData({ 
-            employee_code: '', 
-            name: '', 
-            email: '', 
-            password: '', 
-            role: 'user', 
-            permissions: [] 
+        setFormData({
+            employee_code: '',
+            name: '',
+            email: '',
+            password: '',
+            role: 'user',
+            permissions: []
         });
         setError(null);
     };
@@ -211,106 +211,104 @@ const UsersManager = () => {
             <div className="bg-white dark:bg-[#101822] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
                 <div className="overflow-x-auto scrollbar-premium">
                     <table className="w-full text-left border-collapse">
-                    <thead>
-                        <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
-                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">S.No</th>
-                            <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Full Name</th>
-                            <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Emp Code</th>
-                            <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Role</th>
-                            <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Permissions</th>
-                            <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
-                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                        {currentData.map((u, index) => (
-                            <tr key={u.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 group">
-                                <td className="px-8 py-2 text-sm font-bold text-slate-400 tracking-tight">{startIndex + index + 1}</td>
-                                <td className="px-6 py-2">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-blue-500/10 dark:bg-blue-500/20 flex items-center justify-center text-blue-500">
-                                            <span className="material-symbols-outlined text-xl">person</span>
-                                        </div>
-                                        <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
-                                            {u.name || 'Unnamed User'}
-                                        </span>
-                                    </div>
-                                </td>
-                                <td className="px-6 py-2 text-center">
-                                    <div className="flex justify-center items-center h-full font-mono text-sm font-bold uppercase text-slate-400">
-                                        {u.employee_code}
-                                    </div>
-                                </td>
-                                <td className="px-6 py-2 text-center">
-                                    <div className="flex justify-center items-center h-full">
-                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                                            u.role === 'admin' 
-                                                ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400' 
-                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-                                        }`}>
-                                            {u.role}
-                                        </span>
-                                    </div>
-                                </td>
-                                <td className="px-6 py-2 text-center">
-                                    <div className="flex justify-center items-center h-full">
-                                        {u.role === 'user' ? (
-                                            <div className="flex flex-wrap items-center justify-center gap-1.5">
-                                                {u.permissions?.length > 0 ? (
-                                                    u.permissions.map((p, i) => (
-                                                        <span key={i} className="px-2 py-0.5 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[10px] font-bold border border-blue-100 dark:border-blue-800/50">
-                                                            {p}
-                                                        </span>
-                                                    ))
-                                                ) : (
-                                                    <span className="text-slate-400 text-[10px] font-bold tracking-widest uppercase">NO PERM</span>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <span className="text-slate-300 dark:text-slate-700 font-bold">—</span>
-                                        )}
-                                    </div>
-                                </td>
-                                <td className="px-6 py-2 text-center">
-                                    <div className="flex justify-center items-center h-full">
-                                        {u.is_initial_password ? (
-                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-500 text-[10px] font-black uppercase tracking-widest border border-blue-100 dark:border-blue-800">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-                                                Setup Required
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 text-[10px] font-black uppercase tracking-widest border border-emerald-100 dark:border-emerald-800">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                                Active
-                                            </span>
-                                        )}
-                                    </div>
-                                </td>
-                                <td className="px-8 py-2 text-right flex items-center justify-end gap-1">
-                                    <button 
-                                        onClick={() => handleEditClick(u)}
-                                        className="w-10 h-10 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-2xl transition-all"
-                                        title="Edit User"
-                                    >
-                                        <span className="material-symbols-outlined text-xl">edit</span>
-                                    </button>
-                                    <button 
-                                        onClick={() => setShowDeleteModal(u)}
-                                        disabled={u.employee_code === 'admin'}
-                                        className={`w-10 h-10 transition-all rounded-2xl flex items-center justify-center ${
-                                            u.employee_code === 'admin' 
-                                                ? 'text-slate-200 dark:text-slate-800 cursor-not-allowed' 
-                                                : 'text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20'
-                                        }`}
-                                        title={u.employee_code === 'admin' ? "System Admin cannot be deleted" : "Delete User"}
-                                    >
-                                        <span className="material-symbols-outlined text-xl">delete</span>
-                                    </button>
-                                </td>
+                        <thead>
+                            <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
+                                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">S.No</th>
+                                <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Full Name</th>
+                                <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Emp Code</th>
+                                <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Role</th>
+                                <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Permissions</th>
+                                <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
+                                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                            {currentData.map((u, index) => (
+                                <tr key={u.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 group">
+                                    <td className="px-8 py-2 text-sm font-bold text-slate-400 tracking-tight">{startIndex + index + 1}</td>
+                                    <td className="px-6 py-2">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-blue-500/10 dark:bg-blue-500/20 flex items-center justify-center text-blue-500">
+                                                <span className="material-symbols-outlined text-xl">person</span>
+                                            </div>
+                                            <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
+                                                {u.name || 'Unnamed User'}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-2 text-center">
+                                        <div className="flex justify-center items-center h-full font-mono text-sm font-bold uppercase text-slate-400">
+                                            {u.employee_code}
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-2 text-center">
+                                        <div className="flex justify-center items-center h-full">
+                                            <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${u.role === 'admin'
+                                                    ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400'
+                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                                                }`}>
+                                                {u.role}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-2 text-center">
+                                        <div className="flex justify-center items-center h-full">
+                                            {u.role === 'user' ? (
+                                                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                                                    {u.permissions?.length > 0 ? (
+                                                        u.permissions.map((p, i) => (
+                                                            <span key={i} className="px-2 py-0.5 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[10px] font-bold border border-blue-100 dark:border-blue-800/50">
+                                                                {p}
+                                                            </span>
+                                                        ))
+                                                    ) : (
+                                                        <span className="text-slate-400 text-[10px] font-bold tracking-widest uppercase">NO PERM</span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-slate-300 dark:text-slate-700 font-bold">—</span>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-2 text-center">
+                                        <div className="flex justify-center items-center h-full">
+                                            {u.is_initial_password ? (
+                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-500 text-[10px] font-black uppercase tracking-widest border border-blue-100 dark:border-blue-800">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                                                    Setup Required
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 text-[10px] font-black uppercase tracking-widest border border-emerald-100 dark:border-emerald-800">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                    Active
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td className="px-8 py-2 text-right flex items-center justify-end gap-1">
+                                        <button
+                                            onClick={() => handleEditClick(u)}
+                                            className="w-10 h-10 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-2xl transition-all"
+                                            title="Edit User"
+                                        >
+                                            <span className="material-symbols-outlined text-xl">edit</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setShowDeleteModal(u)}
+                                            disabled={u.employee_code === 'admin'}
+                                            className={`w-10 h-10 transition-all rounded-2xl flex items-center justify-center ${u.employee_code === 'admin'
+                                                    ? 'text-slate-200 dark:text-slate-800 cursor-not-allowed'
+                                                    : 'text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20'
+                                                }`}
+                                            title={u.employee_code === 'admin' ? "System Admin cannot be deleted" : "Delete User"}
+                                        >
+                                            <span className="material-symbols-outlined text-xl">delete</span>
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
 
                 {/* Pagination Footer */}
@@ -347,7 +345,7 @@ const UsersManager = () => {
                             <h3 className="text-2xl font-black text-slate-900 dark:text-white">
                                 {isEditing ? 'Edit User' : 'Add New User'}
                             </h3>
-                            <button 
+                            <button
                                 onClick={handleCloseModal}
                                 className="absolute w-10 h-10 top-5 right-5 flex items-center justify-center text-slate-400 hover:text-rose-500 bg-slate-100 dark:bg-slate-700/40 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-full transition-all"
                                 title="Close"
@@ -355,7 +353,7 @@ const UsersManager = () => {
                                 <span className="material-symbols-outlined text-xl">close</span>
                             </button>
                         </div>
-                        
+
                         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
                             <form onSubmit={isEditing ? handleUpdateUser : handleAddUser} className="space-y-6">
                                 <div className="grid grid-cols-2 gap-6">
@@ -363,27 +361,27 @@ const UsersManager = () => {
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">
                                             Employee Code <span className="text-rose-500">*</span>
                                         </label>
-                                        <input 
-                                            type="text" 
+                                        <input
+                                            type="text"
                                             required
                                             disabled={isEditing}
                                             className={`w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white ${isEditing ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             placeholder="JC0001"
                                             value={formData.employee_code}
-                                            onChange={(e) => setFormData({...formData, employee_code: e.target.value})}
+                                            onChange={(e) => setFormData({ ...formData, employee_code: e.target.value })}
                                         />
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">
                                             Full Name <span className="text-rose-500">*</span>
                                         </label>
-                                        <input 
-                                            type="text" 
+                                        <input
+                                            type="text"
                                             required
                                             className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white"
                                             placeholder="Display Name"
                                             value={formData.name}
-                                            onChange={(e) => setFormData({...formData, name: e.target.value})}
+                                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                         />
                                     </div>
                                 </div>
@@ -391,22 +389,22 @@ const UsersManager = () => {
                                 <div className="grid grid-cols-2 gap-6">
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Mail ID</label>
-                                        <input 
-                                            type="email" 
+                                        <input
+                                            type="email"
                                             className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white"
                                             placeholder="user@example.com"
                                             value={formData.email}
-                                            onChange={(e) => setFormData({...formData, email: e.target.value})}
+                                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                         />
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Password <span className="text-rose-500">*</span></label>
-                                        <input 
-                                            type="text" 
+                                        <input
+                                            type="text"
                                             className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white"
                                             placeholder="********"
                                             value={formData.password}
-                                            onChange={(e) => setFormData({...formData, password: e.target.value})}
+                                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                         />
                                     </div>
                                 </div>
@@ -414,33 +412,31 @@ const UsersManager = () => {
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Role <span className="text-rose-500">*</span></label>
                                     <div className="grid grid-cols-6 gap-4">
-                                        <button 
+                                        <button
                                             type="button"
                                             onClick={() => setFormData({
                                                 ...formData,
                                                 role: 'user',
                                                 permissions: []
                                             })}
-                                            className={`h-12 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all ${
-                                                formData.role === 'user' 
-                                                    ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20' 
+                                            className={`h-12 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all ${formData.role === 'user'
+                                                    ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20'
                                                     : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 text-slate-400'
-                                            }`}
+                                                }`}
                                         >
                                             User
                                         </button>
-                                        <button 
+                                        <button
                                             type="button"
                                             onClick={() => setFormData({
-                                                ...formData, 
+                                                ...formData,
                                                 role: 'admin',
                                                 permissions: ['AS', 'ASE', 'ASQ', 'GC', 'GCE', 'JC', 'RP', 'SCE', 'SCS', 'SN']
                                             })}
-                                            className={`h-12 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${
-                                                formData.role === 'admin' 
-                                                    ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20' 
+                                            className={`h-12 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${formData.role === 'admin'
+                                                    ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20'
                                                     : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 text-slate-400'
-                                            }`}
+                                                }`}
                                         >
                                             Admin
                                         </button>
@@ -455,11 +451,10 @@ const UsersManager = () => {
                                                 key={perm}
                                                 type="button"
                                                 onClick={() => togglePermission(perm)}
-                                                className={`h-10 rounded-2xl text-[10px] font-black transition-all border ${
-                                                    formData.permissions.includes(perm)
+                                                className={`h-10 rounded-2xl text-[10px] font-black transition-all border ${formData.permissions.includes(perm)
                                                         ? 'bg-amber-500 border-amber-500 text-white shadow-md'
                                                         : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-400'
-                                                }`}
+                                                    }`}
                                             >
                                                 {perm}
                                             </button>

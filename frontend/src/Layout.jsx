@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import logoImage from './assets/logo.png';
 
-const Layout = ({ children, user, onLogout, activeMenu }) => {
+const Layout = ({ children, user, onLogout, activeMenu, showFooter = false }) => {
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [isDark, setIsDark] = useState(() => {
         return localStorage.getItem('isDark') === 'true';
@@ -95,7 +95,7 @@ const Layout = ({ children, user, onLogout, activeMenu }) => {
                             <div className="w-12 h-12 rounded-full bg-blue-500/10 dark:bg-blue-500/20 flex items-center justify-center text-blue-500 shadow-inner">
                                 <span className="material-symbols-outlined text-3xl">person</span>
                             </div>
-                            
+
                             {/* Name & Role */}
                             <div className="flex-1 min-w-0">
                                 <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate tracking-tight">
@@ -107,7 +107,7 @@ const Layout = ({ children, user, onLogout, activeMenu }) => {
                             </div>
 
                             {/* Streamlined Logout Icon */}
-                            <button 
+                            <button
                                 onClick={() => setShowLogoutConfirm(true)}
                                 className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-rose-500"
                                 title="Sign Out"
@@ -118,8 +118,25 @@ const Layout = ({ children, user, onLogout, activeMenu }) => {
                     </div>
                 </aside>
 
-                <div className="flex-1 flex flex-col overflow-hidden">
-                    {children}
+                <div className="flex-1 flex flex-col overflow-y-auto">
+                    <main className="flex-1">
+                        {children}
+                    </main>
+                    {showFooter && (
+                        <footer className="pt-5 pb-1 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#101822]/50">
+                            <div className="max-w-7xl mx-auto px-4 text-center flex flex-col items-center justify-center">
+                                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                                    Designed and Developed by{' '}
+                                    <a
+                                        href="mailto:dhinakaran.s@jubilantenterprises.in"
+                                        className="text-primary hover:underline font-medium"
+                                    >
+                                        Dhinakaran Sekar
+                                    </a>
+                                </p>
+                            </div>
+                        </footer>
+                    )}
                 </div>
             </div>
 

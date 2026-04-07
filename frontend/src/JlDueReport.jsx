@@ -20,7 +20,7 @@ const getAcronym = (name) => {
     if (n === 's nirmala' || n.includes('nirmala')) return 'SN';
     if (n === 'raja priya' || n.includes('raja priya')) return 'RP';
     return name;
-};  
+};
 
 const parseINR = (val) => {
     if (typeof val === 'number') return val;
@@ -92,11 +92,11 @@ const getRowPaidTotalRaw = (entry, loan) => {
         : Number(loan.primary_account_share);
 
     const rawTarget = parseINR(entry.amount);
-    
+
     // Primary Paid
     const priTarget = rawTarget * (effectivePrimaryPercentage / 100);
     const priPaid = getRowAccountPaid(entry, loan.primary_account_name, priTarget, true);
-    
+
     // Secondaries Paid
     let secPaidTotal = 0;
     secAccs.forEach(acc => {
@@ -123,7 +123,7 @@ const getLoanStatus = (loan) => {
 
     // Filter non-zero installments (plan rows)
     const validDues = schedule.filter(e => e.type !== 'manual' && parseINR(e.amount) > 0);
-    
+
     // Condition 4: CLOSED (Green) - ALL dues correctly received (no balance remaining)
     const isAllPaid = validDues.length > 0 && validDues.every(e => !hasRowBalance(e, loan));
     if (isAllPaid) {
@@ -505,7 +505,7 @@ const JlDueReport = ({ user }) => {
                         const priPaid = getRowAccountPaid(e, loan.primary_account_name, priTarget, true);
                         const priOS = Math.round(priTarget - priPaid) <= 0 ? 0 : (priTarget - priPaid);
                         const priTds = getSplitTDS(e.splits, loan.primary_account_name) || '';
-                        
+
                         rowVals.push(priOS || '', priTds);
 
                         // Secondary splits (O/S shares)
@@ -622,7 +622,7 @@ const JlDueReport = ({ user }) => {
                             const rDate = isPrimary ? e.received_date : e.payment_date;
                             const rKey = getDateKey(rDate);
                             const dKey = getDateKey(e.date);
-                            
+
                             // Received by now check:
                             // Primary: physically paid before cutoff.
                             // Secondary: marked paid AND due date has passed.
@@ -644,7 +644,7 @@ const JlDueReport = ({ user }) => {
                             return sum;
                         }, 0);
                     };
-                    
+
                     const getOsShare = (accName, percentage, isPrimary) => {
                         return schedule.reduce((sum, e) => {
                             const dKey = getDateKey(e.date);
@@ -652,10 +652,10 @@ const JlDueReport = ({ user }) => {
                                 const rDate = isPrimary ? e.received_date : e.payment_date;
                                 const rKey = getDateKey(rDate);
                                 const target = parseINR(e.amount) * (percentage / 100);
-                                
+
                                 // Paid check: Was this specific payment received BY the report cutoff?
                                 const paidByNow = rKey > 0 && (isPrimary ? rKey <= cutoffKey : true);
-                                
+
                                 if (paidByNow) {
                                     const dataArray = getSplitData(e.splits, accName);
                                     if (dataArray !== null) {
@@ -742,8 +742,8 @@ const JlDueReport = ({ user }) => {
     };
 
     return (
-        <div ref={pageRef} className="flex-1 overflow-y-auto w-full flex flex-col">
-            <main className="mx-auto p-8 flex-1 flex flex-col w-full">
+        <div ref={pageRef} className="h-[calc(100vh-64px)] w-full flex flex-col overflow-hidden">
+            <main className="mx-auto p-8 flex-1 flex flex-col w-full min-h-0">
                 {/* Header Section */}
                 <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
                     <div>
@@ -838,118 +838,150 @@ const JlDueReport = ({ user }) => {
                 </div>
 
                 {/* Table Section */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm flex flex-col flex-1">
-                    <div className="overflow-x-auto flex-1">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
-                                    <th className="py-4 px-6 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">S.No</th>
-                                    <th className="py-4 px-6 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Loan ID</th>
-                                    <th className="py-4 px-6 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Loan Date</th>
-                                    <th className="py-4 px-6 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Client Name</th>
-                                    <th className="py-4 px-6 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Primary Account</th>
-                                    <th className="py-4 px-6 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Amount</th>
-                                    <th className="py-4 px-6 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Others</th>
-                                    <th className="py-4 px-6 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
-                                    <th className="py-4 px-6 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                                {isLoadingData ? (
-                                    <tr>
-                                        <td colSpan="9" className="py-12 bg-slate-50/50 dark:bg-slate-800/20 text-center">
-                                            <div className="flex flex-col items-center justify-center text-slate-500 dark:text-slate-400">
-                                                <span className="material-symbols-outlined animate-spin text-[28px] mb-2 text-primary/70">progress_activity</span>
-                                                <span className="text-sm font-medium">Syncing database records...</span>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ) : filteredData.length === 0 ? (
-                                    <tr>
-                                        <td colSpan="9" className="py-20 text-center bg-white dark:bg-slate-900/50 border-x border-slate-200/50 dark:border-slate-800/50">
-                                            <div className="flex flex-col items-center justify-center">
-                                                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 transition-transform hover:scale-110 duration-300">
-                                                    <span className="material-symbols-outlined text-[32px] text-slate-400">search_off</span>
-                                                </div>
-                                                <p className="text-slate-900 dark:text-white text-lg font-bold mb-1">No Results Found</p>
-                                                <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto px-10">
-                                                    {searchTerm || selectedDate 
-                                                        ? "We couldn't find any loans matching your current search or date filters. Try adjusting your criteria."
-                                                        : "There are no loan records to display based on your access level or account activity."}
-                                                </p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ) : currentData.map((row) => (
-                                    <tr
-                                        key={row.id}
-                                        onClick={() => {
-                                            if (searchTerm || selectedDate) {
-                                                setSelectedLoanId(row.id);
-                                            } else {
-                                                navigate(`/jl-due-report/${row.id}`);
-                                            }
-                                        }}
-                                        className="hover:bg-slate-50 dark:hover:bg-slate-800/25 transition-colors group border-x border-slate-200/50 dark:border-slate-800/50 cursor-pointer"
-                                    >
-                                        <td className="py-2 px-6 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                            {row.s_no}
-                                        </td>
-                                        <td className="py-2 px-6 text-sm font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                                            {row.loan_ref_id || '—'}
-                                        </td>
-                                        <td className="py-2 px-6 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                                            {row.loan_date}
-                                        </td>
-                                        <td className="py-2 px-6 text-sm font-bold text-slate-900 dark:text-slate-100">
-                                            {row.client_name}
-                                        </td>
-                                        <td className="py-2 px-6 text-sm text-slate-600 dark:text-slate-400">
-                                            <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold border uppercase tracking-wider ${getAccountTagStyles(row.primary_account_name)}`}>
-                                                {getAcronym(row.primary_account_name)}
-                                            </span>
-                                        </td>
-                                        <td className="py-2 px-6 text-sm font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">
-                                            ₹ {row.loan_amount.toLocaleString('en-IN')}
-                                        </td>
-                                        <td className="py-2 px-6 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                                            {row.repayment_schedule?.some(e => e.type === 'manual') ? (
-                                                <span className="text-rose-600 dark:text-rose-400 font-bold flex items-center gap-1">Yes
-                                                </span>
-                                            ) : (
-                                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">No</span>
-                                            )}
-                                        </td>
-                                        <td className="py-2 px-6 text-sm whitespace-nowrap text-left">
-                                            {(() => {
-                                                const s = getLoanStatus(row);
-                                                return (
-                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${s.color}`}>
-                                                        {s.label}
-                                                    </span>
-                                                );
-                                            })()}
-                                        </td>
-                                        <td className="py-2 px-6 text-right text-sm">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleDeleteClick(row.id);
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm flex flex-col flex-1 min-h-0">
+                    <div className="flex-1 flex flex-col min-h-0 scrollbar-premium">
+                        <div className="flex-1 flex flex-col min-h-0">
+                            {/* Fixed Header Table */}
+                            <div className="shrink-0 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800 [scrollbar-gutter:stable] overflow-y-hidden">
+                                <table className="w-full text-left border-collapse table-fixed">
+                                    <colgroup>
+                                        <col style={{ width: '5%' }} />
+                                        <col style={{ width: '10%' }} />
+                                        <col style={{ width: '11%' }} />
+                                        <col style={{ width: '25%' }} />
+                                        <col style={{ width: '12%' }} />
+                                        <col style={{ width: '12%' }} />
+                                        <col style={{ width: '6%' }} />
+                                        <col style={{ width: '10%' }} />
+                                        <col style={{ width: '5%' }} />
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th className="py-4 px-4 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">S.No</th>
+                                            <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Loan ID</th>
+                                            <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Loan Date</th>
+                                            <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Client Name</th>
+                                            <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Pri Acc</th>
+                                            <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Amount</th>
+                                            <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Others</th>
+                                            <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Status</th>
+                                            <th className="py-4 px-2 text-center text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Actions</th>
+                                        </tr>
+                                    </thead>
+                                </table>
+                            </div>
+
+                            {/* Scrollable Body Table */}
+                            <div className="flex-1 overflow-y-auto scrollbar-premium [scrollbar-gutter:stable]">
+                                <table className="w-full text-left border-collapse table-fixed">
+                                    <colgroup>
+                                        <col style={{ width: '5%' }} />
+                                        <col style={{ width: '10%' }} />
+                                        <col style={{ width: '11%' }} />
+                                        <col style={{ width: '25%' }} />
+                                        <col style={{ width: '12%' }} />
+                                        <col style={{ width: '12%' }} />
+                                        <col style={{ width: '6%' }} />
+                                        <col style={{ width: '10%' }} />
+                                        <col style={{ width: '5%' }} />
+                                    </colgroup>
+                                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                                        {isLoadingData ? (
+                                            <tr>
+                                                <td colSpan="9" className="py-12 bg-slate-50/50 dark:bg-slate-800/20 text-center">
+                                                    <div className="flex flex-col items-center justify-center text-slate-500 dark:text-slate-400">
+                                                        <span className="material-symbols-outlined animate-spin text-[28px] mb-2 text-primary/70">progress_activity</span>
+                                                        <span className="text-sm font-medium">Syncing database records...</span>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : filteredData.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="9" className="py-20 text-center bg-white dark:bg-slate-900/50 border-x border-slate-200/50 dark:border-slate-800/50">
+                                                    <div className="flex flex-col items-center justify-center">
+                                                        <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 transition-transform hover:scale-110 duration-300">
+                                                            <span className="material-symbols-outlined text-[32px] text-slate-400">search_off</span>
+                                                        </div>
+                                                        <p className="text-slate-900 dark:text-white text-lg font-bold mb-1">No Results Found</p>
+                                                        <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto px-10">
+                                                            {searchTerm || selectedDate
+                                                                ? "We couldn't find any loans matching your current search or date filters. Try adjusting your criteria."
+                                                                : "There are no loan records to display based on your access level or account activity."}
+                                                        </p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : currentData.map((row) => (
+                                            <tr
+                                                key={row.id}
+                                                onClick={() => {
+                                                    if (searchTerm || selectedDate) {
+                                                        setSelectedLoanId(row.id);
+                                                    } else {
+                                                        navigate(`/jl-due-report/${row.id}`);
+                                                    }
                                                 }}
-                                                className="p-1.5 text-slate-400 hover:text-rose-500 rounded-2xl transition-all"
-                                                title="Delete Loan"
+                                                className="hover:bg-slate-50 dark:hover:bg-slate-800/25 transition-colors group cursor-pointer"
                                             >
-                                                <span className="material-symbols-outlined text-[20px]">delete</span>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                                <td className="py-2 px-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                                    {row.s_no}
+                                                </td>
+                                                <td className="py-2 px-2 text-sm font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap truncate">
+                                                    {row.loan_ref_id || '—'}
+                                                </td>
+                                                <td className="py-2 px-2 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                                                    {row.loan_date}
+                                                </td>
+                                                <td className="py-2 px-2 text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                                                    {row.client_name}
+                                                </td>
+                                                <td className="py-2 px-2 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold border uppercase tracking-wider ${getAccountTagStyles(row.primary_account_name)}`}>
+                                                        {getAcronym(row.primary_account_name)}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2 px-2 text-sm font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap text-left">
+                                                    ₹ {row.loan_amount.toLocaleString('en-IN')}
+                                                </td>
+                                                <td className="py-2 px-2 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap text-left">
+                                                    {row.repayment_schedule?.some(e => e.type === 'manual') ? (
+                                                        <span className="text-rose-600 dark:text-rose-400 font-bold border-transparent">Yes</span>
+                                                    ) : (
+                                                        <span className="text-slate-300 dark:text-slate-700 font-bold border-transparent">No</span>
+                                                    )}
+                                                </td>
+                                                <td className="py-2 px-2 text-sm whitespace-nowrap text-left">
+                                                    {(() => {
+                                                        const s = getLoanStatus(row);
+                                                        return (
+                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${s.color}`}>
+                                                                {s.label}
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                </td>
+                                                <td className="py-2 px-2 text-center text-sm">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDeleteClick(row.id);
+                                                        }}
+                                                        className="p-1.5 text-slate-300 hover:text-rose-500 rounded-2xl transition-all"
+                                                        title="Delete Loan"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[20px]">delete</span>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                     {/* Pagination Footer */}
                     {filteredData.length > 0 && (
-                        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/10 rounded-b-2xl mt-auto">
+                        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/10 rounded-b-2xl">
                             <p className="text-sm text-slate-500 dark:text-slate-400">
                                 Showing <span className="font-semibold text-slate-700 dark:text-slate-200">{startIndex + 1}</span> to <span className="font-semibold text-slate-700 dark:text-slate-200">{endIndex}</span> of <span className="font-semibold text-slate-700 dark:text-slate-200">{filteredData.length}</span> results
                             </p>

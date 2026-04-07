@@ -223,20 +223,6 @@ function Home() {
                 </div>
             </main>
 
-            <footer className="pt-5 pb-1 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-background-dark/50">
-                <div className="max-w-7xl mx-auto px-4 text-center flex flex-col items-center justify-center">
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                        Designed and Developed by{' '}
-                        <a
-                            href="mailto:dhinakaran.s@jubilantenterprises.in"
-                            className="text-primary hover:underline font-medium"
-                        >
-                            Dhinakaran Sekar
-                        </a>
-                    </p>
-                </div>
-            </footer>
-
             {/* Error Popup Modal */}
             {popupError && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity duration-300">

@@ -36,6 +36,7 @@ class RepaymentSchedule(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     loan_id = db.Column(db.Integer, db.ForeignKey('loans.id'), nullable=False)
     amount = db.Column(db.Float, nullable=False)
+    interest_amount = db.Column(db.Float, nullable=True, default=0)
     cheque_no = db.Column(db.String(100), nullable=False)
     date = db.Column(db.String(100), nullable=False)
     received_date = db.Column(db.String(100), nullable=True)
