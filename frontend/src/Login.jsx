@@ -1,3 +1,10 @@
+/**
+ * Project: Accounts Team
+ * Component: Login
+ * Author: Dhinakaran Sekar
+ * Email: dhinakaran.s@jubilantenterprises.in
+ * Date: 2026-04-08 11:53:28
+ */
 import React, { useState, useEffect } from 'react';
 import InitialSetupModal from './InitialSetupModal';
 import ForgotPasswordModal from './ForgotPasswordModal';

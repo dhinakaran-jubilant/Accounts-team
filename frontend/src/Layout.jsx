@@ -1,3 +1,10 @@
+/**
+ * Project: Accounts Team
+ * Component: Layout
+ * Author: Dhinakaran Sekar
+ * Email: dhinakaran.s@jubilantenterprises.in
+ * Date: 2026-04-08 11:53:28
+ */
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import logoImage from './assets/logo.png';

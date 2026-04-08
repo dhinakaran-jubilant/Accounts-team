@@ -1,3 +1,10 @@
+/**
+ * Project: Accounts Team
+ * Component: SuccessModal
+ * Author: Dhinakaran Sekar
+ * Email: dhinakaran.s@jubilantenterprises.in
+ * Date: 2026-04-08 11:53:28
+ */
 import React from 'react';
 
 export default function SuccessModal({ title, message, onClose }) {

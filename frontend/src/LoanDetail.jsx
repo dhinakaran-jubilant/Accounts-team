@@ -1,3 +1,10 @@
+/**
+ * Project: Accounts Team
+ * Component: LoanDetail
+ * Author: Dhinakaran Sekar
+ * Email: dhinakaran.s@jubilantenterprises.in
+ * Date: 2026-04-08 11:53:28
+ */
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ExcelJS from 'exceljs';

@@ -1,3 +1,10 @@
+"""
+Project: Accounts Team
+Module: Backend API
+Author: Dhinakaran Sekar
+Email: dhinakaran.s@jubilantenterprises.in
+Date: 2026-04-08 11:53:28
+"""
 from models import db, Loan, RemainingAccount, RepaymentSchedule, User
 from werkzeug.security import generate_password_hash, check_password_hash
 from read_word import extract_word_data, build_final_output

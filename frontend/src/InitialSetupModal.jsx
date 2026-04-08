@@ -1,3 +1,10 @@
+/**
+ * Project: Accounts Team
+ * Component: InitialSetupModal
+ * Author: Dhinakaran Sekar
+ * Email: dhinakaran.s@jubilantenterprises.in
+ * Date: 2026-04-08 11:53:28
+ */
 import React, { useState } from 'react';
 import SuccessModal from './SuccessModal';
 import config from './config';

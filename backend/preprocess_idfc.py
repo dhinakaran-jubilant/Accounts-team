@@ -1,3 +1,10 @@
+"""
+Project: Accounts Team
+Module: preprocess_idfc
+Author: Dhinakaran Sekar
+Email: dhinakaran.s@jubilantenterprises.in
+Date: 2026-04-08 11:53:28
+"""
 import pandas as pd
 
 def extract_tables(file_path):

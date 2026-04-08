@@ -1,3 +1,10 @@
+"""
+Project: Accounts Team
+Module: read_word
+Author: Dhinakaran Sekar
+Email: dhinakaran.s@jubilantenterprises.in
+Date: 2026-04-08 11:53:28
+"""
 import re
 from docx import Document
 

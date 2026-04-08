@@ -1,3 +1,10 @@
+/**
+ * Project: Accounts Team
+ * Component: UsersManager
+ * Author: Dhinakaran Sekar
+ * Email: dhinakaran.s@jubilantenterprises.in
+ * Date: 2026-04-08 11:53:28
+ */
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 

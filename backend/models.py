@@ -1,3 +1,10 @@
+"""
+Project: Accounts Team
+Module: models
+Author: Dhinakaran Sekar
+Email: dhinakaran.s@jubilantenterprises.in
+Date: 2026-04-08 11:53:28
+"""
 from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
