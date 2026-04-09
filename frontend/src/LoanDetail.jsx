@@ -192,6 +192,9 @@ const RepaymentTable = ({
     const [expandedRows, setExpandedRows] = useState({});
     const toggleRow = (id) => setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
 
+    const todayObj = new Date();
+    const todayYYYYMMDD = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+
     return (
         <div className="mb-10 last:mb-0">
             <SectionHeader title={title} icon={icon} />
@@ -274,6 +277,9 @@ const RepaymentTable = ({
                                         overridenDataArray?.length || 0,
                                         ...secondarySplits.map(s => s.splits?.length || 0)
                                     );
+
+                                    const isReceivedDateInvalid = Boolean(entry.received_date && entry.date && entry.received_date.length >= 10 && toYYYYMMDD(entry.received_date) < toYYYYMMDD(entry.date));
+                                    const isFutureRow = Boolean(entry.date && toYYYYMMDD(entry.date) > todayYYYYMMDD);
 
                                     return (
                                         <React.Fragment key={entry.id}>
@@ -397,16 +403,19 @@ const RepaymentTable = ({
                                                         <input
                                                             type="text"
                                                             value={entry.received_date || ''}
+                                                            disabled={isFutureRow}
                                                             onChange={(e) => handleScheduleUpdate(entry.id, 'received_date', formatDateInput(e.target.value))}
                                                             onBlur={(e) => handleFieldChange(entry.id, 'received_date', e.target.value)}
-                                                            className="bg-transparent border-none text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded"
+                                                            className={`bg-transparent text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 rounded transition-all px-1 -ml-1 ${isReceivedDateInvalid ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${isFutureRow ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                             placeholder="dd-mm-yyyy"
                                                         />
                                                         <div className="relative h-5 w-5 flex justify-center items-center">
-                                                            <span className="material-symbols-outlined text-[18px] text-slate-400 hover:text-primary cursor-pointer transition-colors opacity-0 group-hover:opacity-100">edit_calendar</span>
+                                                            <span className={`material-symbols-outlined text-[18px] text-slate-400 opacity-0 group-hover:opacity-100 transition-colors ${isFutureRow ? 'cursor-not-allowed' : 'cursor-pointer hover:text-primary'}`}>edit_calendar</span>
                                                             <input
                                                                 type="date"
-                                                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
+                                                                disabled={isFutureRow}
+                                                                min={entry.date ? toYYYYMMDD(entry.date) : ''}
                                                                 value={toYYYYMMDD(entry.received_date)}
                                                                 onChange={(e) => {
                                                                     const val = toDDMMYYYY(e.target.value);
@@ -460,16 +469,18 @@ const RepaymentTable = ({
                                                         <input
                                                             type="text"
                                                             value={entry.payment_date || ''}
+                                                            disabled={!entry.received_date}
                                                             onChange={(e) => handleScheduleUpdate(entry.id, 'payment_date', formatDateInput(e.target.value))}
                                                             onBlur={(e) => handleFieldChange(entry.id, 'payment_date', e.target.value)}
-                                                            className="bg-transparent border-none text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded"
+                                                            className={`bg-transparent border-none text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded ${!entry.received_date ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                             placeholder="dd-mm-yyyy"
                                                         />
                                                         <div className="relative h-5 w-5 flex justify-center items-center">
-                                                            <span className="material-symbols-outlined text-[18px] text-slate-400 hover:text-primary cursor-pointer transition-colors opacity-0 group-hover:opacity-100">edit_calendar</span>
+                                                            <span className={`material-symbols-outlined text-[18px] text-slate-400 opacity-0 group-hover:opacity-100 transition-colors ${!entry.received_date ? 'cursor-not-allowed' : 'cursor-pointer hover:text-primary'}`}>edit_calendar</span>
                                                             <input
                                                                 type="date"
-                                                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
+                                                                disabled={!entry.received_date}
                                                                 value={toYYYYMMDD(entry.payment_date)}
                                                                 onChange={(e) => {
                                                                     const val = toDDMMYYYY(e.target.value);
