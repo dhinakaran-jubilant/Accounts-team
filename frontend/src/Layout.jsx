@@ -63,7 +63,7 @@ const Layout = ({ children, user, onLogout, activeMenu, showFooter = false }) =>
                 {/* Sidebar */}
                 <aside className="w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#101822] flex flex-col shrink-0 transition-colors">
 
-                    <div className="flex flex-col gap-1 p-6 pt-2 flex-1 overflow-y-auto">
+                    <div className="flex flex-col gap-1 p-6 pt-2 flex-1 overflow-y-auto scrollbar-premium">
                         <Link
                             to="/db-ac-report"
                             className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all group ${activeMenu === 'db-ac-report'
@@ -125,7 +125,7 @@ const Layout = ({ children, user, onLogout, activeMenu, showFooter = false }) =>
                     </div>
                 </aside>
 
-                <div className="flex-1 flex flex-col overflow-y-auto">
+                <div className="flex-1 flex flex-col overflow-y-auto scrollbar-premium">
                     <main className="flex-1">
                         {children}
                     </main>

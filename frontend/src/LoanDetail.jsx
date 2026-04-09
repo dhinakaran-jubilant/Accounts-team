@@ -174,19 +174,11 @@ const RepaymentTable = ({
     formatINRInput,
     toYYYYMMDD,
     toDDMMYYYY,
-    onEditAccountSplit
+    onEditAccountSplit,
+    onClearRow
 }) => {
-    const hasAnyTDS = !isManual && data.some(entry => {
-        const isInterestRow = schedule && entry.id === (data.filter(s => s.type !== 'manual')[0]?.id);
-        // Check primary account
-        if (getSplitTDS(entry.splits, loan?.primary_account_name) > 0) return true;
-        if (isInterestRow && (loan?.primary_account_interest || 0) > 0) return true;
-        // Check secondary accounts
-        return (loan?.remaining_accounts || []).some(acc => {
-            if (getSplitTDS(entry.splits, acc.account_name) > 0) return true;
-            if (isInterestRow && (acc.interest_amount || 0) > 0) return true;
-            return false;
-        });
+    const hasPrimaryTDS = !isManual && data.some(entry => {
+        return getSplitTDS(entry.splits, loan?.primary_account_name) > 0;
     });
 
     const [expandedRows, setExpandedRows] = useState({});
@@ -212,6 +204,7 @@ const RepaymentTable = ({
                                 <th className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-left w-32">Received Date</th>
                                 <th className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-right w-40">{getAcronym(loan.primary_account_name)}</th>
                                 <th className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-right w-40">{getAcronym(loan.primary_account_name)} Int</th>
+                                {!isManual && hasPrimaryTDS && <th className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-right text-red-500 w-20">TDS(10%)</th>}
                                 <th className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-left w-32">Due Date</th>
                                 {(loan.remaining_accounts || []).map((acc, i) => (
                                     <React.Fragment key={i}>
@@ -241,11 +234,14 @@ const RepaymentTable = ({
                                     const primaryInterestPercent = totalInterest > 0 ? (loan.primary_account_interest / totalInterest) * 100 : 0;
                                     const primaryInterestShare = parseINR(entry.interest_amount) * (primaryInterestPercent / 100);
 
+                                    const primaryAutoTds = isInterestRow ? (primaryInterestShare * 0.1) : 0;
+                                    const primaryNetShare = primaryShare - primaryAutoTds;
+
                                     const overridenDataArray = getSplitData(entry.splits, loan.primary_account_name);
                                     const hasPrimaryOverride = overridenDataArray !== null && overridenDataArray.length > 0;
                                     const totalOverridenAmount = getSplitAmount(entry.splits, loan.primary_account_name) || 0;
                                     const totalOverridenTDS = getSplitTDS(entry.splits, loan.primary_account_name) || 0;
-                                    const balancePrimaryAmount = hasPrimaryOverride ? primaryShare - (totalOverridenAmount + totalOverridenTDS) : 0;
+                                    const balancePrimaryAmount = hasPrimaryOverride ? primaryNetShare - (totalOverridenAmount + totalOverridenTDS) : 0;
 
                                     // Secondary Account Overrides tracking
                                     const secondarySplits = (loan.remaining_accounts || []).map(acc => {
@@ -265,7 +261,7 @@ const RepaymentTable = ({
                                         const hasOverride = splits !== null && splits.length > 0;
                                         const balance = hasOverride ? netShare - (totalOverriden + totalOverridenTDS) : 0;
 
-                                        return { acc, splits, hasOverride, balance, netShare, tds, accInterestShare };
+                                        return { acc, splits, hasOverride, balance, grossShare, netShare, tds, accInterestShare };
                                     });
 
                                     const hasAnyOverride = hasPrimaryOverride || secondarySplits.some(s => s.hasOverride);
@@ -284,7 +280,7 @@ const RepaymentTable = ({
                                     return (
                                         <React.Fragment key={entry.id}>
                                             <tr
-                                                className={`hover:bg-slate-50 dark:hover:bg-slate-800/25 transition-colors border-t border-slate-100 dark:border-slate-800 ${hasSubRows ? 'cursor-pointer' : ''}`}
+                                                className={`hover:bg-slate-50 dark:hover:bg-slate-800/25 transition-colors border-t border-slate-100 dark:border-slate-800 ${hasSubRows ? 'cursor-pointer' : ''} group`}
                                                 onClick={(e) => {
                                                     if (hasSubRows && !e.target.closest('input, textarea, button')) {
                                                         const closestPointer = e.target.closest('.cursor-pointer');
@@ -301,6 +297,16 @@ const RepaymentTable = ({
                                                             <span className="w-4"></span>
                                                         )}
                                                         {idx + 1}
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                onClearRow && onClearRow(entry.id);
+                                                            }}
+                                                            className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 font-bold hover:text-red-500 p-0.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center justify-center mr-1"
+                                                            title="Clear all fields in this row"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[16px]">backspace</span>
+                                                        </button>
                                                     </div>
                                                 </td>
                                                 <td className="py-3 px-5 text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -406,7 +412,7 @@ const RepaymentTable = ({
                                                             disabled={isFutureRow}
                                                             onChange={(e) => handleScheduleUpdate(entry.id, 'received_date', formatDateInput(e.target.value))}
                                                             onBlur={(e) => handleFieldChange(entry.id, 'received_date', e.target.value)}
-                                                            className={`bg-transparent text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 rounded transition-all px-1 -ml-1 ${isReceivedDateInvalid ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${isFutureRow ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                            className={`bg-transparent text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 rounded transition-all -ml-1 ${isReceivedDateInvalid ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${isFutureRow ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                             placeholder="dd-mm-yyyy"
                                                         />
                                                         <div className="relative h-5 w-5 flex justify-center items-center">
@@ -444,16 +450,17 @@ const RepaymentTable = ({
                                                         />
                                                     ) : (
                                                         <div
-                                                            className={`rounded px-1 transition-colors group relative inline-flex items-center justify-end gap-1 ${!hasPrimaryOverride ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : 'cursor-default'}`}
-                                                            title={hasPrimaryOverride ? "Override Applied. Edit payment details in sub-rows below." : "Click to override details"}
+                                                            className={`rounded px-1 transition-colors group relative inline-flex items-center justify-end gap-1 ${(!hasPrimaryOverride && !isFutureRow) ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : 'cursor-default'} ${isFutureRow ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                            title={isFutureRow ? "Future date installments cannot be edited." : (hasPrimaryOverride ? "Override Applied. Edit payment details in sub-rows below." : "Click to override details")}
                                                             onClick={(e) => {
-                                                                if (hasPrimaryOverride) return;
+                                                                if (hasPrimaryOverride || isFutureRow) return;
                                                                 e.stopPropagation();
-                                                                onEditAccountSplit && onEditAccountSplit(entry, loan.primary_account_name, primaryShare, false, 0);
+                                                                const primarySystemTDS = isInterestRow ? (loan.primary_account_interest || 0) * 0.10 : 0;
+                                                                onEditAccountSplit && onEditAccountSplit(entry, loan.primary_account_name, primaryShare, false, 0, primarySystemTDS);
                                                             }}
                                                         >
                                                             <span className={`${hasPrimaryOverride ? 'font-bold' : ''} ${Math.round(balancePrimaryAmount * 100) / 100 > 0 ? 'text-red-500' : (hasPrimaryOverride ? 'text-slate-900 dark:text-slate-100' : '')}`}>
-                                                                {fmtINR(primaryShare, false)}
+                                                                {fmtINR(primaryNetShare, false)}
                                                             </span>
                                                             {hasPrimaryOverride && (
                                                                 <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 absolute -top-1 -right-1" title="Override Applied"></div>
@@ -464,6 +471,14 @@ const RepaymentTable = ({
                                                 <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-right min-w-[150px]">
                                                     {fmtINR(primaryInterestShare, false, 2)}
                                                 </td>
+                                                {!isManual && hasPrimaryTDS && (
+                                                    <td className="py-3 px-5 text-sm font-medium text-red-600 dark:text-red-400 text-right">
+                                                        {(() => {
+                                                            const totalTds = (isInterestRow ? primaryInterestShare * 0.1 : 0) + getSplitTDS(entry.splits, loan.primary_account_name);
+                                                            return totalTds > 0 ? fmtINR(totalTds, false) : '—';
+                                                        })()}
+                                                    </td>
+                                                )}
                                                 <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-left group relative">
                                                     <div className="flex items-center justify-start gap-1">
                                                         <input
@@ -515,12 +530,12 @@ const RepaymentTable = ({
                                                                     />
                                                                 ) : (
                                                                     <div
-                                                                        className={`rounded px-1 transition-colors group relative inline-flex items-center justify-end gap-1 ${!s.hasOverride ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : 'cursor-default'}`}
-                                                                        title={s.hasOverride ? "Override Applied. Edit payment details in sub-rows below." : "Click to override details"}
+                                                                        className={`rounded px-1 transition-colors group relative inline-flex items-center justify-end gap-1 ${(!s.hasOverride && !isFutureRow && entry.received_date) ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : 'cursor-default'} ${(isFutureRow || !entry.received_date) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                                        title={isFutureRow ? "Future date installments cannot be edited." : (!entry.received_date ? "Fill Received Date to edit secondary payments." : (s.hasOverride ? "Override Applied. Edit payment details in sub-rows below." : "Click to override details"))}
                                                                         onClick={(e) => {
-                                                                            if (s.hasOverride) return;
+                                                                            if (s.hasOverride || isFutureRow || !entry.received_date) return;
                                                                             e.stopPropagation();
-                                                                            onEditAccountSplit && onEditAccountSplit(entry, acc.account_name, s.netShare, false, 0);
+                                                                            onEditAccountSplit && onEditAccountSplit(entry, acc.account_name, s.grossShare, false, 0, s.tds);
                                                                         }}
                                                                     >
                                                                         <span className={`${s.hasOverride ? 'font-bold' : ''} ${Math.round(s.balance * 100) / 100 > 0 ? 'text-red-500' : (s.hasOverride ? 'text-slate-900 dark:text-slate-100' : '')}`}>
@@ -537,7 +552,10 @@ const RepaymentTable = ({
                                                             </td>
                                                             {!isManual && (
                                                                 <td className="py-3 px-5 text-sm font-medium text-red-600 dark:text-red-400 text-right">
-                                                                    {s.hasOverride ? fmtINR(getSplitTDS(entry.splits, acc.account_name), false) : (isInterestRow ? fmtINR(s.tds, false) : '—')}
+                                                                    {(() => {
+                                                                        const totalTds = (isInterestRow ? s.tds : 0) + getSplitTDS(entry.splits, acc.account_name);
+                                                                        return totalTds > 0 ? fmtINR(totalTds, false) : '—';
+                                                                    })()}
                                                                 </td>
                                                             )}
                                                         </React.Fragment>
@@ -596,7 +614,7 @@ const RepaymentTable = ({
                                                                 </div>
                                                             </td>
                                                             <td className="p-0"></td>
-                                                            {!isManual && hasAnyTDS && (
+                                                            {!isManual && hasPrimaryTDS && (
                                                                 <td className="p-0">
                                                                     <div className="flex justify-end items-center py-2.5 px-5 h-full">
                                                                         {primaryPartial?.tds ? (
@@ -609,7 +627,6 @@ const RepaymentTable = ({
                                                                     </div>
                                                                 </td>
                                                             )}
-                                                            <td className="p-0"></td>
                                                             <td className="p-0"></td>
                                                             {(loan.remaining_accounts || []).map((acc, accountIdx) => {
                                                                 const s = secondarySplits[accountIdx];
@@ -629,20 +646,24 @@ const RepaymentTable = ({
                                                                                 )}
                                                                             </div>
                                                                         </td>
-                                                                        <td className="p-0">
-                                                                            <div className="flex justify-end items-center py-2.5 px-5 h-full">
-                                                                                {partial?.tds ? (
-                                                                                    <span className="text-sm font-medium text-red-600 dark:text-red-400 px-1.5 text-right w-full">
-                                                                                        {fmtINR(partial.tds, false)}
-                                                                                    </span>
-                                                                                ) : (
-                                                                                    partial ? <span className="text-sm font-medium text-slate-300 dark:text-slate-700 px-1.5 text-right w-full">—</span> : null
-                                                                                )}
-                                                                            </div>
-                                                                        </td>
+                                                                        <td className="p-0"></td>
+                                                                        {!isManual && (
+                                                                            <td className="p-0">
+                                                                                <div className="flex justify-end items-center py-2.5 px-5 h-full">
+                                                                                    {partial?.tds ? (
+                                                                                        <span className="text-sm font-medium text-red-600 dark:text-red-400 px-1.5 text-right w-full">
+                                                                                            {fmtINR(partial.tds, false)}
+                                                                                        </span>
+                                                                                    ) : (
+                                                                                        partial ? <span className="text-sm font-medium text-slate-300 dark:text-slate-700 px-1.5 text-right w-full">—</span> : null
+                                                                                    )}
+                                                                                </div>
+                                                                            </td>
+                                                                        )}
                                                                     </React.Fragment>
                                                                 );
                                                             })}
+                                                            {isManual && <td className="p-0"></td>}
                                                         </tr>
                                                     );
                                                 })
@@ -677,7 +698,8 @@ const RepaymentTable = ({
                                                             )}
                                                         </div>
                                                     </td>
-                                                    {!isManual && hasAnyTDS && <td className="p-0"></td>}
+                                                    <td className="p-0"></td>
+                                                    {!isManual && hasPrimaryTDS && <td className="p-0"></td>}
                                                     <td className="p-0"></td>
                                                     {(loan.remaining_accounts || []).map((acc, i) => {
                                                         const s = secondarySplits[i];
@@ -707,10 +729,11 @@ const RepaymentTable = ({
                                                                     </div>
                                                                 </td>
                                                                 <td className="p-0"></td>
-                                                                <td className="p-0"></td>
+                                                                {!isManual && <td className="p-0"></td>}
                                                             </React.Fragment>
                                                         );
                                                     })}
+                                                    {isManual && <td className="p-0"></td>}
                                                 </tr>
                                             )}
                                         </React.Fragment>
@@ -718,7 +741,7 @@ const RepaymentTable = ({
                                 })
                             ) : (
                                 <tr>
-                                    <td colSpan={isManual ? 10 + (loan.remaining_accounts?.length || 0)*2 : 9 + (loan.remaining_accounts?.length || 0) * 3} className="py-8 text-center text-slate-500 text-sm">No data available.</td>
+                                    <td colSpan={isManual ? 11 + (loan.remaining_accounts?.length || 0) * 2 : 9 + (hasPrimaryTDS ? 1 : 0) + (loan.remaining_accounts?.length || 0) * 3} className="py-8 text-center text-slate-500 text-sm">No data available.</td>
                                 </tr>
                             )}
                         </tbody>
@@ -745,7 +768,7 @@ const RepaymentTable = ({
                                         <td className="py-3 px-5"></td>
                                         <td className="py-3 px-6 text-sm font-bold text-slate-900 dark:text-slate-100 text-right min-w-[150px]">
                                             {fmtINR(data.reduce((s, e) => {
-                                                const pShareAmount = getSplitAmount(e.splits, loan.primary_account_name) ?? (e.type === 'manual' ? 0 : parseINR(e.amount) * primaryRatio);
+                                                const pShareAmount = getSplitAmount(e.splits, loan.primary_account_name) ?? (e.type === 'manual' ? 0 : (parseINR(e.amount) * primaryRatio) - (schedule && e.id === schedule[0]?.id ? (loan.primary_account_interest || 0) * 0.10 : 0));
                                                 return s + pShareAmount;
                                             }, 0), false)}
                                         </td>
@@ -755,6 +778,17 @@ const RepaymentTable = ({
                                                 return s + pIntShareAmount;
                                             }, 0), false, 2)}
                                         </td>
+                                        {!isManual && hasPrimaryTDS && (
+                                            <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-right w-20">
+                                                {fmtINR(data.reduce((s, e) => {
+                                                    const isInterest = schedule && e.id === (data.filter(s => s.type !== 'manual')[0]?.id);
+                                                    const primaryIntRatio = (loan.primary_account_interest || 0) / ((loan.primary_account_interest || 0) + (loan.remaining_accounts || []).reduce((sum, a) => sum + (a.interest_amount || 0), 0) || 1);
+                                                    const pIntShareAmount = e.type === 'manual' ? 0 : parseINR(e.interest_amount) * primaryIntRatio;
+                                                    const autoTds = isInterest ? pIntShareAmount * 0.1 : 0;
+                                                    return s + autoTds + getSplitTDS(e.splits, loan.primary_account_name);
+                                                }, 0), false)}
+                                            </td>
+                                        )}
                                         <td className="py-3 px-5 pr-12 text-right font-bold text-slate-400 dark:text-slate-500">—</td>
                                         {(loan.remaining_accounts || []).map((acc, i) => {
                                             const accTotal = (acc.share || 0) + (acc.interest_amount || 0);
@@ -780,11 +814,8 @@ const RepaymentTable = ({
                                                         <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-right">
                                                             {fmtINR(data.reduce((s, e) => {
                                                                 const isInterest = schedule && e.id === (data.filter(s => s.type !== 'manual')[0]?.id);
-                                                                const overrides = getSplitData(e.splits, acc.account_name);
-                                                                if (overrides !== null && overrides.length > 0) {
-                                                                    return s + getSplitTDS(e.splits, acc.account_name);
-                                                                }
-                                                                return s + (isInterest ? (acc.interest_amount || 0) * 0.10 : 0);
+                                                                const autoTds = isInterest ? (acc.interest_amount || 0) * 0.10 : 0;
+                                                                return s + autoTds + getSplitTDS(e.splits, acc.account_name);
                                                             }, 0), false)}
                                                         </td>
                                                     )}
@@ -820,7 +851,7 @@ const RepaymentTable = ({
 
 
 
-const EditAccountSplitModal = ({ isOpen, onClose, entry, loanData, accountName, currentShare, isEditingBalance, editIndex, onSave }) => {
+const EditAccountSplitModal = ({ isOpen, onClose, entry, loanData, accountName, currentShare, isEditingBalance, editIndex, defaultTds, onSave }) => {
     const [amount, setAmount] = useState('');
     const [tds, setTds] = useState('');
     const [remarks, setRemarks] = useState('');
@@ -844,8 +875,8 @@ const EditAccountSplitModal = ({ isOpen, onClose, entry, loanData, accountName, 
                     setTds(item.tds || '');
                     setRemarks(item.remarks || '');
                 } else {
-                    // First-time override - default to system-calculated share
-                    setAmount(currentShare ?? '');
+                    // First-time override - start with empty TDS (it adds to the base 10% in the table)
+                    setAmount('');
                     setTds('');
                     setRemarks('');
                 }
@@ -853,7 +884,7 @@ const EditAccountSplitModal = ({ isOpen, onClose, entry, loanData, accountName, 
             setSaving(false);
             setErrorMsg('');
         }
-    }, [isOpen, entry, loanData, accountName, currentShare, isEditingBalance, editIndex]);
+    }, [isOpen, entry, loanData, accountName, currentShare, isEditingBalance, editIndex, defaultTds]);
 
     const handleSave = async () => {
         let numericAmount = parseINR(amount);
@@ -923,8 +954,9 @@ const EditAccountSplitModal = ({ isOpen, onClose, entry, loanData, accountName, 
                         <input
                             type="text"
                             value={formatINRInput(tds)}
+                            disabled={accountName !== loanData?.primary_account_name}
                             onChange={e => setTds(formatINRInput(e.target.value))}
-                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            className={`w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 ${accountName !== loanData?.primary_account_name ? 'opacity-50 cursor-not-allowed select-none' : ''}`}
                         />
                     </div>
                     <div>
@@ -1330,9 +1362,42 @@ const DeleteConfirmationModal = ({ isOpen, onClose, onConfirm }) => {
     );
 };
 
+const ClearConfirmationModal = ({ isOpen, onClose, onConfirm }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in duration-200">
+                <div className="p-8 text-center">
+                    <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/20 rounded-full flex items-center justify-center mx-auto mb-6 text-indigo-500">
+                        <span className="material-symbols-outlined text-[40px]">backspace</span>
+                    </div>
+                    <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Clear Row Data?</h3>
+                    <p className="text-slate-500 dark:text-slate-400 mb-8 px-4">
+                        Are you sure you want to clear all recording data in this row? Dates, payment amounts, and remarks will be reset.
+                    </p>
+                    <div className="flex gap-4">
+                        <button
+                            onClick={onClose}
+                            className="flex-1 px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={onConfirm}
+                            className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all active:scale-95"
+                        >
+                            Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const UploadStatusModal = ({ status, message, onClose }) => {
     if (status === 'idle') return null;
-    
+
     return (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-sm overflow-hidden border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
@@ -1392,6 +1457,8 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [itemToDelete, setItemToDelete] = useState(null);
     const [splitModalData, setSplitModalData] = useState(null);
+    const [isClearModalOpen, setIsClearModalOpen] = useState(false);
+    const [itemToClear, setItemToClear] = useState(null);
     const [uploadStatus, setUploadStatus] = useState({ status: 'idle', message: '' });
     const fileInputRef = useRef(null);
     const isPanel = Boolean(onClose);
@@ -1449,6 +1516,51 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
             }
         } catch (e) {
             console.error('Error updating field:', e);
+        }
+    };
+
+    const handleClearRow = (id) => {
+        setItemToClear(id);
+        setIsClearModalOpen(true);
+    };
+
+    const confirmClear = async () => {
+        if (!itemToClear) return;
+
+        const resetData = {
+            received_date: '',
+            payment_date: '',
+            due_date: '',
+            splits: null,
+            cheque_no: '',
+            remarks: ''
+        };
+
+        // Update local state optimistically
+        setLoan(prev => ({
+            ...prev,
+            repayment_schedule: prev.repayment_schedule.map(s =>
+                s.id === itemToClear ? { ...s, ...resetData } : s
+            )
+        }));
+
+        setIsClearModalOpen(false);
+
+        // Sync with backend
+        try {
+            const res = await fetch(`/api/repayment-schedule/${itemToClear}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(resetData)
+            });
+            const result = await res.json();
+            if (!res.ok || !result.success) {
+                console.error(result.error || 'Failed to clear row');
+            }
+        } catch (error) {
+            console.error("Error clearing row:", error);
+        } finally {
+            setItemToClear(null);
         }
     };
 
@@ -1611,10 +1723,10 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
             } else {
                 setUploadStatus({ status: 'error', message: result.error || "Failed to process interest schedule." });
             }
-            
+
             // Clear input
             if (fileInputRef.current) fileInputRef.current.value = '';
-            
+
         } catch (error) {
             console.error('Excel upload error:', error);
             setUploadStatus({ status: 'error', message: "Network error occurred during upload." });
@@ -1754,15 +1866,14 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
             const primaryGross = parseINR(entry.amount) * (primaryRepayPercent / 100);
 
             const pOverrideAmt = getSplitAmount(entry.splits, loan.primary_account_name);
-            const pOverrideTDS = getSplitTDS(entry.splits, loan.primary_account_name);
+            const pAutoTds = isInterestRow ? (loan.primary_account_interest || 0) * 0.10 : 0;
+            const pTdsVal = pAutoTds + getSplitTDS(entry.splits, loan.primary_account_name);
 
-            let pVal, pTdsVal;
+            let pVal;
             if (pOverrideAmt !== null) {
                 pVal = pOverrideAmt;
-                pTdsVal = pOverrideTDS;
             } else {
-                pTdsVal = isInterestRow ? (loan.primary_account_interest || 0) * 0.10 : 0;
-                pVal = primaryGross - pTdsVal;
+                pVal = primaryGross - pAutoTds;
             }
 
             const pIntVal = parseINR(entry.interest_amount) * (excelPIntPercent / 100);
@@ -1786,18 +1897,14 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
 
                 const sGross = parseINR(entry.amount) * (accRepayPercent / 100);
                 const sOverrideAmt = getSplitAmount(entry.splits, acc.account_name);
-                const sOverrideTDS = getSplitTDS(entry.splits, acc.account_name);
+                const sAutoTds = isInterestRow ? (acc.interest_amount || 0) * 0.10 : 0;
+                const sTdsVal = sAutoTds + getSplitTDS(entry.splits, acc.account_name);
 
-                const excelSIntPercent = excelTotalInterest > 0 ? ((acc.interest_amount || 0) / excelTotalInterest * 100) : 0;
-                const sIntVal = parseINR(entry.interest_amount) * (excelSIntPercent / 100);
-
-                let sVal, sTdsVal;
+                let sVal;
                 if (sOverrideAmt !== null) {
                     sVal = sOverrideAmt;
-                    sTdsVal = sOverrideTDS;
                 } else {
-                    sTdsVal = isInterestRow ? (acc.interest_amount || 0) * 0.10 : 0;
-                    sVal = sGross - sTdsVal;
+                    sVal = sGross - sAutoTds;
                 }
                 rowData.push(sVal);
                 rowData.push(sIntVal);
@@ -1813,10 +1920,10 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
 
         // Add Total Row for System Schedule
         const sysTotalRow = [
-            'TOTAL', 
-            '', 
-            '', 
-            systemData.reduce((s, e) => s + parseINR(e.amount), 0), 
+            'TOTAL',
+            '',
+            '',
+            systemData.reduce((s, e) => s + parseINR(e.amount), 0),
             systemData.reduce((s, e) => s + parseINR(e.interest_amount), 0),
             ''
         ];
@@ -1836,7 +1943,11 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
         }, 0));
 
         if (hasAnyTDS) {
-            sysTotalRow.push(systemData.reduce((s, e) => s + (getSplitTDS(e.splits, loan.primary_account_name) || (e.id === systemData[0]?.id ? (loan.primary_account_interest || 0) * 0.10 : 0)), 0));
+            sysTotalRow.push(systemData.reduce((s, e) => {
+                const isInterestRow = e.id === systemData[0]?.id;
+                const autoTds = isInterestRow ? (loan.primary_account_interest || 0) * 0.10 : 0;
+                return s + autoTds + getSplitTDS(e.splits, loan.primary_account_name);
+            }, 0));
         }
 
         sysTotalRow.push(''); // Due Date gap
@@ -1862,7 +1973,11 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
 
             // TDS Total
             if (hasAnyTDS) {
-                sysTotalRow.push(systemData.reduce((s, e) => s + (getSplitTDS(e.splits, acc.account_name) || (e.id === systemData[0]?.id ? (acc.interest_amount || 0) * 0.10 : 0)), 0));
+                sysTotalRow.push(systemData.reduce((s, e) => {
+                    const isInterestRow = e.id === systemData[0]?.id;
+                    const autoTds = isInterestRow ? (acc.interest_amount || 0) * 0.10 : 0;
+                    return s + autoTds + getSplitTDS(e.splits, acc.account_name);
+                }, 0));
             }
         });
 
@@ -2024,7 +2139,7 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
 
 
     return (
-        <div ref={scrollContainerRef} className={isPanel ? 'flex flex-col h-full' : 'flex-1 overflow-y-auto w-full flex flex-col'}>
+        <div ref={scrollContainerRef} className={isPanel ? 'flex flex-col h-full scrollbar-premium' : 'flex-1 overflow-y-auto w-full flex flex-col scrollbar-premium'}>
             <main className="mx-auto p-8 flex-1 flex flex-col w-full">
                 {/* Header */}
                 <div className="mb-8">
@@ -2226,6 +2341,7 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                     isPanel={isPanel}
                     handleScheduleUpdate={handleScheduleUpdate}
                     handleFieldChange={handleFieldChange}
+                    onClearRow={handleClearRow}
                     handleSplitChange={handleSplitChange}
                     handleDeleteRow={handleDeleteRow}
                     handleAddRow={handleAddRow}
@@ -2233,7 +2349,7 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                     formatINRInput={formatINRInput}
                     toYYYYMMDD={toYYYYMMDD}
                     toDDMMYYYY={toDDMMYYYY}
-                    onEditAccountSplit={(entry, accountName, currentShare, isEditingBalance, editIndex) => setSplitModalData({ entry, accountName, currentShare, isEditingBalance, editIndex })}
+                    onEditAccountSplit={(entry, accountName, currentShare, isEditingBalance, editIndex, defaultTds) => setSplitModalData({ entry, accountName, currentShare, isEditingBalance, editIndex, defaultTds })}
                 />
 
                 <RepaymentTable
@@ -2248,6 +2364,7 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                     isPanel={isPanel}
                     handleScheduleUpdate={handleScheduleUpdate}
                     handleFieldChange={handleFieldChange}
+                    onClearRow={handleClearRow}
                     handleSplitChange={handleSplitChange}
                     handleDeleteRow={handleDeleteRow}
                     handleAddRow={handleAddRow}
@@ -2255,7 +2372,7 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                     formatINRInput={formatINRInput}
                     toYYYYMMDD={toYYYYMMDD}
                     toDDMMYYYY={toDDMMYYYY}
-                    onEditAccountSplit={(entry, accountName, currentShare, isEditingBalance, editIndex) => setSplitModalData({ entry, accountName, currentShare, isEditingBalance, editIndex })}
+                    onEditAccountSplit={(entry, accountName, currentShare, isEditingBalance, editIndex, defaultTds) => setSplitModalData({ entry, accountName, currentShare, isEditingBalance, editIndex, defaultTds })}
                 />
 
                 <EditAccountsModal
@@ -2273,6 +2390,7 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                     currentShare={splitModalData?.currentShare}
                     isEditingBalance={splitModalData?.isEditingBalance}
                     editIndex={splitModalData?.editIndex ?? 0}
+                    defaultTds={splitModalData?.defaultTds}
                     loanData={loan}
                     onSave={async (scheduleId, accountName, amount, tds, remarks, editIdx) => {
                         await handleAccountSplitSave(scheduleId, accountName, amount, tds, remarks, editIdx);
@@ -2286,7 +2404,16 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                     onConfirm={confirmDelete}
                 />
 
-                <UploadStatusModal 
+                <ClearConfirmationModal
+                    isOpen={isClearModalOpen}
+                    onClose={() => {
+                        setIsClearModalOpen(false);
+                        setItemToClear(null);
+                    }}
+                    onConfirm={confirmClear}
+                />
+
+                <UploadStatusModal
                     status={uploadStatus.status}
                     message={uploadStatus.message}
                     onClose={() => setUploadStatus({ status: 'idle', message: '' })}

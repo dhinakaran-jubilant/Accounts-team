@@ -39,3 +39,6 @@ backend/robust-shadow-471605-k1-6152c9ae90ff.json
 .idea/
 .DS_Store
 Thumbs.db
+
+# SSL Certificates
+backend/*.pem

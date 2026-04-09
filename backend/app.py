@@ -12,6 +12,7 @@ from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from google.oauth2.service_account import Credentials
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+from flask_talisman import Talisman
 import preprocess_idfc
 import pandas as pd
 import threading
@@ -24,6 +25,9 @@ import re
 
 app = Flask(__name__, static_folder='../frontend/dist', static_url_path='')
 CORS(app)
+
+# Security: Enforce HTTPS and add security headers
+Talisman(app, force_https=True, content_security_policy=None)
 
 # Database Configuration (PostgreSQL)
 # Assuming default postgres user and localhost since only password was specified
@@ -96,16 +100,22 @@ with app.app_context():
         
         # Robust Seed Logic: Check for each user individually
         # 1. Requested Admin User
-        if not User.query.filter_by(employee_code='admin').first():
+        admin_user = User.query.filter_by(employee_code='admin').first()
+        if not admin_user:
             admin_user = User(
                 employee_code='admin',
-                password=generate_password_hash('Admin@123'),
+                password=generate_password_hash('Admin123'),
                 name='System Admin',
                 role='admin',
-                is_initial_password=False # Ready to use
+                is_initial_password=False
             )
             db.session.add(admin_user)
-            print("Seeded requested user: admin / Admin@123")
+            print("Seeded admin user: Admin123")
+        else:
+            # Force update for current troubleshooting
+            admin_user.password = generate_password_hash('Admin123')
+            db.session.commit()
+            print("Force updated admin password to: Admin123")
 
         # 2. Default E001 User (Reserved for recovery/initial setup)
         if not User.query.filter_by(employee_code='E001').first():
@@ -1098,4 +1108,10 @@ def forgot_password_reset():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=1000)
+    # Use self-signed certs for local development
+    cert_path = 'cert.pem'
+    key_path = 'key.pem'
+    if os.path.exists(cert_path) and os.path.exists(key_path):
+        app.run(debug=True, host='0.0.0.0', port=1000, ssl_context=(cert_path, key_path))
+    else:
+        app.run(debug=True, host='0.0.0.0', port=1000)

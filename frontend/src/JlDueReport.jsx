@@ -169,6 +169,7 @@ const JlDueReport = ({ user }) => {
     const [loanRefId, setLoanRefId] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [uploadError, setUploadError] = useState('');
+    const [accountFilter, setAccountFilter] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedDate, setSelectedDate] = useState('');
     const [selectedLoanId, setSelectedLoanId] = useState(null);
@@ -316,12 +317,21 @@ const JlDueReport = ({ user }) => {
             });
         }
 
-        if (searchTerm) {
-            const term = searchTerm.toUpperCase();
+        if (accountFilter) {
+            const term = accountFilter.toUpperCase();
             result = result.filter(row => {
                 const priMatch = getAcronym(row.primary_account_name).toUpperCase() === term;
                 const secMatch = (row.secondary_accounts || []).some(acc => getAcronym(acc.account_name).toUpperCase() === term);
                 return priMatch || secMatch;
+            });
+        }
+
+        if (searchTerm) {
+            const term = searchTerm.toLowerCase();
+            result = result.filter(row => {
+                const clientMatch = (row.client_name || '').toLowerCase().includes(term);
+                const idMatch = (row.loan_ref_id || '').toLowerCase().includes(term);
+                return clientMatch || idMatch;
             });
         }
 
@@ -346,7 +356,7 @@ const JlDueReport = ({ user }) => {
         }
 
         return result;
-    }, [data, searchTerm, selectedDate]);
+    }, [data, accountFilter, searchTerm, selectedDate]);
 
     // Pagination calculations
     const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
@@ -390,12 +400,21 @@ const JlDueReport = ({ user }) => {
         let osData = data.filter(loan => getLoanStatus(loan).label !== 'Closed');
 
         // If an account filter is active in the UI, respect it in the O/S report too
-        if (searchTerm) {
-            const term = searchTerm.toUpperCase();
+        if (accountFilter) {
+            const term = accountFilter.toUpperCase();
             osData = osData.filter(row => {
                 const priMatch = getAcronym(row.primary_account_name).toUpperCase() === term;
                 const secMatch = (row.secondary_accounts || []).some(acc => getAcronym(acc.account_name).toUpperCase() === term);
                 return priMatch || secMatch;
+            });
+        }
+
+        if (searchTerm) {
+            const term = searchTerm.toLowerCase();
+            osData = osData.filter(row => {
+                const clientMatch = (row.client_name || '').toLowerCase().includes(term);
+                const idMatch = (row.loan_ref_id || '').toLowerCase().includes(term);
+                return clientMatch || idMatch;
             });
         }
 
@@ -743,7 +762,7 @@ const JlDueReport = ({ user }) => {
         const anchor = document.createElement('a');
         anchor.href = url;
         const dateStr = selectedDate ? `_${selectedDate}` : '';
-        anchor.download = `${reportPrefix}_${searchTerm || 'All'}${dateStr}.xlsx`;
+        anchor.download = `${reportPrefix}_${accountFilter || searchTerm || 'All'}${dateStr}.xlsx`;
         anchor.click();
         window.URL.revokeObjectURL(url);
     };
@@ -752,19 +771,26 @@ const JlDueReport = ({ user }) => {
         <div ref={pageRef} className="h-[calc(100vh-64px)] w-full flex flex-col overflow-hidden">
             <main className="mx-auto p-8 flex-1 flex flex-col w-full min-h-0">
                 {/* Header Section */}
-                <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+                <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2 tracking-tight">JL Due Report</h1>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed">
-                            Overview of all pending and overdue accounts for the current billing cycle.
-                        </p>
+                        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white">JL Due Report</h1>
                     </div>
                     <div className="flex items-center gap-3">
-                        <div className="relative">
-                            <select
+                        <div className="relative group">
+                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm transition-colors group-focus-within:text-primary">search</span>
+                            <input
+                                type="text"
+                                placeholder="Search Loan ID or Client..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-64 appearance-none cursor-pointer pr-10"
+                                className="pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-64 transition-all"
+                            />
+                        </div>
+                        <div className="relative">
+                            <select
+                                value={accountFilter}
+                                onChange={(e) => setAccountFilter(e.target.value)}
+                                className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-56 appearance-none cursor-pointer pr-10"
                             >
                                 <option value="">All Accounts</option>
                                 <option value="SCS">Surge Capital Solutions - SCS</option>
@@ -789,9 +815,10 @@ const JlDueReport = ({ user }) => {
                                 className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-40 cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"
                             />
                         </div>
-                        {(searchTerm || selectedDate) && (
+                        {(accountFilter || searchTerm || selectedDate) && (
                             <button
                                 onClick={() => {
+                                    setAccountFilter('');
                                     setSearchTerm('');
                                     setSelectedDate('');
                                 }}
@@ -911,7 +938,7 @@ const JlDueReport = ({ user }) => {
                                                         </div>
                                                         <p className="text-slate-900 dark:text-white text-lg font-bold mb-1">No Results Found</p>
                                                         <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto px-10">
-                                                            {searchTerm || selectedDate
+                                                            {accountFilter || searchTerm || selectedDate
                                                                 ? "We couldn't find any loans matching your current search or date filters. Try adjusting your criteria."
                                                                 : "There are no loan records to display based on your access level or account activity."}
                                                         </p>
@@ -922,7 +949,7 @@ const JlDueReport = ({ user }) => {
                                             <tr
                                                 key={row.id}
                                                 onClick={() => {
-                                                    if (searchTerm || selectedDate) {
+                                                    if (accountFilter || searchTerm || selectedDate) {
                                                         setSelectedLoanId(row.id);
                                                     } else {
                                                         navigate(`/jl-due-report/${row.id}`);
