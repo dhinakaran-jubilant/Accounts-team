@@ -16,6 +16,9 @@ export default function ForgotPasswordModal({ onClose }) {
   const [answer, setAnswer] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showAnswer, setShowAnswer] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -148,14 +151,25 @@ export default function ForgotPasswordModal({ onClose }) {
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.2em] ml-1">Your Answer <span className="text-rose-500">*</span></label>
-                  <input
-                    type="password"
-                    value={answer}
-                    onChange={(e) => setAnswer(e.target.value)}
-                    placeholder="Enter your security answer"
-                    className="w-full h-14 px-5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
-                    required
-                  />
+                  <div className="relative">
+                    <input
+                      type={showAnswer ? 'text' : 'password'}
+                      value={answer}
+                      onChange={(e) => setAnswer(e.target.value)}
+                      placeholder="Enter your security answer"
+                      className="w-full h-14 px-5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAnswer(prev => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors z-10"
+                    >
+                      <span className="material-symbols-outlined text-slate-400 text-lg select-none">
+                        {showAnswer ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -166,25 +180,47 @@ export default function ForgotPasswordModal({ onClose }) {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.2em] ml-1">New Password <span className="text-rose-500">*</span></label>
-                    <input
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full h-14 px-5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
-                      required
-                    />
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full h-14 px-5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword((prev) => !prev)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors z-10"
+                      >
+                        <span className="material-symbols-outlined text-slate-400 text-lg select-none">
+                          {showNewPassword ? 'visibility_off' : 'visibility'}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.2em] ml-1">Confirm Password <span className="text-rose-500">*</span></label>
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full h-14 px-5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
-                      required
-                    />
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full h-14 px-5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword((prev) => !prev)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors z-10"
+                      >
+                        <span className="material-symbols-outlined text-slate-400 text-lg select-none">
+                          {showConfirmPassword ? 'visibility_off' : 'visibility'}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

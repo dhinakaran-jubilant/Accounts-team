@@ -62,9 +62,36 @@ ensure_database_exists()
 
 db.init_app(app)
 
+SCHEMA_VERIFIED = False
+
+def verify_schema():
+    global SCHEMA_VERIFIED
+    if SCHEMA_VERIFIED:
+        return
+    try:
+        from sqlalchemy import inspect, text
+        inspector = inspect(db.engine)
+        for table_name, table in db.Model.metadata.tables.items():
+            if inspector.has_table(table_name):
+                columns_in_db = {col['name'] for col in inspector.get_columns(table_name)}
+                for column in table.columns:
+                    if column.name not in columns_in_db:
+                        col_type = column.type.compile(db.engine.dialect)
+                        print(f"Auto-migrating: Adding column '{column.name}' ({col_type}) to table '{table_name}'")
+                        alter_stmt = text(f"ALTER TABLE {table_name} ADD COLUMN {column.name} {col_type}")
+                        try:
+                            with db.engine.begin() as conn:
+                                conn.execute(alter_stmt)
+                        except Exception as e:
+                            print(f"Error adding column {column.name}: {e}")
+        SCHEMA_VERIFIED = True
+    except Exception as e:
+        print(f"Schema verification failed: {e}")
+
 with app.app_context():
     try:
         db.create_all()
+        verify_schema()
         print("Connected to PostgreSQL and verified tables.")
         
         # Robust Seed Logic: Check for each user individually
@@ -393,6 +420,7 @@ def ensure_db_and_tables():
     with app.app_context():
         try:
             db.create_all()
+            verify_schema()
         except Exception as e:
             print(f"Table creation error: {e}")
 

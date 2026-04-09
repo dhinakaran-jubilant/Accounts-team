@@ -12,6 +12,8 @@ import config from './config';
 export default function InitialSetupModal({ employeeCode, onClose }) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [q1, setQ1] = useState('');
   const [a1, setA1] = useState('');
   const [error, setError] = useState('');
@@ -90,25 +92,47 @@ export default function InitialSetupModal({ employeeCode, onClose }) {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-[12px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.1em] ml-1">New Password <span className="text-rose-500">*</span></label>
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full h-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
-                    required
-                  />
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full h-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors z-10"
+                    >
+                      <span className="material-symbols-outlined text-slate-400 text-lg select-none">
+                        {showNewPassword ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[12px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.1em] ml-1">Confirm Password <span className="text-rose-500">*</span></label>
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full h-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
-                    required
-                  />
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full h-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors z-10"
+                    >
+                      <span className="material-symbols-outlined text-slate-400 text-lg select-none">
+                        {showConfirmPassword ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
