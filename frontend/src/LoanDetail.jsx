@@ -234,7 +234,7 @@ const RepaymentTable = ({
                                     const primaryInterestPercent = totalInterest > 0 ? (loan.primary_account_interest / totalInterest) * 100 : 0;
                                     const primaryInterestShare = parseINR(entry.interest_amount) * (primaryInterestPercent / 100);
 
-                                    const primaryAutoTds = isInterestRow ? (primaryInterestShare * 0.1) : 0;
+                                    const primaryAutoTds = 0; // Primary has no default TDS
                                     const primaryNetShare = primaryShare - primaryAutoTds;
 
                                     const overridenDataArray = getSplitData(entry.splits, loan.primary_account_name);
@@ -455,7 +455,7 @@ const RepaymentTable = ({
                                                             onClick={(e) => {
                                                                 if (hasPrimaryOverride || isFutureRow) return;
                                                                 e.stopPropagation();
-                                                                const primarySystemTDS = isInterestRow ? (loan.primary_account_interest || 0) * 0.10 : 0;
+                                                                const primarySystemTDS = 0; // Primary has no default TDS
                                                                 onEditAccountSplit && onEditAccountSplit(entry, loan.primary_account_name, primaryShare, false, 0, primarySystemTDS);
                                                             }}
                                                         >
@@ -474,7 +474,7 @@ const RepaymentTable = ({
                                                 {!isManual && hasPrimaryTDS && (
                                                     <td className="py-3 px-5 text-sm font-medium text-red-600 dark:text-red-400 text-right">
                                                         {(() => {
-                                                            const totalTds = (isInterestRow ? primaryInterestShare * 0.1 : 0) + getSplitTDS(entry.splits, loan.primary_account_name);
+                                                            const totalTds = getSplitTDS(entry.splits, loan.primary_account_name);
                                                             return totalTds > 0 ? fmtINR(totalTds, false) : '—';
                                                         })()}
                                                     </td>
@@ -587,8 +587,7 @@ const RepaymentTable = ({
                                                                 <div className="flex justify-end items-center max-h-12 py-2.5 px-5 opacity-100 gap-5 select-none font-medium">
                                                                     {(() => {
                                                                         const remarksList = [
-                                                                            primaryPartial?.remarks,
-                                                                            ...(secondarySplits.map(s => s.splits?.[actualIndex]?.remarks))
+                                                                            primaryPartial?.remarks
                                                                         ].filter(Boolean);
                                                                         if (remarksList.length === 0) return null;
                                                                         return (
@@ -627,7 +626,22 @@ const RepaymentTable = ({
                                                                     </div>
                                                                 </td>
                                                             )}
-                                                            <td className="p-0"></td>
+                                                            <td className="p-0">
+                                                                <div className="flex justify-end items-center py-2.5 px-4 h-full gap-3 min-w-max">
+                                                                    {(() => {
+                                                                        const secRemarks = secondarySplits.map(s => s.splits?.[actualIndex]?.remarks).filter(Boolean);
+                                                                        if (secRemarks.length > 0) {
+                                                                            return (
+                                                                                <span className="text-[12px] font-medium text-slate-600 dark:text-slate-400 truncate max-w-[150px] border-r border-slate-300 dark:border-slate-700 pr-3" title={secRemarks.join(" | ")}>
+                                                                                    {secRemarks.join(" | ")}
+                                                                                </span>
+                                                                            );
+                                                                        }
+                                                                        return null;
+                                                                    })()}
+                                                                    <span className="text-xs text-slate-500 dark:text-slate-400 shrink-0 select-none">↳ Payment #{actualIndex + 1}:</span>
+                                                                </div>
+                                                            </td>
                                                             {(loan.remaining_accounts || []).map((acc, accountIdx) => {
                                                                 const s = secondarySplits[accountIdx];
                                                                 const partial = s.splits && s.splits[actualIndex];
@@ -700,7 +714,11 @@ const RepaymentTable = ({
                                                     </td>
                                                     <td className="p-0"></td>
                                                     {!isManual && hasPrimaryTDS && <td className="p-0"></td>}
-                                                    <td className="p-0"></td>
+                                                    <td className="p-0">
+                                                        <div className={`transition-all duration-300 ease-in-out overflow-hidden flex justify-end items-center gap-2 min-w-max ${expandedRows[entry.id] ? 'max-h-12 py-2.5 px-4 opacity-100' : 'max-h-0 py-0 px-4 opacity-0'}`}>
+                                                            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 shrink-0 select-none">↳ Balance Remaining:</span>
+                                                        </div>
+                                                    </td>
                                                     {(loan.remaining_accounts || []).map((acc, i) => {
                                                         const s = secondarySplits[i];
                                                         const clickable = s.hasOverride && Math.round(s.balance * 100) / 100 > 0;
@@ -768,7 +786,7 @@ const RepaymentTable = ({
                                         <td className="py-3 px-5"></td>
                                         <td className="py-3 px-6 text-sm font-bold text-slate-900 dark:text-slate-100 text-right min-w-[150px]">
                                             {fmtINR(data.reduce((s, e) => {
-                                                const pShareAmount = getSplitAmount(e.splits, loan.primary_account_name) ?? (e.type === 'manual' ? 0 : (parseINR(e.amount) * primaryRatio) - (schedule && e.id === schedule[0]?.id ? (loan.primary_account_interest || 0) * 0.10 : 0));
+                                                const pShareAmount = getSplitAmount(e.splits, loan.primary_account_name) ?? (e.type === 'manual' ? 0 : (parseINR(e.amount) * primaryRatio));
                                                 return s + pShareAmount;
                                             }, 0), false)}
                                         </td>
@@ -784,7 +802,7 @@ const RepaymentTable = ({
                                                     const isInterest = schedule && e.id === (data.filter(s => s.type !== 'manual')[0]?.id);
                                                     const primaryIntRatio = (loan.primary_account_interest || 0) / ((loan.primary_account_interest || 0) + (loan.remaining_accounts || []).reduce((sum, a) => sum + (a.interest_amount || 0), 0) || 1);
                                                     const pIntShareAmount = e.type === 'manual' ? 0 : parseINR(e.interest_amount) * primaryIntRatio;
-                                                    const autoTds = isInterest ? pIntShareAmount * 0.1 : 0;
+                                                    const autoTds = 0; // Primary has no default TDS
                                                     return s + autoTds + getSplitTDS(e.splits, loan.primary_account_name);
                                                 }, 0), false)}
                                             </td>
@@ -1822,27 +1840,70 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
         worksheet.addRow([]); // Gap
 
         // Repayment Schedule Table
-        // Pre-check for TDS columns
+        // Pre-check for TDS columns and O/S columns
         const systemData = (loan.repayment_schedule || []).filter(s => s.type !== 'manual');
-        const hasAnyTDS = systemData.some(entry => {
+        const hasPrimaryTdsCol = systemData.some(entry => getSplitTDS(entry.splits, loan.primary_account_name) > 0);
+        
+        const hasSecondaryTdsCols = {};
+        (loan.remaining_accounts || []).forEach(acc => {
+            hasSecondaryTdsCols[acc.account_name] = systemData.some(entry => {
+                const isInterestRow = entry.id === systemData[0]?.id;
+                return getSplitTDS(entry.splits, acc.account_name) > 0 || (isInterestRow && (acc.interest_amount || 0) > 0);
+            });
+        });
+
+        // Calculate dynamic shares based on total repayment (P + I)
+        const primaryTotal = (loan.primary_account_amount || 0) + (loan.primary_account_interest || 0);
+        const secondaryTotal = (loan.remaining_accounts || []).reduce((s, a) => s + (a.share || 0) + (a.interest_amount || 0), 0);
+        const grandTotal = primaryTotal + secondaryTotal;
+        const primaryRepayPercent = grandTotal > 0 ? (primaryTotal / grandTotal) * 100 : 0;
+        const excelTotalInterest = (loan.primary_account_interest || 0) + (loan.remaining_accounts || []).reduce((s, a) => s + (a.interest_amount || 0), 0);
+        const excelPIntPercent = excelTotalInterest > 0 ? (loan.primary_account_interest / excelTotalInterest * 100) : 0;
+
+        let hasPrimaryOS = false;
+        const hasSecondaryOS = {};
+        (loan.remaining_accounts || []).forEach(acc => hasSecondaryOS[acc.account_name] = false);
+
+        systemData.forEach(entry => {
             const isInterestRow = entry.id === systemData[0]?.id;
-            if (getSplitTDS(entry.splits, loan.primary_account_name) > 0) return true;
-            if (isInterestRow && (loan.primary_account_interest || 0) > 0) return true;
-            return (loan.remaining_accounts || []).some(acc => {
-                if (getSplitTDS(entry.splits, acc.account_name) > 0) return true;
-                if (isInterestRow && (acc.interest_amount || 0) > 0) return true;
-                return false;
+            
+            // Primary check
+            const pGross = parseINR(entry.amount) * (primaryRepayPercent / 100);
+            const pAutoTds = 0; // Primary has no default TDS
+            const pNet = pGross - pAutoTds;
+            const pOverridenData = getSplitData(entry.splits, loan.primary_account_name);
+            const pHasOverride = pOverridenData !== null && pOverridenData.length > 0;
+            const pOverridenAmount = getSplitAmount(entry.splits, loan.primary_account_name) || 0;
+            const pOverridenTDS = getSplitTDS(entry.splits, loan.primary_account_name) || 0;
+            const pBalance = pHasOverride ? pNet - (pOverridenAmount + pOverridenTDS) : 0;
+            if (Math.round(pBalance * 100) / 100 > 0) hasPrimaryOS = true;
+
+            // Secondary check
+            (loan.remaining_accounts || []).forEach(acc => {
+                const accTotal = (acc.share || 0) + (acc.interest_amount || 0);
+                const accRepayPercent = grandTotal > 0 ? (accTotal / grandTotal) * 100 : 0;
+                const sGross = parseINR(entry.amount) * (accRepayPercent / 100);
+                const sAutoTds = isInterestRow ? (acc.interest_amount || 0) * 0.10 : 0;
+                const sNet = sGross - sAutoTds;
+                const splits = getSplitData(entry.splits, acc.account_name);
+                const hasOverride = splits !== null && splits.length > 0;
+                const totalOverriden = getSplitAmount(entry.splits, acc.account_name) || 0;
+                const totalOverridenTDS = getSplitTDS(entry.splits, acc.account_name) || 0;
+                const balance = hasOverride ? sNet - (totalOverriden + totalOverridenTDS) : 0;
+                if (Math.round(balance * 100) / 100 > 0) hasSecondaryOS[acc.account_name] = true;
             });
         });
 
         const headers = ['S.NO', 'DATE', 'CHQ NO', 'AMOUNT', 'INTEREST', 'RECEIVED DATE', getAcronym(loan.primary_account_name), getAcronym(loan.primary_account_name) + ' INT'];
-        if (hasAnyTDS) headers.push('TDS(10%)');
+        if (hasPrimaryTdsCol) headers.push('TDS');
+        if (hasPrimaryOS) headers.push(getAcronym(loan.primary_account_name) + ' O/S');
         headers.push('DUE DATE');
 
         (loan.remaining_accounts || []).forEach(acc => {
             headers.push(getAcronym(acc.account_name));
             headers.push(getAcronym(acc.account_name) + ' INT');
-            if (hasAnyTDS) headers.push('TDS(10%)');
+            if (hasSecondaryTdsCols[acc.account_name]) headers.push('TDS(10%)');
+            if (hasSecondaryOS[acc.account_name]) headers.push(getAcronym(acc.account_name) + ' O/S');
         });
 
         const schedTitleRow = worksheet.addRow(['REPAYMENT SCHEDULE']);
@@ -1853,20 +1914,14 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
         const headRow = worksheet.addRow(headers);
         headRow.eachCell(cell => cell.style = headerStyle);
 
-        // Calculate dynamic shares based on total repayment (P + I)
-        const primaryTotal = (loan.primary_account_amount || 0) + (loan.primary_account_interest || 0);
-        const secondaryTotal = (loan.remaining_accounts || []).reduce((s, a) => s + (a.share || 0) + (a.interest_amount || 0), 0);
-        const grandTotal = primaryTotal + secondaryTotal;
-        const primaryRepayPercent = grandTotal > 0 ? (primaryTotal / grandTotal) * 100 : 0;
-        const excelTotalInterest = (loan.primary_account_interest || 0) + (loan.remaining_accounts || []).reduce((s, a) => s + (a.interest_amount || 0), 0);
-        const excelPIntPercent = excelTotalInterest > 0 ? (loan.primary_account_interest / excelTotalInterest * 100) : 0;
+        // Calculations pre-processed above
 
         systemData.forEach((entry, idx) => {
             const isInterestRow = entry.id === systemData[0]?.id;
             const primaryGross = parseINR(entry.amount) * (primaryRepayPercent / 100);
 
             const pOverrideAmt = getSplitAmount(entry.splits, loan.primary_account_name);
-            const pAutoTds = isInterestRow ? (loan.primary_account_interest || 0) * 0.10 : 0;
+            const pAutoTds = 0; // Primary has no default TDS
             const pTdsVal = pAutoTds + getSplitTDS(entry.splits, loan.primary_account_name);
 
             let pVal;
@@ -1888,12 +1943,20 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                 pVal,
                 pIntVal
             ];
-            if (hasAnyTDS) rowData.push(pTdsVal);
+            if (hasPrimaryTdsCol) rowData.push(pTdsVal);
+            if (hasPrimaryOS) {
+                const overridenDataArray = getSplitData(entry.splits, loan.primary_account_name);
+                const hasPrimaryOverride = overridenDataArray !== null && overridenDataArray.length > 0;
+                const pBalance = hasPrimaryOverride ? (primaryGross - pAutoTds) - (pVal + getSplitTDS(entry.splits, loan.primary_account_name)) : 0;
+                rowData.push(pBalance > 0 ? pBalance : 0);
+            }
             rowData.push(entry.payment_date || '—');
 
             (loan.remaining_accounts || []).forEach(acc => {
                 const accTotal = (acc.share || 0) + (acc.interest_amount || 0);
                 const accRepayPercent = grandTotal > 0 ? (accTotal / grandTotal) * 100 : 0;
+                const excelSIntPercent = excelTotalInterest > 0 ? ((acc.interest_amount || 0) / excelTotalInterest * 100) : 0;
+                const sIntVal = parseINR(entry.interest_amount) * (excelSIntPercent / 100);
 
                 const sGross = parseINR(entry.amount) * (accRepayPercent / 100);
                 const sOverrideAmt = getSplitAmount(entry.splits, acc.account_name);
@@ -1908,7 +1971,14 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                 }
                 rowData.push(sVal);
                 rowData.push(sIntVal);
-                if (hasAnyTDS) rowData.push(sTdsVal);
+                if (hasSecondaryTdsCols[acc.account_name]) rowData.push(sTdsVal);
+                
+                if (hasSecondaryOS[acc.account_name]) {
+                    const splits = getSplitData(entry.splits, acc.account_name);
+                    const hasOverride = splits !== null && splits.length > 0;
+                    const sBalance = hasOverride ? (sGross - sAutoTds) - (sVal + getSplitTDS(entry.splits, acc.account_name)) : 0;
+                    rowData.push(sBalance > 0 ? sBalance : 0);
+                }
             });
 
             const r = worksheet.addRow(rowData);
@@ -1919,34 +1989,39 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
         });
 
         // Add Total Row for System Schedule
-        const sysTotalRow = [
-            'TOTAL',
-            '',
-            '',
-            systemData.reduce((s, e) => s + parseINR(e.amount), 0),
-            systemData.reduce((s, e) => s + parseINR(e.interest_amount), 0),
-            ''
-        ];
+        const sysTotalRow = ['TOTAL', '', '', systemData.reduce((s, e) => s + parseINR(e.amount), 0), systemData.reduce((s, e) => s + parseINR(e.interest_amount), 0), ''];
 
-        // Primary Total
+        // Primary Share Total
         sysTotalRow.push(systemData.reduce((s, e) => {
-            const isInterestRow = e.id === systemData[0]?.id;
-            const primaryGross = parseINR(e.amount) * (primaryRepayPercent / 100);
+            const pGross = parseINR(e.amount) * (primaryRepayPercent / 100);
             const pOverrideAmt = getSplitAmount(e.splits, loan.primary_account_name);
             if (pOverrideAmt !== null) return s + pOverrideAmt;
-            return s + (primaryGross - (isInterestRow ? (loan.primary_account_interest || 0) * 0.10 : 0));
+            return s + pGross; // Primary has no default TDS
         }, 0));
 
-        // Primary Interest Total
+        // Primary Interest Share Total
         sysTotalRow.push(systemData.reduce((s, e) => {
             return s + (parseINR(e.interest_amount) * (excelPIntPercent / 100));
         }, 0));
 
-        if (hasAnyTDS) {
+        if (hasPrimaryTdsCol) {
+            sysTotalRow.push(systemData.reduce((s, e) => {
+                const autoTds = 0; // Primary has no default TDS
+                return s + autoTds + getSplitTDS(e.splits, loan.primary_account_name);
+            }, 0));
+        }
+
+        if (hasPrimaryOS) {
             sysTotalRow.push(systemData.reduce((s, e) => {
                 const isInterestRow = e.id === systemData[0]?.id;
-                const autoTds = isInterestRow ? (loan.primary_account_interest || 0) * 0.10 : 0;
-                return s + autoTds + getSplitTDS(e.splits, loan.primary_account_name);
+                const pGross = parseINR(e.amount) * (primaryRepayPercent / 100);
+                const pAutoTds = 0; // Primary has no default TDS
+                const pOverridenData = getSplitData(e.splits, loan.primary_account_name);
+                const pHasOverride = pOverridenData !== null && pOverridenData.length > 0;
+                const pOverridenAmount = getSplitAmount(e.splits, loan.primary_account_name) || 0;
+                const pOverridenTDS = getSplitTDS(e.splits, loan.primary_account_name) || 0;
+                const pBalance = pHasOverride ? (pGross - pAutoTds) - (pOverridenAmount + pOverridenTDS) : 0;
+                return s + (pBalance > 0 ? pBalance : 0);
             }, 0));
         }
 
@@ -1972,11 +2047,25 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
             }, 0));
 
             // TDS Total
-            if (hasAnyTDS) {
+            if (hasSecondaryTdsCols[acc.account_name]) {
                 sysTotalRow.push(systemData.reduce((s, e) => {
                     const isInterestRow = e.id === systemData[0]?.id;
                     const autoTds = isInterestRow ? (acc.interest_amount || 0) * 0.10 : 0;
                     return s + autoTds + getSplitTDS(e.splits, acc.account_name);
+                }, 0));
+            }
+
+            if (hasSecondaryOS[acc.account_name]) {
+                sysTotalRow.push(systemData.reduce((s, e) => {
+                    const isInterestRow = e.id === systemData[0]?.id;
+                    const sGross = parseINR(e.amount) * (accRepayPercent / 100);
+                    const sAutoTds = isInterestRow ? (acc.interest_amount || 0) * 0.10 : 0;
+                    const splits = getSplitData(e.splits, acc.account_name);
+                    const hasOverride = splits !== null && splits.length > 0;
+                    const sOverridenAmount = getSplitAmount(e.splits, acc.account_name) || 0;
+                    const sOverridenTDS = getSplitTDS(e.splits, acc.account_name) || 0;
+                    const sBalance = hasOverride ? (sGross - sAutoTds) - (sOverridenAmount + sOverridenTDS) : 0;
+                    return s + (sBalance > 0 ? sBalance : 0);
                 }, 0));
             }
         });
