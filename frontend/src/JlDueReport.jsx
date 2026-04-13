@@ -518,7 +518,7 @@ const JlDueReport = ({ user }) => {
 
                     r1.getCell(8).font = { name: 'Trebuchet MS', bold: true, color: { argb: 'FF000000' } };
                     r1.getCell(8).alignment = { horizontal: 'center' };
-                    r1.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF9966FF' } };
+                    r1.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF9794FE' } };
                     r1.getCell(8).border = thickBorder;
                     cur++;
 

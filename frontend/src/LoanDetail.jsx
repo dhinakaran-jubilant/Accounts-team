@@ -945,6 +945,7 @@ const EditAccountSplitModal = ({ isOpen, onClose, entry, loanData, accountName, 
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Amount (₹)</label>
                         <input
                             type="text"
+                            autoFocus
                             value={formatINRInput(amount)}
                             onChange={e => {
                                 const val = formatINRInput(e.target.value);
@@ -1817,6 +1818,9 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
         pAccRow.eachCell((cell, colIdx) => {
             cell.border = thickBorder;
             if (colIdx === 2 || colIdx === 3 || colIdx === 5) cell.numFmt = currencyFmt;
+            if (colIdx === 3) {
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC4D79B' } };
+            }
         });
 
         // Secondary Rows
@@ -1833,6 +1837,9 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
             sAccRow.eachCell((cell, colIdx) => {
                 cell.border = thickBorder;
                 if (colIdx === 2 || colIdx === 3 || colIdx === 5) cell.numFmt = currencyFmt;
+                if (colIdx === 3) {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC4D79B' } };
+                }
             });
         });
 
@@ -1904,6 +1911,13 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
             headers.push(getAcronym(acc.account_name) + ' INT');
             if (hasSecondaryTdsCols[acc.account_name]) headers.push('TDS(10%)');
             if (hasSecondaryOS[acc.account_name]) headers.push(getAcronym(acc.account_name) + ' O/S');
+        });
+
+        const interestColIndices = [];
+        headers.forEach((h, idx) => {
+            if (h && typeof h === 'string' && h.endsWith(' INT')) {
+                interestColIndices.push(idx + 1);
+            }
         });
 
         const schedTitleRow = worksheet.addRow(['REPAYMENT SCHEDULE']);
@@ -1985,6 +1999,9 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
             r.eachCell((cell, colIdx) => {
                 cell.border = thickBorder;
                 if (typeof cell.value === 'number') cell.numFmt = currencyFmt;
+                if (interestColIndices.includes(colIdx)) {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC4D79B' } };
+                }
             });
         });
 
@@ -2071,10 +2088,13 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
         });
 
         const sr = worksheet.addRow(sysTotalRow);
-        sr.eachCell(cell => {
+        sr.eachCell((cell, colIdx) => {
             cell.font = { bold: true };
             cell.border = thickBorder;
             if (typeof cell.value === 'number') cell.numFmt = currencyFmt;
+            if (interestColIndices.includes(colIdx)) {
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC4D79B' } };
+            }
         });
 
         // Manual Payments Table
