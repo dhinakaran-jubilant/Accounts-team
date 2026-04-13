@@ -765,13 +765,20 @@ const JlDueReport = ({ user }) => {
 
                     const dataRow = worksheet.getRow(idx + 2);
                     dataRow.values = rowData;
+                    
+                    const isRedRow = statusInfo.label === 'OVERDUE' || (statusInfo.label === 'ACTIVE' && statusInfo.color.includes('rose'));
+
                     for (let i = 1; i <= rowData.length; i++) {
                         const cell = dataRow.getCell(i);
                         cell.border = thickBorder;
                         cell.font = { name: 'Trebuchet MS', size: 10 };
+                        
+                        if (isRedRow) {
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE4E6' } };
+                        }
+
                         if (typeof rowData[i - 1] === 'number') {
                             cell.numFmt = '#,##0';
-                            // Center align count columns, right align amount columns
                             if (['TOTAL DUE', 'RECEIVED DUE', 'OVER DUE'].includes(headers[i - 1])) {
                                 cell.alignment = { horizontal: 'center' };
                             } else {
@@ -780,11 +787,23 @@ const JlDueReport = ({ user }) => {
                         } else {
                             cell.alignment = { horizontal: 'center' };
                         }
+
                         if (headers[i - 1] === 'Status') {
                             cell.font.bold = true;
-                            if (statusInfo.label === 'Overdue') { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; cell.font.color = { argb: 'FFFFFFFF' }; }
-                            else if (statusInfo.label === 'Active') { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } }; }
-                            else { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } }; }
+                            if (statusInfo.label === 'OVERDUE') { 
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; 
+                                cell.font.color = { argb: 'FFFFFFFF' }; 
+                            }
+                            else if (statusInfo.label === 'ACTIVE') { 
+                                if (statusInfo.color.includes('rose')) {
+                                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF9999' } }; 
+                                } else {
+                                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } }; 
+                                }
+                            }
+                            else { 
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } }; 
+                            }
                         }
                     }
                 });
