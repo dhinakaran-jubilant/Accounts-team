@@ -1109,8 +1109,9 @@ def forgot_password_reset():
 
 if __name__ == '__main__':
     # Use self-signed certs for local development
-    cert_path = 'cert.pem'
-    key_path = 'key.pem'
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    cert_path = os.path.join(base_dir, 'cert.pem')
+    key_path = os.path.join(base_dir, 'key.pem')
     if os.path.exists(cert_path) and os.path.exists(key_path):
         app.run(debug=True, host='0.0.0.0', port=1000, ssl_context=(cert_path, key_path))
     else:

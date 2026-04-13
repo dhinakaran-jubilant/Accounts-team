@@ -8,6 +8,21 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
+const ACCOUNTS_PERMISSIONS = [
+    { value: 'SCS', label: 'Surge Capital Solutions - SCS' },
+    { value: 'GC', label: 'Growth Capital - GC' },
+    { value: 'GCE', label: 'Growth Capital Enterprises - GCE' },
+    { value: 'FC', label: 'Finova Capital - FC' },
+    { value: 'AS', label: 'Ascend Solutions - AS' },
+    { value: 'ASE', label: 'AS Enterprises - ASE' },
+    { value: 'SCE', label: 'SC Enterprises - SCE' },
+    { value: 'ASQ', label: 'A Square Enterprises - ASQ' },
+    { value: 'SN', label: 'S Nirmala - SN' },
+    { value: 'FE', label: 'Fortune Enterprises - FE' },
+    { value: 'JC', label: 'Jubilant Capital - JC' },
+    { value: 'RP', label: 'Raja Priya - RP' }
+];
+
 const UsersManager = () => {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -438,7 +453,7 @@ const UsersManager = () => {
                                             onClick={() => setFormData({
                                                 ...formData,
                                                 role: 'admin',
-                                                permissions: ['AS', 'ASE', 'ASQ', 'GC', 'GCE', 'JC', 'RP', 'SCE', 'SCS', 'SN']
+                                                permissions: ACCOUNTS_PERMISSIONS.map(p => p.value)
                                             })}
                                             className={`h-12 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${formData.role === 'admin'
                                                     ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20'
@@ -452,18 +467,19 @@ const UsersManager = () => {
 
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Permissions <span className="text-rose-500">*</span></label>
-                                    <div className="grid grid-cols-5 gap-2 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                                        {['AS', 'ASE', 'ASQ', 'GC', 'GCE', 'JC', 'RP', 'SCE', 'SCS', 'SN'].map(perm => (
+                                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                        {ACCOUNTS_PERMISSIONS.map(perm => (
                                             <button
-                                                key={perm}
+                                                key={perm.value}
                                                 type="button"
-                                                onClick={() => togglePermission(perm)}
-                                                className={`h-10 rounded-2xl text-[10px] font-black transition-all border ${formData.permissions.includes(perm)
+                                                onClick={() => togglePermission(perm.value)}
+                                                className={`h-10 rounded-xl text-[10px] font-black transition-all border ${formData.permissions.includes(perm.value)
                                                         ? 'bg-amber-500 border-amber-500 text-white shadow-md'
                                                         : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-400'
                                                     }`}
+                                                title={perm.label}
                                             >
-                                                {perm}
+                                                {perm.value}
                                             </button>
                                         ))}
                                     </div>

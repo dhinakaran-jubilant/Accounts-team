@@ -176,6 +176,7 @@ const JlDueReport = ({ user }) => {
     const [isDeleting, setIsDeleting] = useState(false);
     const [loanToDelete, setLoanToDelete] = useState(null);
     const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+    const [sortOrder, setSortOrder] = useState('desc');
     const pageRef = useRef(null);
     const exportDropdownRef = useRef(null);
 
@@ -355,8 +356,22 @@ const JlDueReport = ({ user }) => {
             });
         }
 
+        if (sortOrder) {
+            result = [...result].sort((a, b) => {
+                const dateA = getDateKey(a.loan_date);
+                const dateB = getDateKey(b.loan_date);
+                if (dateA !== dateB) {
+                    return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+                }
+                // Break ties using ID so recently added comes first
+                const idA = parseInt(a.id) || 0;
+                const idB = parseInt(b.id) || 0;
+                return sortOrder === 'asc' ? idA - idB : idB - idA;
+            });
+        }
+
         return result;
-    }, [data, accountFilter, searchTerm, selectedDate]);
+    }, [data, accountFilter, searchTerm, selectedDate, sortOrder]);
 
     // Pagination calculations
     const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
@@ -893,7 +908,17 @@ const JlDueReport = ({ user }) => {
                                         <tr>
                                             <th className="py-4 px-4 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">S.No</th>
                                             <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Loan ID</th>
-                                            <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Loan Date</th>
+                                            <th 
+                                                className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50 cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none"
+                                                onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                                            >
+                                                <div className="flex items-center gap-1">
+                                                    Loan Date
+                                                    <span className="material-symbols-outlined text-[14px] leading-none text-slate-400 group-hover:text-primary transition-colors">
+                                                        {sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}
+                                                    </span>
+                                                </div>
+                                            </th>
                                             <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Client Name</th>
                                             <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Pri Acc</th>
                                             <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Amount</th>
@@ -945,7 +970,7 @@ const JlDueReport = ({ user }) => {
                                                     </div>
                                                 </td>
                                             </tr>
-                                        ) : currentData.map((row) => (
+                                        ) : currentData.map((row, index) => (
                                             <tr
                                                 key={row.id}
                                                 onClick={() => {
@@ -958,7 +983,7 @@ const JlDueReport = ({ user }) => {
                                                 className="hover:bg-slate-50 dark:hover:bg-slate-800/25 transition-colors group cursor-pointer"
                                             >
                                                 <td className="py-2 px-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                                    {row.s_no}
+                                                    {startIndex + index + 1}
                                                 </td>
                                                 <td className="py-2 px-2 text-sm font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap truncate">
                                                     {row.loan_ref_id || '—'}
