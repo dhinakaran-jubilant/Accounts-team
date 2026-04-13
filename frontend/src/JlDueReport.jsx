@@ -176,7 +176,7 @@ const JlDueReport = ({ user }) => {
     const [isDeleting, setIsDeleting] = useState(false);
     const [loanToDelete, setLoanToDelete] = useState(null);
     const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
-    const [sortOrder, setSortOrder] = useState('desc');
+    const [sortConfig, setSortConfig] = useState({ key: 'loan_date', direction: 'desc' });
     const pageRef = useRef(null);
     const exportDropdownRef = useRef(null);
 
@@ -356,22 +356,46 @@ const JlDueReport = ({ user }) => {
             });
         }
 
-        if (sortOrder) {
+        if (sortConfig) {
             result = [...result].sort((a, b) => {
-                const dateA = getDateKey(a.loan_date);
-                const dateB = getDateKey(b.loan_date);
-                if (dateA !== dateB) {
-                    return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+                if (sortConfig.key === 'loan_date') {
+                    const dateA = getDateKey(a.loan_date);
+                    const dateB = getDateKey(b.loan_date);
+                    if (dateA !== dateB) {
+                        return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
+                    }
+                    const idA = parseInt(a.id) || 0;
+                    const idB = parseInt(b.id) || 0;
+                    return sortConfig.direction === 'asc' ? idA - idB : idB - idA;
+                } else if (sortConfig.key === 'status') {
+                    const getStatusWeight = (loan) => {
+                        const statusInfo = getLoanStatus(loan);
+                        if (statusInfo.label === 'OVERDUE') return 1;
+                        if (statusInfo.label === 'ACTIVE' && statusInfo.color.includes('rose')) return 2;
+                        if (statusInfo.label === 'ACTIVE' && statusInfo.color.includes('emerald')) return 3;
+                        if (statusInfo.label === 'CLOSED') return 4;
+                        return 5;
+                    };
+                    const wA = getStatusWeight(a);
+                    const wB = getStatusWeight(b);
+                    if (wA !== wB) {
+                        return sortConfig.direction === 'asc' ? wA - wB : wB - wA;
+                    }
+                    const dateA = getDateKey(a.loan_date);
+                    const dateB = getDateKey(b.loan_date);
+                    if (dateA !== dateB) {
+                        return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
+                    }
+                    const idA = parseInt(a.id) || 0;
+                    const idB = parseInt(b.id) || 0;
+                    return sortConfig.direction === 'asc' ? idA - idB : idB - idA;
                 }
-                // Break ties using ID so recently added comes first
-                const idA = parseInt(a.id) || 0;
-                const idB = parseInt(b.id) || 0;
-                return sortOrder === 'asc' ? idA - idB : idB - idA;
+                return 0;
             });
         }
 
         return result;
-    }, [data, accountFilter, searchTerm, selectedDate, sortOrder]);
+    }, [data, accountFilter, searchTerm, selectedDate, sortConfig]);
 
     // Pagination calculations
     const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
@@ -910,12 +934,12 @@ const JlDueReport = ({ user }) => {
                                             <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Loan ID</th>
                                             <th 
                                                 className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50 cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none"
-                                                onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                                                onClick={() => setSortConfig(prev => ({ key: 'loan_date', direction: prev.key === 'loan_date' && prev.direction === 'asc' ? 'desc' : 'asc' }))}
                                             >
                                                 <div className="flex items-center gap-1">
                                                     Loan Date
                                                     <span className="material-symbols-outlined text-[14px] leading-none text-slate-400 group-hover:text-primary transition-colors">
-                                                        {sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}
+                                                        {sortConfig.key === 'loan_date' ? (sortConfig.direction === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
                                                     </span>
                                                 </div>
                                             </th>
@@ -923,7 +947,17 @@ const JlDueReport = ({ user }) => {
                                             <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Pri Acc</th>
                                             <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Amount</th>
                                             <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Others</th>
-                                            <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Status</th>
+                                            <th 
+                                                className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50 cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none"
+                                                onClick={() => setSortConfig(prev => ({ key: 'status', direction: prev.key === 'status' && prev.direction === 'asc' ? 'desc' : 'asc' }))}
+                                            >
+                                                <div className="flex items-center gap-1">
+                                                    Status
+                                                    <span className="material-symbols-outlined text-[14px] leading-none text-slate-400 group-hover:text-primary transition-colors">
+                                                        {sortConfig.key === 'status' ? (sortConfig.direction === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
+                                                    </span>
+                                                </div>
+                                            </th>
                                             <th className="py-4 px-2 text-center text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Actions</th>
                                         </tr>
                                     </thead>
