@@ -38,9 +38,27 @@ const parseINR = (val) => {
 const getSplitData = (splitsStr, targetKey) => {
     let sDict = {};
     try { sDict = splitsStr ? JSON.parse(splitsStr) : {}; } catch (err) { }
-    const val = sDict[targetKey];
+    
+    // Try primary key (Full Name)
+    let val = sDict[targetKey];
+    
+    // Fallback: Try Acronym if targetKey is a full name
+    if (val === undefined || val === null) {
+        const acronym = getAcronym(targetKey);
+        if (acronym && acronym !== targetKey) {
+            val = sDict[acronym];
+        }
+    }
+    
+    // Fallback: Case-insensitive search
+    if (val === undefined || val === null) {
+        const lowerKey = targetKey.toLowerCase().trim();
+        const foundKey = Object.keys(sDict).find(k => k.toLowerCase().trim() === lowerKey);
+        if (foundKey) val = sDict[foundKey];
+    }
+
     if (val === undefined || val === null) return null;
-    const objVal = (typeof val === 'object' && val !== null) ? val : { amount: Number(val) || 0, tds: '', remarks: '' };
+    const objVal = (typeof val === 'object' && val !== null) ? val : { amount: parseINR(val) || 0, tds: '', remarks: '' };
     if (Array.isArray(objVal)) return objVal;
     return [objVal];
 };
@@ -48,13 +66,13 @@ const getSplitData = (splitsStr, targetKey) => {
 const getSplitAmount = (splitsStr, targetKey) => {
     const dataArray = getSplitData(splitsStr, targetKey);
     if (!dataArray || dataArray.length === 0) return 0;
-    return dataArray.reduce((s, acc) => s + (Number(acc.amount) || 0), 0);
+    return dataArray.reduce((s, acc) => s + (parseINR(acc.amount) || 0), 0);
 };
 
 const getSplitTDS = (splitsStr, targetKey) => {
     const dataArray = getSplitData(splitsStr, targetKey);
     if (!dataArray || dataArray.length === 0) return 0;
-    return dataArray.reduce((s, acc) => s + (Number(acc.tds) || 0), 0);
+    return dataArray.reduce((s, acc) => s + (parseINR(acc.tds) || 0), 0);
 };
 
 const getDateKey = (val) => {
@@ -80,50 +98,58 @@ const toYYYYMMDD = (val) => {
     return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
 };
 
-const getRowAccountPaid = (entry, accName, targetShare, isPrimary) => {
+const getRowAccountPaid = (entry, accName, targetShare, isPrimary, expectedTds = 0) => {
+    const dVal = isPrimary ? entry.received_date : entry.payment_date;
+    const hasDate = dVal && dVal !== '—' && dVal !== 'dd-mm-yyyy' && dVal !== '-' && dVal !== '';
+
+    // Priority 1: Check splits for actual recorded payments (Amount + TDS)
     const dataArray = entry.splits ? getSplitData(entry.splits, accName) : null;
     if (dataArray && dataArray.length > 0) {
-        return dataArray.reduce((s, x) => s + (Number(x.amount) || 0) + (Number(x.tds) || 0), 0);
+        // We add both the manual splits and the autoTds IF AND ONLY IF the date is filled or specific manual TDS entered
+        const splitTotal = dataArray.reduce((s, x) => s + (parseINR(x.amount) || 0) + (parseINR(x.tds) || 0), 0);
+        // If date is filled but manual TDS in split is 0, we still credit the expected autoTds
+        const manualTds = dataArray.reduce((s, x) => s + (parseINR(x.tds) || 0), 0);
+        const autoCredit = (hasDate && manualTds === 0) ? expectedTds : 0;
+        return splitTotal + autoCredit;
     }
-    // Fallback to date column if no splits for this account
-    const dVal = isPrimary ? entry.received_date : entry.payment_date;
-    const hasDate = dVal && dVal !== '—' && dVal !== 'dd-mm-yyyy' && dVal !== '-';
-    return hasDate ? targetShare : 0;
+
+    // Priority 2: Fallback to date column if no specific splits for this account
+    // If date exists but no split, assume full share was paid
+    return hasDate ? (targetShare + expectedTds) : 0;
 };
 
 const getRowPaidTotalRaw = (entry, loan) => {
-    const secAccs = loan.secondary_accounts || [];
-    const secPercentagesSum = secAccs.reduce((sum, acc) => sum + (Number(acc.percentage) || 0), 0);
-    // Use dynamic percentages precisely matching LoanDetail.jsx
-    const loanAmount = loan.loan_amount || 0;
-    const totalRepay = loan.repayment_amount || 0;
-    const secPrincipalSum = secAccs.reduce((sum, acc) => sum + (Number(acc.share) || 0), 0);
-    const secInterestSum = secAccs.reduce((sum, acc) => sum + (Number(acc.interest_amount) || 0), 0);
-    const priLoan = Number(loan.primary_account_amount) || 0;
-    const priInterest = Number(loan.primary_account_interest) || 0;
+    const secAccs = loan.secondary_accounts || loan.remaining_accounts || [];
+    const schedule = loan.repayment_schedule || [];
+    const standardRows = schedule.filter(s => s.type !== 'manual');
+    const interestRowId = standardRows[0]?.id;
+    const isIntRow = entry.id === interestRowId;
+
+    const priLoan = parseINR(loan.primary_account_amount) || 0;
+    const priInterest = parseINR(loan.primary_account_interest) || 0;
     const priRepayTotal = priLoan + priInterest;
-    const grandTotal = priRepayTotal + secPrincipalSum + secInterestSum;
+    
+    const secPrincipalSum = secAccs.reduce((sum, acc) => sum + (parseINR(acc.share) || 0), 0);
+    const secInterestSum = secAccs.reduce((sum, acc) => sum + (parseINR(acc.interest_amount) || 0), 0);
+    const secRepayTotal = secPrincipalSum + secInterestSum;
+    
+    const grandTotal = priRepayTotal + secRepayTotal;
     const effectivePrimaryPercentage = grandTotal > 0 ? (priRepayTotal / grandTotal) * 100 : 0;
     
-    const secAccsComputed = secAccs.map(acc => {
-        const accTotal = (Number(acc.share) || 0) + (Number(acc.interest_amount) || 0);
-        return {
-            ...acc,
-            percentage: grandTotal > 0 ? (accTotal / grandTotal) * 100 : 0
-        };
-    });
-
     const rawTarget = entry.type === 'manual' ? 0 : parseINR(entry.amount);
 
     // Primary Paid
     const priTarget = rawTarget * (effectivePrimaryPercentage / 100);
-    const priPaid = getRowAccountPaid(entry, loan.primary_account_name, priTarget, true);
+    const priPaid = getRowAccountPaid(entry, loan.primary_account_name, priTarget, true, 0);
 
     // Secondaries Paid
     let secPaidTotal = 0;
-    secAccsComputed.forEach(acc => {
-        const sTarget = rawTarget * ((acc.percentage || 0) / 100);
-        secPaidTotal += getRowAccountPaid(entry, acc.account_name, sTarget, false);
+    secAccs.forEach(acc => {
+        const accTotal = (parseINR(acc.share) || 0) + (parseINR(acc.interest_amount) || 0);
+        const sPercentage = grandTotal > 0 ? (accTotal / grandTotal) * 100 : 0;
+        const sTarget = rawTarget * (sPercentage / 100);
+        const sExpectedTds = isIntRow ? (parseINR(acc.interest_amount) || 0) * 0.10 : 0;
+        secPaidTotal += getRowAccountPaid(entry, acc.account_name, sTarget, false, sExpectedTds);
     });
 
     return priPaid + secPaidTotal;
@@ -131,14 +157,16 @@ const getRowPaidTotalRaw = (entry, loan) => {
 
 const hasRowBalance = (entry, loan) => {
     const target = entry.type === 'manual' ? 0 : parseINR(entry.amount);
-    if (target === 0) {
-        const totalPaid = getRowPaidTotalRaw(entry, loan);
-        let overridenTotal = 0;
-        try { overridenTotal = (entry.splits ? Object.values(JSON.parse(entry.splits)).reduce((s, x) => s + (Number(x.amount)||0) + (Number(x.tds)||0), 0) : 0); } catch(e) {}
-        return overridenTotal > totalPaid && overridenTotal > 0;
-    }
     const paid = getRowPaidTotalRaw(entry, loan);
-    return Math.round(paid) < Math.round(target);
+    
+    if (target === 0) {
+        // For manual entries, only show as O/S if a split was intentionally created with a remaining balance
+        // Usually manual entries are not part of the O/S report unless specifically filtered.
+        return false;
+    }
+    
+    // Use a small epsilon for float comparison
+    return (target - paid) > 0.99;
 };
 
 const getLoanStatus = (loan) => {
@@ -253,7 +281,8 @@ const JlDueReport = ({ user }) => {
             formData.append('loan_ref_id', loanRefId.trim());
             formData.append('employee_code', user?.employee_code || "");
 
-            const response = await fetch('/api/upload-docx', { method: 'POST', body: formData });
+            const endpoint = selectedFile.name.toLowerCase().endsWith('.pdf') ? '/api/upload-pdf' : '/api/upload-docx';
+            const response = await fetch(endpoint, { method: 'POST', body: formData });
             const result = await response.json();
 
             if (response.ok) {
@@ -519,6 +548,9 @@ const JlDueReport = ({ user }) => {
                     const secAccs = loan.secondary_accounts || [];
 
                     // Filter for Overdue / Pending installments (Any installment with a balance remaining)
+                    const systemSched = schedule.filter(s => s.type !== 'manual');
+                    const interestRowId = systemSched[0]?.id;
+
                     const osInstallments = schedule.filter(e => {
                         const dKey = getDateKey(e.date);
                         const hasBalance = hasRowBalance(e, loan);
@@ -575,46 +607,54 @@ const JlDueReport = ({ user }) => {
                     cur++;
 
                     // Installment Rows
-                    const secPercentagesSum = secAccs.reduce((sum, acc) => sum + (Number(acc.percentage) || 0), 0);
-                    // Use dynamic percentages precisely matching LoanDetail.jsx
-                    const loanAmount = loan.loan_amount || 0;
-                    const totalRepay = loan.repayment_amount || 0;
-                    const secPrincipalSum = secAccs.reduce((sum, acc) => sum + (Number(acc.share) || 0), 0);
-                    const secInterestSum = secAccs.reduce((sum, acc) => sum + (Number(acc.interest_amount) || 0), 0);
-                    const priLoan = Number(loan.primary_account_amount) || 0;
-                    const priInterest = Number(loan.primary_account_interest) || 0;
-                    const priRepayTotal = priLoan + priInterest;
-                    const grandTotal = priRepayTotal + secPrincipalSum + secInterestSum;
-                    const effectivePrimaryPercentage = grandTotal > 0 ? (priRepayTotal / grandTotal) * 100 : 0;
+                    const priLoanAmount = parseINR(loan.primary_account_amount) || 0;
+                    const priInterestAmount = parseINR(loan.primary_account_interest) || 0;
+                    const priRepayTotal = priLoanAmount + priInterestAmount;
                     
-                    const secAccsComputed = secAccs.map(acc => {
-                        const accTotal = (Number(acc.share) || 0) + (Number(acc.interest_amount) || 0);
-                        return {
-                            ...acc,
-                            percentage: grandTotal > 0 ? (accTotal / grandTotal) * 100 : 0
-                        };
-                    });
+                    const secPrincipalSum = secAccs.reduce((sum, acc) => sum + (parseINR(acc.share) || 0), 0);
+                    const secInterestSum = secAccs.reduce((sum, acc) => sum + (parseINR(acc.interest_amount) || 0), 0);
+                    const secRepayTotal = secPrincipalSum + secInterestSum;
+                    
+                    const grandTotal = priRepayTotal + secRepayTotal;
+                    const effectivePrimaryPercentage = grandTotal > 0 ? (priRepayTotal / grandTotal) * 100 : 0;
 
                     osInstallments.forEach(e => {
                         const rN = worksheet.getRow(cur);
-                        const rowVals = [e.date || '', parseINR(e.amount), '']; // empty 'date' col as per image
+                        const rowVals = [e.date || '', parseINR(e.amount), '']; 
+                        const isIntRow = e.id === interestRowId;
 
-                        // Primary O/S calculation (Balance owed for this row)
                         const rawTarget = e.type === 'manual' ? 0 : parseINR(e.amount);
                         const priTarget = rawTarget * (effectivePrimaryPercentage / 100);
-                        const priPaid = getRowAccountPaid(e, loan.primary_account_name, priTarget, true);
-                        const priOS = Math.round(priTarget - priPaid) <= 0 ? 0 : (priTarget - priPaid);
-                        const priTds = getSplitTDS(e.splits, loan.primary_account_name) || '';
+                        const priPaid = getRowAccountPaid(e, loan.primary_account_name, priTarget, true, 0);
+                        const priOS = Math.max(0, priTarget - priPaid);
+                        
+                        let priTdsOS = 0;
+                        const priHasDate = e.received_date && e.received_date !== '—' && e.received_date !== 'dd-mm-yyyy' && e.received_date !== '-' && e.received_date !== '';
+                        if (!priHasDate) {
+                            const priTdsPaid = getSplitTDS(e.splits, loan.primary_account_name);
+                            priTdsOS = Math.max(0, 0 - priTdsPaid); // Primary has no auto-TDS
+                        }
 
-                        rowVals.push(priOS || '', priTds);
+                        rowVals.push(priOS > 0.99 ? priOS : '', priTdsOS > 0.99 ? priTdsOS : '');
 
-                        // Secondary splits (O/S shares)
-                        secAccsComputed.forEach(acc => {
-                            const sTarget = rawTarget * ((acc.percentage || 0) / 100);
-                            const sPaid = getRowAccountPaid(e, acc.account_name, sTarget, false);
-                            const sOS = Math.round(sTarget - sPaid) <= 0 ? 0 : (sTarget - sPaid);
-                            const sTds = getSplitTDS(e.splits, acc.account_name) || '';
-                            rowVals.push('', sOS || '', sTds);
+                        // Secondary O/S
+                        secAccs.forEach(acc => {
+                            const accTotal = (parseINR(acc.share) || 0) + (parseINR(acc.interest_amount) || 0);
+                            const sPercentage = grandTotal > 0 ? (accTotal / grandTotal) * 100 : 0;
+                            const sTarget = rawTarget * (sPercentage / 100);
+                            const sExpectedTds = isIntRow ? (parseINR(acc.interest_amount) || 0) * 0.10 : 0;
+                            const sPaid = getRowAccountPaid(e, acc.account_name, sTarget, false, sExpectedTds);
+                            
+                            const sOS = Math.max(0, sTarget - sPaid);
+                            const sHasDate = e.payment_date && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-' && e.payment_date !== '';
+                            
+                            let sTdsOS = 0;
+                            if (!sHasDate) {
+                                const sTdsPaidFromSplits = getSplitTDS(e.splits, acc.account_name);
+                                sTdsOS = Math.max(0, sExpectedTds - sTdsPaidFromSplits);
+                            }
+
+                            rowVals.push('', sOS > 0.99 ? sOS : '', sTdsOS > 0.99 ? sTdsOS : '');
                         });
 
                         const totalPaidInRow = getRowPaidTotalRaw(e, loan);
@@ -721,19 +761,19 @@ const JlDueReport = ({ user }) => {
                     rowData.push(priLoan, priRepayTotal);
                     for (let i = 0; i < maxTotalAccs - 1; i++) {
                         if (secAccs[i]) {
-                            const sPrincipal = Number(secAccs[i].share) || 0;
-                            const sInterest = Number(secAccs[i].interest_amount) || 0;
+                            const sPrincipal = parseINR(secAccs[i].share) || 0;
+                            const sInterest = parseINR(secAccs[i].interest_amount) || 0;
                             rowData.push(sPrincipal, sPrincipal + sInterest);
                         } else { rowData.push('', ''); }
                     }
 
-                    const secPercentagesSum = secAccs.reduce((sum, acc) => sum + (Number(acc.percentage) || 0), 0);
+                    const secPercentagesSum = secAccs.reduce((sum, acc) => sum + (parseINR(acc.percentage) || 0), 0);
                     // Use dynamic percentages precisely matching LoanDetail.jsx
                     const grandTotal = priRepayTotal + secPrincipalSum + secInterestSum;
                     const effectivePrimaryPercentage = grandTotal > 0 ? (priRepayTotal / grandTotal) * 100 : 0;
                     
                     const secAccsComputed = secAccs.map(acc => {
-                        const accTotal = (Number(acc.share) || 0) + (Number(acc.interest_amount) || 0);
+                        const accTotal = (parseINR(acc.share) || 0) + (parseINR(acc.interest_amount) || 0);
                         return {
                             ...acc,
                             percentage: grandTotal > 0 ? (accTotal / grandTotal) * 100 : 0
@@ -742,108 +782,60 @@ const JlDueReport = ({ user }) => {
 
                     const cutoffKey = getDateKey(selectedDate || new Date().toLocaleDateString('en-CA'));
 
-                    const getPaidShare = (accName, percentage, isPrimary) => {
-                        return schedule.reduce((sum, e) => {
-                            if (e.type === 'manual') return sum;
-
-                            const dKey = getDateKey(e.date);
-                            const rKey = getDateKey(e.received_date);
-                            const pKey = getDateKey(e.payment_date); // DUE DATE field for secondary
-
-                            const hasReceivedDate = rKey > 0;
-                            const hasDueDate = pKey > 0; // secondary uses payment_date as due date
-
-                            const isEligible = isPrimary ? hasReceivedDate : hasDueDate;
-                            const inReportWindow = isPrimary ? (rKey > 0 && rKey <= cutoffKey) : (pKey > 0 && pKey <= cutoffKey);
-
-                            if (isEligible && inReportWindow) {
-                                const grossTarget = parseINR(e.amount) * (percentage / 100);
-                                const dataArray = getSplitData(e.splits, accName);
-
-                                if (isPrimary) {
-                                    // Primary: use override if present, else full gross + TDS
-                                    if (dataArray !== null && dataArray.length > 0) {
-                                        const overAmt = dataArray.reduce((s, item) => s + (Number(item.amount) || 0), 0);
-                                        const overTDS = dataArray.reduce((s, item) => s + (Number(item.tds) || 0), 0);
-                                        return sum + overAmt + overTDS;
-                                    } else {
-                                        const defaultTds = getSplitTDS(e.splits, accName) || 0;
-                                        return sum + grossTarget + defaultTds;
-                                    }
-                                } else {
-                                    // Secondary received logic:
-                                    // - If received_date set → fully collected, use full gross (or override if present)
-                                    // - If no received_date but override entered → partial payment only, use override amount
-                                    // - If no received_date AND no override → not yet received, skip
-                                    const hasRowReceivedDate = rKey > 0;
-                                    if (!hasRowReceivedDate && (dataArray === null || dataArray.length === 0)) {
-                                        // Nothing received for this row yet — skip
-                                        return sum;
-                                    }
-                                    if (dataArray !== null && dataArray.length > 0) {
-                                        const paidAmt = dataArray.reduce((s, item) => s + (Number(item.amount) || 0) + (Number(item.tds) || 0), 0);
-                                        return sum + paidAmt;
-                                    } else {
-                                        // received_date is set, no override → fully settled, count full share
-                                        return sum + grossTarget;
-                                    }
-                                }
-                            }
-                            return sum;
-                        }, 0);
-                    };
-
-                    const getOsShare = (accName, percentage, isPrimary) => {
+                    const getPaidShare = (accName, percentage, isPrimary, expectedTdsPerEntry = 0) => {
                         return schedule.reduce((sum, e) => {
                             if (e.type === 'manual') return sum;
                             
-                            const dKey = getDateKey(e.date);
-                            if (dKey > 0 && dKey <= cutoffKey) {
-                                const rDate = isPrimary ? e.received_date : e.payment_date;
-                                const rKey = getDateKey(rDate);
-                                const target = e.type === 'manual' ? 0 : parseINR(e.amount) * (percentage / 100);
-
-                                // Paid check: Was this specific payment received BY the report cutoff?
-                                const paidByNow = rKey > 0 && (isPrimary ? rKey <= cutoffKey : true);
-
-                                // Adjust target for Interest Row TDS logic:
-                                // "if not filled [due date] its o/s" -> If paidByNow is true, we subtract the auto-TDS from target.
+                            const dVal = isPrimary ? e.received_date : e.payment_date;
+                            const rKey = getDateKey(dVal);
+                            const inWindow = rKey > 0 && rKey <= cutoffKey;
+                            
+                            if (inWindow) {
                                 const isIntRow = e.id === interestRowId;
-                                const autoTds = isIntRow ? (target * 0.10) : 0;
-                                const effectiveTarget = (isIntRow && paidByNow) ? (target - autoTds) : target;
-
-                                if (paidByNow) {
-                                    const dataArray = getSplitData(e.splits, accName);
-                                    if (dataArray !== null && dataArray.length > 0) {
-                                        const paidAmt = dataArray.reduce((s, item) => s + (Number(item.amount) || 0) + (Number(item.tds) || 0), 0);
-                                        return sum + Math.max(0, effectiveTarget - paidAmt);
-                                    } else {
-                                        return sum; // Fully received
-                                    }
-                                } else {
-                                    return sum + effectiveTarget; // Not received yet
-                                }
+                                const currentExpectedTds = isIntRow ? expectedTdsPerEntry : 0;
+                                const target = parseINR(e.amount) * (percentage / 100);
+                                return sum + getRowAccountPaid(e, accName, target, isPrimary, currentExpectedTds);
                             }
                             return sum;
                         }, 0);
                     };
 
-                    const priReceived = getPaidShare(loan.primary_account_name, effectivePrimaryPercentage, true);
+                    const getOsShare = (accName, percentage, isPrimary, expectedTdsPerEntry = 0) => {
+                        return schedule.reduce((sum, e) => {
+                            if (e.type === 'manual') return sum;
+                            const dKey = getDateKey(e.date);
+                            
+                            if (dKey > 0 && dKey <= cutoffKey) {
+                                const isIntRow = e.id === interestRowId;
+                                const currentExpectedTds = isIntRow ? expectedTdsPerEntry : 0;
+                                const target = parseINR(e.amount) * (percentage / 100);
+                                const paid = getRowAccountPaid(e, accName, target, isPrimary, currentExpectedTds);
+                                return sum + Math.max(0, target - paid);
+                            }
+                            return sum;
+                        }, 0);
+                    };
+
+                    const priReceived = getPaidShare(loan.primary_account_name, effectivePrimaryPercentage, true, 0);
                     let secReceivedArr = [];
                     for (let i = 0; i < maxTotalAccs - 1; i++) {
                         if (secAccsComputed[i]) {
-                            secReceivedArr.push(getPaidShare(secAccsComputed[i].account_name, secAccsComputed[i].percentage || 0, false));
+                            const acc = secAccsComputed[i];
+                            const sExpectedTds = (parseINR(acc.interest_amount) || 0) * 0.10;
+                            secReceivedArr.push(getPaidShare(acc.account_name, acc.percentage || 0, false, sExpectedTds));
                         } else { secReceivedArr.push(''); }
                     }
-                    const overallReceived = priReceived + secReceivedArr.reduce((s, a) => s + (Number(a) || 0), 0);
+                    const overallReceived = priReceived + secReceivedArr.reduce((s, a) => s + (parseINR(a) || 0), 0);
                     rowData.push(overallReceived, priReceived, ...secReceivedArr);
 
-                    const priOsVal = Math.round(getOsShare(loan.primary_account_name, effectivePrimaryPercentage, true));
+                    const priOsVal = Math.round(getOsShare(loan.primary_account_name, effectivePrimaryPercentage, true, 0));
                     let secOsArr = [];
                     let secOsValsSum = 0;
                     for (let i = 0; i < maxTotalAccs - 1; i++) {
                         if (secAccsComputed[i]) {
-                            const val = Math.round(getOsShare(secAccsComputed[i].account_name, secAccsComputed[i].percentage || 0, false));
+                            const acc = secAccsComputed[i];
+                            const sExpectedTds = (parseINR(acc.interest_amount) || 0) * 0.10;
+                            const val = Math.round(getOsShare(acc.account_name, acc.percentage || 0, false, sExpectedTds));
                             secOsArr.push(val);
                             secOsValsSum += val;
                         } else { secOsArr.push(''); }
@@ -910,13 +902,25 @@ const JlDueReport = ({ user }) => {
                                 cell.alignment = { horizontal: 'right' };
                             }
                         } else {
-                            cell.alignment = { horizontal: 'center' };
+                            const headerName = headers[i - 1] || '';
+                            if (headerName === 'CLIENT NAME' || headerName === 'PRIMARY' || (headerName.startsWith('SEC-') && !headerName.includes('\n'))) {
+                                cell.alignment = { horizontal: 'left' };
+                            } else {
+                                cell.alignment = { horizontal: 'center' };
+                            }
                         }
                     }
                 });
 
-                worksheet.columns.forEach(column => {
-                    column.width = 18;
+                worksheet.columns.forEach((column, i) => {
+                    const header = headers[i];
+                    if (header === 'S.NO') {
+                        column.width = 6;
+                    } else if (header === 'CLIENT NAME') {
+                        column.width = 30; // Better for names
+                    } else {
+                        column.width = 18;
+                    }
                 });
             });
         }
@@ -996,7 +1000,7 @@ const JlDueReport = ({ user }) => {
                         <label className="h-9 px-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-2 text-sm cursor-pointer">
                             <input
                                 type="file"
-                                accept=".docx"
+                                accept=".docx,.pdf"
                                 className="hidden"
                                 onChange={handleFileSelect}
                             />
@@ -1017,14 +1021,20 @@ const JlDueReport = ({ user }) => {
                             {isExportDropdownOpen && (
                                 <div className="absolute right-0 mt-2 w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
                                     <button
-                                        onClick={() => handleExport('JL_Report')}
+                                        onClick={() => {
+                                            handleExport('JL_Report');
+                                            setIsExportDropdownOpen(false);
+                                        }}
                                         className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2"
                                     >
                                         <span className="material-symbols-outlined text-[18px] text-primary">description</span>
                                         JL Report
                                     </button>
                                     <button
-                                        onClick={handleBendingExport}
+                                        onClick={() => {
+                                            handleBendingExport();
+                                            setIsExportDropdownOpen(false);
+                                        }}
                                         className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2 border-t border-slate-200/50 dark:border-slate-700/50"
                                     >
                                         <span className="material-symbols-outlined text-[18px] text-amber-500">pending_actions</span>
@@ -1272,21 +1282,23 @@ const JlDueReport = ({ user }) => {
                                 File selected: <strong className="text-slate-700 dark:text-slate-200">{selectedFile?.name}</strong>
                             </p>
 
-                            <div>
-                                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                                    <span className="material-symbols-outlined text-[14px]">tag</span> Loan ID
-                                    <span className="ml-1 text-slate-400 normal-case font-normal">(max 11 characters)</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={loanRefId}
-                                    onChange={(e) => setLoanRefId(e.target.value.slice(0, 11))}
-                                    maxLength={11}
-                                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary/50 focus:bg-white dark:focus:bg-slate-900 transition-colors text-sm text-slate-900 dark:text-white font-mono tracking-widest"
-                                    placeholder="e.g. JL-2026-001"
-                                />
-                                <p className="text-[10px] text-slate-400 mt-1 text-right">{loanRefId.length}/11</p>
-                            </div>
+                            {!(selectedFile?.name.toLowerCase().endsWith('.pdf')) && (
+                                <div>
+                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                                        <span className="material-symbols-outlined text-[14px]">tag</span> Loan ID
+                                        <span className="ml-1 text-slate-400 normal-case font-normal">(max 11 characters)</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={loanRefId}
+                                        onChange={(e) => setLoanRefId(e.target.value.slice(0, 11))}
+                                        maxLength={11}
+                                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary/50 focus:bg-white dark:focus:bg-slate-900 transition-colors text-sm text-slate-900 dark:text-white font-mono tracking-widest"
+                                        placeholder="e.g. JL-2026-001"
+                                    />
+                                    <p className="text-[10px] text-slate-400 mt-1 text-right">{loanRefId.length}/11</p>
+                                </div>
+                            )}
 
                             <div className="pt-2">
                                 <h4 className="font-semibold text-slate-900 dark:text-white uppercase tracking-wider text-sm mb-3">Remaining Accounts Details</h4>

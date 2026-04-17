@@ -7,12 +7,13 @@ Date: 2026-04-08 11:53:28
 """
 from models import db, Loan, RemainingAccount, RepaymentSchedule, User
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_cors import CORS
+from flask_talisman import Talisman
 from read_word import extract_word_data, build_final_output
+from read_pdf import extract_pdf_data
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from google.oauth2.service_account import Credentials
 from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS
-from flask_talisman import Talisman
 import preprocess_idfc
 import pandas as pd
 import threading
@@ -516,6 +517,94 @@ def handle_docx_upload():
             
         db.session.commit()
         return jsonify({'success': True, 'loan_id': loan.id, 'message': 'Data inserted correctly into PostgreSQL!'}), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/upload-pdf', methods=['POST'])
+def handle_pdf_upload():
+    ensure_db_and_tables()
+
+    if 'docx_file' not in request.files: 
+        return jsonify({'error': 'No file uploaded'}), 400
+        
+    file = request.files['docx_file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+        
+    try:
+        accounts_str = request.form.get('remaining_accounts', '[]')
+        remaining_accounts = json.loads(accounts_str)
+        loan_ref_id_input = request.form.get('loan_ref_id', '').strip()[:11] or None
+        
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+        file.save(file_path)
+        
+        # Parse PDF
+        pdf_data = extract_pdf_data(file_path)
+        
+        # If user didn't provide a Loan ID in modal, use the one from PDF if available
+        final_loan_ref_id = loan_ref_id_input or (pdf_data.get('loan_number')[:11] if pdf_data.get('loan_number') else None)
+
+        # Build final formatted output (shares, interest splits)
+        final_output = build_final_output(pdf_data, remaining_accounts)
+        
+        # --- PERMISSION VALIDATION ---
+        emp_code = request.form.get('employee_code')
+        if emp_code:
+            user = User.query.filter_by(employee_code=emp_code).first()
+            if user and user.role != 'admin':
+                primary_acc = final_output.get('primary_account_name')
+                acronym = get_acronym(primary_acc)
+                user_perms = json.loads(user.permissions) if user.permissions else []
+                if acronym not in user_perms:
+                    return jsonify({
+                        'success': False, 
+                        'error': f"Unauthorized: You do not have permission to upload loans for '{primary_acc}' ({acronym})."
+                    }), 403
+        # -----------------------------
+        
+        loan = Loan(
+            loan_ref_id=final_loan_ref_id,
+            client_account_name=final_output['client_account_name'],
+            loan_amount=final_output['loan_amount'],
+            loan_date=final_output['loan_date'],
+            primary_account_amount=final_output['primary_account_amount'],
+            primary_account_name=final_output['primary_account_name'],
+            primary_account_share=final_output['primary_account_share'],
+            primary_account_interest=final_output['primary_account_interest'],
+            total_repayment_amount=final_output['total_repayment_amount'],
+            total_interest=final_output['total_interest']
+        )
+        db.session.add(loan)
+        db.session.flush()
+        
+        for acc in final_output['remaining_accounts']:
+            rem_acc = RemainingAccount(
+                loan_id=loan.id,
+                account_name=acc['account_name'],
+                percentage=acc['percentage'],
+                share=acc['share'],
+                interest_amount=acc['interest_amount'],
+                tds=acc['tds']
+            )
+            db.session.add(rem_acc)
+            
+        for entry in final_output['table']:
+            schedule = RepaymentSchedule(
+                loan_id=loan.id,
+                amount=entry['amount'],
+                interest_amount=entry.get('interest_amount', 0),
+                cheque_no=entry['cheque_no'],
+                date=entry['date'],
+                received_date=entry.get('received_date'),
+                payment_date=entry.get('payment_date')
+            )
+            db.session.add(schedule)
+            
+        db.session.commit()
+        return jsonify({'success': True, 'loan_id': loan.id, 'message': 'PDF data processed correctly!'}), 200
         
     except Exception as e:
         db.session.rollback()
