@@ -472,7 +472,7 @@ const RepaymentTable = ({
                                                     {fmtINR(primaryInterestShare, false, 2)}
                                                 </td>
                                                 {!isManual && hasPrimaryTDS && (
-                                                    <td className="py-3 px-5 text-sm font-medium text-red-600 dark:text-red-400 text-right">
+                                                    <td className={`py-3 px-5 text-sm font-medium text-right ${entry.received_date ? 'text-slate-900 dark:text-slate-100' : 'text-red-600 dark:text-red-400'}`}>
                                                         {(() => {
                                                             const totalTds = getSplitTDS(entry.splits, loan.primary_account_name);
                                                             return totalTds > 0 ? fmtINR(totalTds, false) : '—';
@@ -551,7 +551,7 @@ const RepaymentTable = ({
                                                                 {fmtINR(s.accInterestShare, false, 2)}
                                                             </td>
                                                             {!isManual && (
-                                                                <td className="py-3 px-5 text-sm font-medium text-red-600 dark:text-red-400 text-right">
+                                                                <td className={`py-3 px-5 text-sm font-medium text-right ${entry.received_date ? 'text-slate-900 dark:text-slate-100' : 'text-red-600 dark:text-red-400'}`}>
                                                                     {(() => {
                                                                         const totalTds = (isInterestRow ? s.tds : 0) + getSplitTDS(entry.splits, acc.account_name);
                                                                         return totalTds > 0 ? fmtINR(totalTds, false) : '—';
@@ -787,7 +787,8 @@ const RepaymentTable = ({
                                         <td className="py-3 px-6 text-sm font-bold text-slate-900 dark:text-slate-100 text-right min-w-[150px]">
                                             {fmtINR(data.reduce((s, e) => {
                                                 const pShareAmount = getSplitAmount(e.splits, loan.primary_account_name) ?? (e.type === 'manual' ? 0 : (parseINR(e.amount) * primaryRatio));
-                                                return s + pShareAmount;
+                                                const pTdsAmount = e.received_date ? getSplitTDS(e.splits, loan.primary_account_name) : 0;
+                                                return s + pShareAmount + pTdsAmount;
                                             }, 0), false)}
                                         </td>
                                         <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-right min-w-[150px]">

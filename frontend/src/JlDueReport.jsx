@@ -94,11 +94,26 @@ const getRowAccountPaid = (entry, accName, targetShare, isPrimary) => {
 const getRowPaidTotalRaw = (entry, loan) => {
     const secAccs = loan.secondary_accounts || [];
     const secPercentagesSum = secAccs.reduce((sum, acc) => sum + (Number(acc.percentage) || 0), 0);
-    const effectivePrimaryPercentage = isNaN(Number(loan.primary_account_share)) || Number(loan.primary_account_share) === 0
-        ? Math.max(0, 100 - secPercentagesSum)
-        : Number(loan.primary_account_share);
+    // Use dynamic percentages precisely matching LoanDetail.jsx
+    const loanAmount = loan.loan_amount || 0;
+    const totalRepay = loan.repayment_amount || 0;
+    const secPrincipalSum = secAccs.reduce((sum, acc) => sum + (Number(acc.share) || 0), 0);
+    const secInterestSum = secAccs.reduce((sum, acc) => sum + (Number(acc.interest_amount) || 0), 0);
+    const priLoan = Number(loan.primary_account_amount) || 0;
+    const priInterest = Number(loan.primary_account_interest) || 0;
+    const priRepayTotal = priLoan + priInterest;
+    const grandTotal = priRepayTotal + secPrincipalSum + secInterestSum;
+    const effectivePrimaryPercentage = grandTotal > 0 ? (priRepayTotal / grandTotal) * 100 : 0;
+    
+    const secAccsComputed = secAccs.map(acc => {
+        const accTotal = (Number(acc.share) || 0) + (Number(acc.interest_amount) || 0);
+        return {
+            ...acc,
+            percentage: grandTotal > 0 ? (accTotal / grandTotal) * 100 : 0
+        };
+    });
 
-    const rawTarget = parseINR(entry.amount);
+    const rawTarget = entry.type === 'manual' ? 0 : parseINR(entry.amount);
 
     // Primary Paid
     const priTarget = rawTarget * (effectivePrimaryPercentage / 100);
@@ -106,7 +121,7 @@ const getRowPaidTotalRaw = (entry, loan) => {
 
     // Secondaries Paid
     let secPaidTotal = 0;
-    secAccs.forEach(acc => {
+    secAccsComputed.forEach(acc => {
         const sTarget = rawTarget * ((acc.percentage || 0) / 100);
         secPaidTotal += getRowAccountPaid(entry, acc.account_name, sTarget, false);
     });
@@ -115,8 +130,13 @@ const getRowPaidTotalRaw = (entry, loan) => {
 };
 
 const hasRowBalance = (entry, loan) => {
-    const target = parseINR(entry.amount);
-    if (target === 0) return false;
+    const target = entry.type === 'manual' ? 0 : parseINR(entry.amount);
+    if (target === 0) {
+        const totalPaid = getRowPaidTotalRaw(entry, loan);
+        let overridenTotal = 0;
+        try { overridenTotal = (entry.splits ? Object.values(JSON.parse(entry.splits)).reduce((s, x) => s + (Number(x.amount)||0) + (Number(x.tds)||0), 0) : 0); } catch(e) {}
+        return overridenTotal > totalPaid && overridenTotal > 0;
+    }
     const paid = getRowPaidTotalRaw(entry, loan);
     return Math.round(paid) < Math.round(target);
 };
@@ -141,9 +161,9 @@ const getLoanStatus = (loan) => {
     const sortedKeys = [...validDues].map(e => getDateKey(e.date)).filter(k => k > 0).sort();
     const lastKey = sortedKeys[sortedKeys.length - 1];
 
-    // Condition 1: OVERDUE (Red) - LAST due date crossed today (and not CLOSED)
+    // Condition 1: DATE OVERDUE (Red) - LAST due date crossed today (and not CLOSED)
     if (lastKey > 0 && lastKey < todayKey) {
-        return { label: 'OVERDUE', color: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-800/50' };
+        return { label: 'DATE OVERDUE', color: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-800/50' };
     }
 
     // Condition 3: ACTIVE (Red) - LAST due not crossed, but previous/current due (<= today) not fully received
@@ -153,7 +173,7 @@ const getLoanStatus = (loan) => {
     });
 
     if (hasPendingHistoricalDue) {
-        return { label: 'ACTIVE', color: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-800/50' };
+        return { label: 'OVERDUE', color: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50' };
     }
 
     // Condition 2: ACTIVE (Green) - LAST due NOT crossed AND all dues up to today already received
@@ -370,8 +390,8 @@ const JlDueReport = ({ user }) => {
                 } else if (sortConfig.key === 'status') {
                     const getStatusWeight = (loan) => {
                         const statusInfo = getLoanStatus(loan);
-                        if (statusInfo.label === 'OVERDUE') return 1;
-                        if (statusInfo.label === 'ACTIVE' && statusInfo.color.includes('rose')) return 2;
+                        if (statusInfo.label === 'DATE OVERDUE') return 1;
+                        if (statusInfo.label === 'OVERDUE') return 2;
                         if (statusInfo.label === 'ACTIVE' && statusInfo.color.includes('emerald')) return 3;
                         if (statusInfo.label === 'CLOSED') return 4;
                         return 5;
@@ -556,16 +576,31 @@ const JlDueReport = ({ user }) => {
 
                     // Installment Rows
                     const secPercentagesSum = secAccs.reduce((sum, acc) => sum + (Number(acc.percentage) || 0), 0);
-                    const effectivePrimaryPercentage = isNaN(Number(loan.primary_account_share)) || Number(loan.primary_account_share) === 0
-                        ? Math.max(0, 100 - secPercentagesSum)
-                        : Number(loan.primary_account_share);
+                    // Use dynamic percentages precisely matching LoanDetail.jsx
+                    const loanAmount = loan.loan_amount || 0;
+                    const totalRepay = loan.repayment_amount || 0;
+                    const secPrincipalSum = secAccs.reduce((sum, acc) => sum + (Number(acc.share) || 0), 0);
+                    const secInterestSum = secAccs.reduce((sum, acc) => sum + (Number(acc.interest_amount) || 0), 0);
+                    const priLoan = Number(loan.primary_account_amount) || 0;
+                    const priInterest = Number(loan.primary_account_interest) || 0;
+                    const priRepayTotal = priLoan + priInterest;
+                    const grandTotal = priRepayTotal + secPrincipalSum + secInterestSum;
+                    const effectivePrimaryPercentage = grandTotal > 0 ? (priRepayTotal / grandTotal) * 100 : 0;
+                    
+                    const secAccsComputed = secAccs.map(acc => {
+                        const accTotal = (Number(acc.share) || 0) + (Number(acc.interest_amount) || 0);
+                        return {
+                            ...acc,
+                            percentage: grandTotal > 0 ? (accTotal / grandTotal) * 100 : 0
+                        };
+                    });
 
                     osInstallments.forEach(e => {
                         const rN = worksheet.getRow(cur);
                         const rowVals = [e.date || '', parseINR(e.amount), '']; // empty 'date' col as per image
 
                         // Primary O/S calculation (Balance owed for this row)
-                        const rawTarget = parseINR(e.amount);
+                        const rawTarget = e.type === 'manual' ? 0 : parseINR(e.amount);
                         const priTarget = rawTarget * (effectivePrimaryPercentage / 100);
                         const priPaid = getRowAccountPaid(e, loan.primary_account_name, priTarget, true);
                         const priOS = Math.round(priTarget - priPaid) <= 0 ? 0 : (priTarget - priPaid);
@@ -574,7 +609,7 @@ const JlDueReport = ({ user }) => {
                         rowVals.push(priOS || '', priTds);
 
                         // Secondary splits (O/S shares)
-                        secAccs.forEach(acc => {
+                        secAccsComputed.forEach(acc => {
                             const sTarget = rawTarget * ((acc.percentage || 0) / 100);
                             const sPaid = getRowAccountPaid(e, acc.account_name, sTarget, false);
                             const sOS = Math.round(sTarget - sPaid) <= 0 ? 0 : (sTarget - sPaid);
@@ -614,7 +649,7 @@ const JlDueReport = ({ user }) => {
                 const sortedLoans = [...loans].sort((a, b) => {
                     const sA = getLoanStatus(a).label;
                     const sB = getLoanStatus(b).label;
-                    const getP = (s) => (s === 'Overdue' ? 0 : s === 'Active' ? 1 : 2);
+                    const getP = (s) => (s === 'DATE OVERDUE' ? 0 : s === 'OVERDUE' ? 1 : s === 'ACTIVE' ? 2 : 3);
                     return getP(sA) - getP(sB);
                 });
 
@@ -628,9 +663,9 @@ const JlDueReport = ({ user }) => {
                 for (let i = 1; i < maxTotalAccs; i++) headers.push(`SEC-${i}`);
                 headers.push('LOAN AMOUNT', 'REPAYMENT', 'PRIMARY\nLOAN', 'PRIMARY\nREPAYMENT');
                 for (let i = 1; i < maxTotalAccs; i++) headers.push(`SEC-${i}\nLOAN`, `SEC-${i}\nREPAYMENT`);
-                headers.push('PRIMARY\nRECEIVED');
+                headers.push('OVERALL\nRECEIVED', 'PRIMARY\nRECEIVED');
                 for (let i = 1; i < maxTotalAccs; i++) headers.push(`SEC-${i}\nRECEIVED`);
-                headers.push('PRIMARY\nO/S');
+                headers.push('OVERALL\nO/S', 'PRIMARY\nO/S');
                 for (let i = 1; i < maxTotalAccs; i++) headers.push(`SEC-${i}\nO/S`);
                 headers.push('TOTAL DUE', 'RECEIVED DUE', 'OVER DUE', 'Status');
 
@@ -662,8 +697,8 @@ const JlDueReport = ({ user }) => {
 
                     const secPrincipalSum = secAccs.reduce((sum, acc) => sum + (Number(acc.share) || 0), 0);
                     const secInterestSum = secAccs.reduce((sum, acc) => sum + (Number(acc.interest_amount) || 0), 0);
-                    const priLoan = Number(loan.primary_account_amount) || (loanAmount - secPrincipalSum);
-                    const priInterest = Number(loan.primary_account_interest) || ((totalRepay - loanAmount) - secInterestSum);
+                    const priLoan = Number(loan.primary_account_amount) || 0;
+                    const priInterest = Number(loan.primary_account_interest) || 0;
                     const priRepayTotal = priLoan + priInterest;
 
                     rowData.push(priLoan, priRepayTotal);
@@ -676,34 +711,65 @@ const JlDueReport = ({ user }) => {
                     }
 
                     const secPercentagesSum = secAccs.reduce((sum, acc) => sum + (Number(acc.percentage) || 0), 0);
-                    const effectivePrimaryPercentage = isNaN(Number(loan.primary_account_share)) || Number(loan.primary_account_share) === 0
-                        ? Math.max(0, 100 - secPercentagesSum)
-                        : Number(loan.primary_account_share);
+                    // Use dynamic percentages precisely matching LoanDetail.jsx
+                    const grandTotal = priRepayTotal + secPrincipalSum + secInterestSum;
+                    const effectivePrimaryPercentage = grandTotal > 0 ? (priRepayTotal / grandTotal) * 100 : 0;
+                    
+                    const secAccsComputed = secAccs.map(acc => {
+                        const accTotal = (Number(acc.share) || 0) + (Number(acc.interest_amount) || 0);
+                        return {
+                            ...acc,
+                            percentage: grandTotal > 0 ? (accTotal / grandTotal) * 100 : 0
+                        };
+                    });
 
                     const cutoffKey = getDateKey(selectedDate || new Date().toLocaleDateString('en-CA'));
 
                     const getPaidShare = (accName, percentage, isPrimary) => {
                         return schedule.reduce((sum, e) => {
-                            const rDate = isPrimary ? e.received_date : e.payment_date;
-                            const rKey = getDateKey(rDate);
+                            if (e.type === 'manual') return sum;
+
                             const dKey = getDateKey(e.date);
+                            const rKey = getDateKey(e.received_date);
+                            const pKey = getDateKey(e.payment_date); // DUE DATE field for secondary
 
-                            // Received by now check:
-                            // Primary: physically paid before cutoff.
-                            // Secondary: marked paid AND due date has passed.
-                            const filterKey = isPrimary ? rKey : dKey;
-                            const hasDateMark = rKey > 0;
-                            const inReportWindow = dKey > 0 && filterKey <= cutoffKey;
+                            const hasReceivedDate = rKey > 0;
+                            const hasDueDate = pKey > 0; // secondary uses payment_date as due date
 
-                            if (hasDateMark && inReportWindow) {
+                            const isEligible = isPrimary ? hasReceivedDate : hasDueDate;
+                            const inReportWindow = isPrimary ? (rKey > 0 && rKey <= cutoffKey) : (pKey > 0 && pKey <= cutoffKey);
+
+                            if (isEligible && inReportWindow) {
+                                const grossTarget = parseINR(e.amount) * (percentage / 100);
                                 const dataArray = getSplitData(e.splits, accName);
-                                if (dataArray !== null) {
-                                    const overAmt = dataArray.reduce((s, item) => s + (Number(item.amount) || 0), 0);
-                                    const overTDS = dataArray.reduce((s, item) => s + (Number(item.tds) || 0), 0);
-                                    return sum + overAmt + overTDS;
+
+                                if (isPrimary) {
+                                    // Primary: use override if present, else full gross + TDS
+                                    if (dataArray !== null && dataArray.length > 0) {
+                                        const overAmt = dataArray.reduce((s, item) => s + (Number(item.amount) || 0), 0);
+                                        const overTDS = dataArray.reduce((s, item) => s + (Number(item.tds) || 0), 0);
+                                        return sum + overAmt + overTDS;
+                                    } else {
+                                        const defaultTds = getSplitTDS(e.splits, accName) || 0;
+                                        return sum + grossTarget + defaultTds;
+                                    }
                                 } else {
-                                    const grossTarget = parseINR(e.amount) * (percentage / 100);
-                                    return sum + grossTarget;
+                                    // Secondary received logic:
+                                    // - If received_date set → fully collected, use full gross (or override if present)
+                                    // - If no received_date but override entered → partial payment only, use override amount
+                                    // - If no received_date AND no override → not yet received, skip
+                                    const hasRowReceivedDate = rKey > 0;
+                                    if (!hasRowReceivedDate && (dataArray === null || dataArray.length === 0)) {
+                                        // Nothing received for this row yet — skip
+                                        return sum;
+                                    }
+                                    if (dataArray !== null && dataArray.length > 0) {
+                                        const paidAmt = dataArray.reduce((s, item) => s + (Number(item.amount) || 0) + (Number(item.tds) || 0), 0);
+                                        return sum + paidAmt;
+                                    } else {
+                                        // received_date is set, no override → fully settled, count full share
+                                        return sum + grossTarget;
+                                    }
                                 }
                             }
                             return sum;
@@ -712,18 +778,20 @@ const JlDueReport = ({ user }) => {
 
                     const getOsShare = (accName, percentage, isPrimary) => {
                         return schedule.reduce((sum, e) => {
+                            if (e.type === 'manual') return sum;
+                            
                             const dKey = getDateKey(e.date);
                             if (dKey > 0 && dKey <= cutoffKey) {
                                 const rDate = isPrimary ? e.received_date : e.payment_date;
                                 const rKey = getDateKey(rDate);
-                                const target = parseINR(e.amount) * (percentage / 100);
+                                const target = e.type === 'manual' ? 0 : parseINR(e.amount) * (percentage / 100);
 
                                 // Paid check: Was this specific payment received BY the report cutoff?
                                 const paidByNow = rKey > 0 && (isPrimary ? rKey <= cutoffKey : true);
 
                                 if (paidByNow) {
                                     const dataArray = getSplitData(e.splits, accName);
-                                    if (dataArray !== null) {
+                                    if (dataArray !== null && dataArray.length > 0) {
                                         const paidAmt = dataArray.reduce((s, item) => s + (Number(item.amount) || 0) + (Number(item.tds) || 0), 0);
                                         return sum + Math.max(0, target - paidAmt);
                                     } else {
@@ -737,19 +805,28 @@ const JlDueReport = ({ user }) => {
                         }, 0);
                     };
 
-                    rowData.push(getPaidShare(loan.primary_account_name, effectivePrimaryPercentage, true));
+                    const priReceived = getPaidShare(loan.primary_account_name, effectivePrimaryPercentage, true);
+                    let secReceivedArr = [];
                     for (let i = 0; i < maxTotalAccs - 1; i++) {
-                        if (secAccs[i]) {
-                            rowData.push(getPaidShare(secAccs[i].account_name, secAccs[i].percentage || 0, false));
-                        } else { rowData.push(''); }
+                        if (secAccsComputed[i]) {
+                            secReceivedArr.push(getPaidShare(secAccsComputed[i].account_name, secAccsComputed[i].percentage || 0, false));
+                        } else { secReceivedArr.push(''); }
                     }
+                    const overallReceived = priReceived + secReceivedArr.reduce((s, a) => s + (Number(a) || 0), 0);
+                    rowData.push(overallReceived, priReceived, ...secReceivedArr);
 
-                    rowData.push(getOsShare(loan.primary_account_name, effectivePrimaryPercentage, true));
+                    const priOsVal = Math.round(getOsShare(loan.primary_account_name, effectivePrimaryPercentage, true));
+                    let secOsArr = [];
+                    let secOsValsSum = 0;
                     for (let i = 0; i < maxTotalAccs - 1; i++) {
-                        if (secAccs[i]) {
-                            rowData.push(getOsShare(secAccs[i].account_name, secAccs[i].percentage || 0, false));
-                        } else { rowData.push(''); }
+                        if (secAccsComputed[i]) {
+                            const val = Math.round(getOsShare(secAccsComputed[i].account_name, secAccsComputed[i].percentage || 0, false));
+                            secOsArr.push(val);
+                            secOsValsSum += val;
+                        } else { secOsArr.push(''); }
                     }
+                    const overallOs = priOsVal + secOsValsSum;
+                    rowData.push(overallOs, priOsVal, ...secOsArr);
 
                     const currentOverdueCount = schedule.filter(e => {
                         const dKey = getDateKey(e.date);
@@ -760,13 +837,18 @@ const JlDueReport = ({ user }) => {
 
                     const totalDueCount = schedule.filter(e => parseINR(e.amount) > 0).length;
                     const receivedDueCount = schedule.filter(e => parseINR(e.amount) > 0 && !hasRowBalance(e, loan)).length;
+                    
+                    let finalExcelStatus = statusInfo.label;
+                    if (priOsVal > 0 && secOsValsSum <= 0) {
+                        finalExcelStatus = 'TDS';
+                    }
 
-                    rowData.push(totalDueCount, receivedDueCount, currentOverdueCount, statusInfo.label);
+                    rowData.push(totalDueCount, receivedDueCount, currentOverdueCount, finalExcelStatus);
 
                     const dataRow = worksheet.getRow(idx + 2);
                     dataRow.values = rowData;
                     
-                    const isRedRow = statusInfo.label === 'OVERDUE' || (statusInfo.label === 'ACTIVE' && statusInfo.color.includes('rose'));
+                    const isRedRow = finalExcelStatus === 'DATE OVERDUE' || finalExcelStatus === 'OVERDUE';
 
                     for (let i = 1; i <= rowData.length; i++) {
                         const cell = dataRow.getCell(i);
@@ -775,6 +857,16 @@ const JlDueReport = ({ user }) => {
                         
                         if (isRedRow) {
                             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE4E6' } };
+                        }
+
+                        // TDS row: light yellow bg on all columns except Status
+                        if (finalExcelStatus === 'TDS' && headers[i - 1] !== 'Status') {
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFDE7' } }; // Light Yellow
+                        }
+
+                        const currentHeader = headers[i - 1];
+                        if (['LOAN AMOUNT', 'REPAYMENT', 'OVERALL\nRECEIVED', 'OVERALL\nO/S'].includes(currentHeader)) {
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC5D9F1' } }; // #C5D9F1 Blue
                         }
 
                         if (typeof rowData[i - 1] === 'number') {
@@ -790,16 +882,18 @@ const JlDueReport = ({ user }) => {
 
                         if (headers[i - 1] === 'Status') {
                             cell.font.bold = true;
-                            if (statusInfo.label === 'OVERDUE') { 
+                            if (finalExcelStatus === 'DATE OVERDUE') { 
                                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; 
                                 cell.font.color = { argb: 'FFFFFFFF' }; 
                             }
-                            else if (statusInfo.label === 'ACTIVE') { 
-                                if (statusInfo.color.includes('rose')) {
-                                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF9999' } }; 
-                                } else {
-                                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } }; 
-                                }
+                            else if (finalExcelStatus === 'OVERDUE') { 
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF9999' } }; 
+                            }
+                            else if (finalExcelStatus === 'ACTIVE') { 
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } }; 
+                            }
+                            else if (finalExcelStatus === 'TDS') {
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }; 
                             }
                             else { 
                                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } }; 
