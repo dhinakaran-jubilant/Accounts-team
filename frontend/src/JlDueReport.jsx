@@ -680,8 +680,25 @@ const JlDueReport = ({ user }) => {
                     cell.border = thickBorder;
                 }
 
+                // Apply grouping (hiding) for columns from "PRIMARY LOAN" to the column before "OVERALL RECEIVED"
+                const hideStart = headers.indexOf('PRIMARY\nLOAN') + 1;
+                const hideEnd = headers.indexOf('OVERALL\nRECEIVED'); // 0-based index of OVERALL RECEIVED = 1-based index of preceding column
+                if (hideStart > 0 && hideEnd >= hideStart) {
+                    for (let i = hideStart; i <= hideEnd; i++) {
+                        const column = worksheet.getColumn(i);
+                        column.outlineLevel = 1;
+                        column.hidden = true;
+                    }
+                    worksheet.properties.outlineProperties = {
+                        summaryDetailBelow: false,
+                        summaryRight: false,
+                    };
+                }
+
                 sortedLoans.forEach((loan, idx) => {
                     const schedule = loan.repayment_schedule || [];
+                    const systemSched = schedule.filter(s => s.type !== 'manual');
+                    const interestRowId = systemSched[0]?.id;
                     const secAccs = loan.secondary_accounts || [];
                     const statusInfo = getLoanStatus(loan);
 
@@ -789,16 +806,22 @@ const JlDueReport = ({ user }) => {
                                 // Paid check: Was this specific payment received BY the report cutoff?
                                 const paidByNow = rKey > 0 && (isPrimary ? rKey <= cutoffKey : true);
 
+                                // Adjust target for Interest Row TDS logic:
+                                // "if not filled [due date] its o/s" -> If paidByNow is true, we subtract the auto-TDS from target.
+                                const isIntRow = e.id === interestRowId;
+                                const autoTds = isIntRow ? (target * 0.10) : 0;
+                                const effectiveTarget = (isIntRow && paidByNow) ? (target - autoTds) : target;
+
                                 if (paidByNow) {
                                     const dataArray = getSplitData(e.splits, accName);
                                     if (dataArray !== null && dataArray.length > 0) {
                                         const paidAmt = dataArray.reduce((s, item) => s + (Number(item.amount) || 0) + (Number(item.tds) || 0), 0);
-                                        return sum + Math.max(0, target - paidAmt);
+                                        return sum + Math.max(0, effectiveTarget - paidAmt);
                                     } else {
                                         return sum; // Fully received
                                     }
                                 } else {
-                                    return sum + target; // Not received yet
+                                    return sum + effectiveTarget; // Not received yet
                                 }
                             }
                             return sum;
@@ -855,18 +878,28 @@ const JlDueReport = ({ user }) => {
                         cell.border = thickBorder;
                         cell.font = { name: 'Trebuchet MS', size: 10 };
                         
-                        if (isRedRow) {
-                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE4E6' } };
-                        }
-
-                        // TDS row: light yellow bg on all columns except Status
-                        if (finalExcelStatus === 'TDS' && headers[i - 1] !== 'Status') {
-                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFDE7' } }; // Light Yellow
-                        }
-
                         const currentHeader = headers[i - 1];
+
+                        // 1. Highlight Columns Styling (#C5D9F1 Light Blue)
                         if (['LOAN AMOUNT', 'REPAYMENT', 'OVERALL\nRECEIVED', 'OVERALL\nO/S'].includes(currentHeader)) {
-                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC5D9F1' } }; // #C5D9F1 Blue
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC5D9F1' } };
+                        }
+
+                        // 2. Status Column Styling
+                        if (currentHeader === 'Status') {
+                            cell.font.bold = true;
+                            if (finalExcelStatus === 'DATE OVERDUE') {
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; // Red
+                                cell.font.color = { argb: 'FFFFFFFF' }; // White text
+                            } else if (finalExcelStatus === 'OVERDUE') {
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC000' } }; // Orange
+                            } else if (finalExcelStatus === 'TDS') {
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }; // Yellow
+                            } else if (finalExcelStatus === 'ACTIVE') {
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } }; // Green
+                            } else {
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } }; // Default Green for others
+                            }
                         }
 
                         if (typeof rowData[i - 1] === 'number') {
@@ -878,26 +911,6 @@ const JlDueReport = ({ user }) => {
                             }
                         } else {
                             cell.alignment = { horizontal: 'center' };
-                        }
-
-                        if (headers[i - 1] === 'Status') {
-                            cell.font.bold = true;
-                            if (finalExcelStatus === 'DATE OVERDUE') { 
-                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; 
-                                cell.font.color = { argb: 'FFFFFFFF' }; 
-                            }
-                            else if (finalExcelStatus === 'OVERDUE') { 
-                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF9999' } }; 
-                            }
-                            else if (finalExcelStatus === 'ACTIVE') { 
-                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } }; 
-                            }
-                            else if (finalExcelStatus === 'TDS') {
-                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }; 
-                            }
-                            else { 
-                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } }; 
-                            }
                         }
                     }
                 });
