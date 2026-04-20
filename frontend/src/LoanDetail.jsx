@@ -71,34 +71,26 @@ const toYYYYMMDD = (val) => {
 };
 
 const formatDateInput = (val) => {
-    let digits = val.replace(/\D/g, '');
-    if (digits.length > 8) digits = digits.slice(0, 8);
+    const digits = val.replace(/\D/g, '');
+    let formatted = '';
+    if (digits.length > 0) formatted += digits.slice(0, 2);
+    if (digits.length > 2) formatted += '-' + digits.slice(2, 4);
+    if (digits.length > 4) formatted += '-' + digits.slice(4, 8);
+    return formatted;
+};
 
-    let dd = digits.slice(0, 2);
-    let mm = digits.slice(2, 4);
-    let yyyy = digits.slice(4, 8);
-
-    if (dd.length === 2) {
-        if (parseInt(dd) > 31) dd = '31';
-        if (parseInt(dd) === 0 && digits.length >= 2) dd = '01';
-    }
-
-    if (mm.length === 2) {
-        if (parseInt(mm) > 12) mm = '12';
-        if (parseInt(mm) === 0) mm = '01';
-        
-        // Final day validation based on month
-        const d = parseInt(dd);
-        const m = parseInt(mm);
-        const y = parseInt(yyyy) || 2024; // Use 2024 as default for leap year check
-        const maxDays = new Date(y, m, 0).getDate();
-        if (d > maxDays) dd = maxDays.toString().padStart(2, '0');
-    }
-
-    let result = dd;
-    if (digits.length > 2) result += '-' + mm;
-    if (digits.length > 4) result += '-' + yyyy;
-    return result;
+const isDateFormatInvalid = (val) => {
+    if (!val || val.length < 10) return false;
+    const parts = val.split('-');
+    if (parts.length !== 3) return true;
+    const d = parseInt(parts[0]);
+    const m = parseInt(parts[1]);
+    const y = parseInt(parts[2]);
+    if (isNaN(d) || isNaN(m) || isNaN(y)) return true;
+    if (m > 12 || m < 1) return true;
+    const maxDays = new Date(y, m, 0).getDate();
+    if (d > maxDays || d < 1) return true;
+    return false;
 };
 
 const getSplitData = (splitsStr, targetKey) => {
@@ -204,7 +196,16 @@ const RepaymentTable = ({
     });
 
     const [expandedRows, setExpandedRows] = useState({});
+    const [blurredFields, setBlurredFields] = useState(new Set());
     const toggleRow = (id) => setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
+
+    const markBlurred = (id, field) => {
+        setBlurredFields(prev => {
+            const next = new Set(prev);
+            next.add(`${id}-${field}`);
+            return next;
+        });
+    };
 
     const todayObj = new Date();
     const todayYYYYMMDD = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
@@ -338,8 +339,11 @@ const RepaymentTable = ({
                                                                 type="text"
                                                                 value={entry.date || ''}
                                                                 onChange={(e) => handleScheduleUpdate(entry.id, 'date', formatDateInput(e.target.value))}
-                                                                onBlur={(e) => handleFieldChange(entry.id, 'date', e.target.value)}
-                                                                className="bg-transparent border-none text-left text-sm font-medium w-24 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 -ml-1 transition-all"
+                                                                onBlur={(e) => {
+                                                                    handleFieldChange(entry.id, 'date', e.target.value);
+                                                                    markBlurred(entry.id, 'date');
+                                                                }}
+                                                                className={`bg-transparent text-left text-sm font-medium w-24 focus:outline-none focus:ring-1 rounded px-1 -ml-1 transition-all ${(blurredFields.has(`${entry.id}-date`) && isDateFormatInvalid(entry.date)) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'}`}
                                                                 placeholder="dd-mm-yyyy"
                                                             />
                                                             <div className="relative">
@@ -433,8 +437,11 @@ const RepaymentTable = ({
                                                             value={entry.received_date || ''}
                                                             disabled={isFutureRow}
                                                             onChange={(e) => handleScheduleUpdate(entry.id, 'received_date', formatDateInput(e.target.value))}
-                                                            onBlur={(e) => handleFieldChange(entry.id, 'received_date', e.target.value)}
-                                                            className={`bg-transparent text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 rounded transition-all -ml-1 ${isReceivedDateInvalid ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${isFutureRow ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                            onBlur={(e) => {
+                                                                handleFieldChange(entry.id, 'received_date', e.target.value);
+                                                                markBlurred(entry.id, 'received_date');
+                                                            }}
+                                                            className={`bg-transparent text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 rounded transition-all -ml-1 ${(isReceivedDateInvalid || (blurredFields.has(`${entry.id}-received_date`) && isDateFormatInvalid(entry.received_date))) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${isFutureRow ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                             placeholder="dd-mm-yyyy"
                                                         />
                                                         <div className="relative h-5 w-5 flex justify-center items-center">
@@ -508,8 +515,11 @@ const RepaymentTable = ({
                                                             value={entry.payment_date || ''}
                                                             disabled={!entry.received_date}
                                                             onChange={(e) => handleScheduleUpdate(entry.id, 'payment_date', formatDateInput(e.target.value))}
-                                                            onBlur={(e) => handleFieldChange(entry.id, 'payment_date', e.target.value)}
-                                                            className={`bg-transparent border-none text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded ${!entry.received_date ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                            onBlur={(e) => {
+                                                                handleFieldChange(entry.id, 'payment_date', e.target.value);
+                                                                markBlurred(entry.id, 'payment_date');
+                                                            }}
+                                                            className={`bg-transparent text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 rounded transition-all ${(blurredFields.has(`${entry.id}-payment_date`) && isDateFormatInvalid(entry.payment_date)) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${(!entry.received_date) ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                             placeholder="dd-mm-yyyy"
                                                         />
                                                         <div className="relative h-5 w-5 flex justify-center items-center">
