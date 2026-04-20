@@ -115,7 +115,7 @@ const getRowAccountPaid = (entry, accName, targetShare, isPrimary, expectedTds =
 
     // Priority 2: Fallback to date column if no specific splits for this account
     // If date exists but no split, assume full share was paid
-    return hasDate ? (targetShare + expectedTds) : 0;
+    return hasDate ? targetShare : 0;
 };
 
 const getRowPaidTotalRaw = (entry, loan) => {
