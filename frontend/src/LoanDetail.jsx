@@ -71,12 +71,34 @@ const toYYYYMMDD = (val) => {
 };
 
 const formatDateInput = (val) => {
-    const digits = val.replace(/\D/g, '');
-    let formatted = '';
-    if (digits.length > 0) formatted += digits.slice(0, 2);
-    if (digits.length > 2) formatted += '-' + digits.slice(2, 4);
-    if (digits.length > 4) formatted += '-' + digits.slice(4, 8);
-    return formatted;
+    let digits = val.replace(/\D/g, '');
+    if (digits.length > 8) digits = digits.slice(0, 8);
+
+    let dd = digits.slice(0, 2);
+    let mm = digits.slice(2, 4);
+    let yyyy = digits.slice(4, 8);
+
+    if (dd.length === 2) {
+        if (parseInt(dd) > 31) dd = '31';
+        if (parseInt(dd) === 0 && digits.length >= 2) dd = '01';
+    }
+
+    if (mm.length === 2) {
+        if (parseInt(mm) > 12) mm = '12';
+        if (parseInt(mm) === 0) mm = '01';
+        
+        // Final day validation based on month
+        const d = parseInt(dd);
+        const m = parseInt(mm);
+        const y = parseInt(yyyy) || 2024; // Use 2024 as default for leap year check
+        const maxDays = new Date(y, m, 0).getDate();
+        if (d > maxDays) dd = maxDays.toString().padStart(2, '0');
+    }
+
+    let result = dd;
+    if (digits.length > 2) result += '-' + mm;
+    if (digits.length > 4) result += '-' + yyyy;
+    return result;
 };
 
 const getSplitData = (splitsStr, targetKey) => {

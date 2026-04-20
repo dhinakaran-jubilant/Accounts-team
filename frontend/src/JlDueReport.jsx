@@ -809,6 +809,8 @@ const JlDueReport = ({ user }) => {
                                 const isIntRow = e.id === interestRowId;
                                 const currentExpectedTds = isIntRow ? expectedTdsPerEntry : 0;
                                 const target = parseINR(e.amount) * (percentage / 100);
+                                
+                                // For O/S calculation, we count it as paid only if the account's respective date is filled.
                                 const paid = getRowAccountPaid(e, accName, target, isPrimary, currentExpectedTds);
                                 return sum + Math.max(0, target - paid);
                             }
