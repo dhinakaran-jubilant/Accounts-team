@@ -387,15 +387,12 @@ const JlDueReport = ({ user }) => {
         if (user?.role === 'admin' && adminAccountFilter && adminAccountFilter.length > 0) {
             result = result.filter(row => {
                 const priAcronym = getAcronym(row.primary_account_name).toUpperCase();
-                const secAcronyms = (row.secondary_accounts || []).map(acc => getAcronym(acc.account_name).toUpperCase());
-                return adminAccountFilter.some(term => priAcronym === term || secAcronyms.includes(term));
+                return adminAccountFilter.some(term => priAcronym === term);
             });
         } else if (accountFilter) {
             const term = accountFilter.toUpperCase();
             result = result.filter(row => {
-                const priMatch = getAcronym(row.primary_account_name).toUpperCase() === term;
-                const secMatch = (row.secondary_accounts || []).some(acc => getAcronym(acc.account_name).toUpperCase() === term);
-                return priMatch || secMatch;
+                return getAcronym(row.primary_account_name).toUpperCase() === term;
             });
         }
 
@@ -481,7 +478,7 @@ const JlDueReport = ({ user }) => {
         }
 
         return result;
-    }, [data, accountFilter, searchTerm, selectedDate, sortConfig]);
+    }, [data, accountFilter, adminAccountFilter, user, searchTerm, selectedDate, sortConfig]);
 
     // Pagination calculations
     const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
@@ -525,12 +522,15 @@ const JlDueReport = ({ user }) => {
         let osData = data.filter(loan => getLoanStatus(loan).label !== 'Closed');
 
         // If an account filter is active in the UI, respect it in the O/S report too
-        if (accountFilter) {
+        if (user?.role === 'admin' && adminAccountFilter && adminAccountFilter.length > 0) {
+            osData = osData.filter(row => {
+                const priAcronym = getAcronym(row.primary_account_name).toUpperCase();
+                return adminAccountFilter.some(term => priAcronym === term);
+            });
+        } else if (accountFilter) {
             const term = accountFilter.toUpperCase();
             osData = osData.filter(row => {
-                const priMatch = getAcronym(row.primary_account_name).toUpperCase() === term;
-                const secMatch = (row.secondary_accounts || []).some(acc => getAcronym(acc.account_name).toUpperCase() === term);
-                return priMatch || secMatch;
+                return getAcronym(row.primary_account_name).toUpperCase() === term;
             });
         }
 
