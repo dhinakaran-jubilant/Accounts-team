@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
-const Approval = ({ user, defaultTab = 'pending' }) => {
+const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) => {
     const [approvals, setApprovals] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -24,13 +24,15 @@ const Approval = ({ user, defaultTab = 'pending' }) => {
         );
     };
     const navigate = useNavigate();
+    const location = useLocation();
 
-    const fetchApprovals = async () => {
+    const fetchApprovals = async (tabOverride) => {
         try {
             setLoading(true);
+            const currentTab = tabOverride || activeTab;
             let url = `/api/approvals?user_name=${encodeURIComponent(user.name)}`;
-            if (activeTab === 'history') url += '&history=true';
-            if (activeTab === 'my-requests') url += '&requester=true';
+            if (currentTab === 'history') url += '&history=true';
+            if (currentTab === 'my-requests') url += '&requester=true';
             
             const res = await fetch(url);
             const result = await res.json();
@@ -45,6 +47,14 @@ const Approval = ({ user, defaultTab = 'pending' }) => {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (user?.name) {
+            setActiveTab(defaultTab);
+            setApprovals([]);
+            fetchApprovals(defaultTab);
+        }
+    }, [user, defaultTab, location.key]);
 
     const fetchLoanDetails = async (loanId) => {
         try {
@@ -65,11 +75,12 @@ const Approval = ({ user, defaultTab = 'pending' }) => {
         }
     };
 
-    useEffect(() => {
-        if (user?.name) {
-            fetchApprovals();
-        }
-    }, [user, activeTab]);
+    // Internal tab switching
+    const handleTabChange = (newTab) => {
+        setActiveTab(newTab);
+        setApprovals([]);
+        fetchApprovals(newTab);
+    };
 
     const handleAction = async (loanId, action) => {
         try {
@@ -227,8 +238,16 @@ const Approval = ({ user, defaultTab = 'pending' }) => {
         }
     };
 
-    const filteredApprovals = approvals.filter(item => {
-        if (activeTab === 'pending') return true; // Only filter history for now based on request
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 20;
+
+    // Reset page to 1 when filters or tabs change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, statusFilter, activeTab]);
+
+    const baseFilteredApprovals = approvals.filter(item => {
+        if (activeTab === 'pending') return true; 
         
         const matchesSearch = 
             item.client_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -241,6 +260,10 @@ const Approval = ({ user, defaultTab = 'pending' }) => {
             
         return matchesSearch && matchesStatus;
     });
+
+    const totalPages = Math.ceil(baseFilteredApprovals.length / ITEMS_PER_PAGE);
+    const filteredApprovals = baseFilteredApprovals.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
 
     if (loading) {
         return (
@@ -258,7 +281,7 @@ const Approval = ({ user, defaultTab = 'pending' }) => {
             <div className="mb-10 flex flex-col md:flex-row md:items-center gap-6">
                 <div>
                     <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
-                        {user.role === 'admin' ? 'Approval Queue' : 'My Requests'}
+                        {(user.role === 'admin' && !isMyRequestsPage) ? 'Approval Queue' : 'My Requests'}
                     </h1>
                 </div>
 
@@ -287,25 +310,19 @@ const Approval = ({ user, defaultTab = 'pending' }) => {
                     )}
                 </div>
 
-                {user.role === 'admin' && (
+                {user.role === 'admin' && !isMyRequestsPage && (
                     <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl w-fit">
                         <button
-                            onClick={() => setActiveTab('pending')}
+                            onClick={() => handleTabChange('pending')}
                             className={`px-6 py-2 text-xs font-black tracking-widest uppercase rounded-lg transition-all ${activeTab === 'pending' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                         >
                             Pending Items
                         </button>
                         <button
-                            onClick={() => setActiveTab('history')}
+                            onClick={() => handleTabChange('history')}
                             className={`px-6 py-2 text-xs font-black tracking-widest uppercase rounded-lg transition-all ${activeTab === 'history' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                         >
                             Action History
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('my-requests')}
-                            className={`px-6 py-2 text-xs font-black tracking-widest uppercase rounded-lg transition-all ${activeTab === 'my-requests' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                        >
-                            My Requests
                         </button>
                     </div>
                 )}
@@ -464,6 +481,34 @@ const Approval = ({ user, defaultTab = 'pending' }) => {
                             </tbody>
                         </table>
                     </div>
+                    
+                    {/* Pagination Footer */}
+                    {totalPages > 1 && (
+                        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                            <span className="text-sm text-slate-500 font-medium">
+                                Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, baseFilteredApprovals.length)} of {baseFilteredApprovals.length} entries
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                    className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                    Previous
+                                </button>
+                                <span className="px-4 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-bold text-blue-600 dark:text-blue-400">
+                                    {currentPage} / {totalPages}
+                                </span>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                    className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-600 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 

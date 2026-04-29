@@ -100,7 +100,7 @@ function App() {
                     element={
                         user ? (
                             <Layout user={user} onLogout={handleLogout} activeMenu="my-requests">
-                                <Approval user={user} defaultTab="my-requests" />
+                                <Approval user={user} defaultTab="my-requests" isMyRequestsPage={true} />
                             </Layout>
                         ) : <Navigate to="/login" replace />
                     } 
