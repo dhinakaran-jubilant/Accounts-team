@@ -277,8 +277,8 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
     }
 
     return (
-        <div className="p-8 mx-auto w-full">
-            <div className="mb-10 flex flex-col md:flex-row md:items-center gap-6">
+        <div className="p-8 mx-auto w-full h-[calc(100vh-2rem)] md:h-[calc(100vh-64px)] flex flex-col min-h-0">
+            <div className="mb-8 flex flex-col md:flex-row md:items-center gap-6 shrink-0">
                 <div>
                     <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
                         {(user.role === 'admin' && !isMyRequestsPage) ? 'Approval Queue' : 'My Requests'}
@@ -329,14 +329,14 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
             </div>
 
             {error && (
-                <div className="mb-8 p-4 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800/50 rounded-2xl text-rose-600 dark:text-rose-400 flex items-center gap-3">
+                <div className="mb-8 shrink-0 p-4 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800/50 rounded-2xl text-rose-600 dark:text-rose-400 flex items-center gap-3">
                     <span className="material-symbols-outlined">error</span>
                     <p className="font-bold">{error}</p>
                 </div>
             )}
 
             {filteredApprovals.length === 0 ? (
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-20 text-center shadow-sm">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-20 text-center shadow-sm shrink-0">
                     <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800/50 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-300 dark:text-slate-600">
                         <span className="material-symbols-outlined text-[32px]">
                             {activeTab === 'history' ? (searchTerm || statusFilter !== 'ALL' ? 'search_off' : 'history') : 'check_circle'}
@@ -356,8 +356,8 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                     </p>
                 </div>
             ) : (
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-                    <div className="overflow-x-auto scrollbar-premium">
+                <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+                    <div className="flex-1 overflow-auto scrollbar-premium">
                         <table className="min-w-full w-max border-collapse">
                             <thead>
                                 <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
