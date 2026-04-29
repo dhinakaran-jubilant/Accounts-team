@@ -38,10 +38,10 @@ const parseINR = (val) => {
 const getSplitData = (splitsStr, targetKey) => {
     let sDict = {};
     try { sDict = splitsStr ? JSON.parse(splitsStr) : {}; } catch (err) { }
-    
+
     // Try primary key (Full Name)
     let val = sDict[targetKey];
-    
+
     // Fallback: Try Acronym if targetKey is a full name
     if (val === undefined || val === null) {
         const acronym = getAcronym(targetKey);
@@ -49,7 +49,7 @@ const getSplitData = (splitsStr, targetKey) => {
             val = sDict[acronym];
         }
     }
-    
+
     // Fallback: Case-insensitive search
     if (val === undefined || val === null) {
         const lowerKey = targetKey.toLowerCase().trim();
@@ -128,14 +128,14 @@ const getRowPaidTotalRaw = (entry, loan) => {
     const priLoan = parseINR(loan.primary_account_amount) || 0;
     const priInterest = parseINR(loan.primary_account_interest) || 0;
     const priRepayTotal = priLoan + priInterest;
-    
+
     const secPrincipalSum = secAccs.reduce((sum, acc) => sum + (parseINR(acc.share) || 0), 0);
     const secInterestSum = secAccs.reduce((sum, acc) => sum + (parseINR(acc.interest_amount) || 0), 0);
     const secRepayTotal = secPrincipalSum + secInterestSum;
-    
+
     const grandTotal = priRepayTotal + secRepayTotal;
     const effectivePrimaryPercentage = grandTotal > 0 ? (priRepayTotal / grandTotal) * 100 : 0;
-    
+
     const rawTarget = entry.type === 'manual' ? 0 : parseINR(entry.amount);
 
     // Primary Paid
@@ -158,18 +158,21 @@ const getRowPaidTotalRaw = (entry, loan) => {
 const hasRowBalance = (entry, loan) => {
     const target = entry.type === 'manual' ? 0 : parseINR(entry.amount);
     const paid = getRowPaidTotalRaw(entry, loan);
-    
+
     if (target === 0) {
         // For manual entries, only show as O/S if a split was intentionally created with a remaining balance
         // Usually manual entries are not part of the O/S report unless specifically filtered.
         return false;
     }
-    
+
     // Use a small epsilon for float comparison
     return (target - paid) > 0.99;
 };
 
 const getLoanStatus = (loan) => {
+    if (loan.approval_status === 'PENDING') {
+        return { label: 'PENDING', color: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50' };
+    }
     const schedule = loan.repayment_schedule || [];
     if (schedule.length === 0) return { label: 'No Data', color: 'bg-slate-100 text-slate-500 border-slate-200' };
 
@@ -215,12 +218,12 @@ const JlDueReport = ({ user }) => {
     const [selectedFile, setSelectedFile] = useState(null);
     const [accounts, setAccounts] = useState([{ name: '', share: '' }]);
     const [loanRefId, setLoanRefId] = useState('');
+    const [verifiedBy, setVerifiedBy] = useState('System Admin');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [uploadError, setUploadError] = useState('');
     const [accountFilter, setAccountFilter] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedDate, setSelectedDate] = useState('');
-    const [selectedLoanId, setSelectedLoanId] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
     const [loanToDelete, setLoanToDelete] = useState(null);
     const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
@@ -228,13 +231,6 @@ const JlDueReport = ({ user }) => {
     const pageRef = useRef(null);
     const exportDropdownRef = useRef(null);
 
-    // Lock background scroll when panel is open
-    useEffect(() => {
-        const el = pageRef.current;
-        if (!el) return;
-        el.style.overflow = selectedLoanId ? 'hidden' : '';
-        return () => { if (el) el.style.overflow = ''; };
-    }, [selectedLoanId]);
 
     // Handle click outside to close export dropdown
     useEffect(() => {
@@ -262,7 +258,7 @@ const JlDueReport = ({ user }) => {
     const handleRemoveAccount = (index) => setAccounts(accounts.filter((_, i) => i !== index));
     const handleAccountChange = (index, field, value) => {
         const newAccs = [...accounts];
-        newAccs[index][field] = value;
+        newAccs[index][field] = field === 'name' ? value.toUpperCase() : value;
         setAccounts(newAccs);
     };
 
@@ -270,7 +266,7 @@ const JlDueReport = ({ user }) => {
         if (!selectedFile) return;
         const formattedAccounts = accounts
             .filter(a => a.name.trim() !== '' && a.share.toString().trim() !== '')
-            .map(a => ({ name: a.name.trim(), share: parseFloat(a.share) }));
+            .map(a => ({ name: a.name.trim().toUpperCase(), share: parseFloat(a.share) }));
 
         setIsSubmitting(true);
         setUploadError('');
@@ -349,6 +345,7 @@ const JlDueReport = ({ user }) => {
 
     useEffect(() => {
         fetchLoans();
+
     }, []);
 
     useEffect(() => {
@@ -532,7 +529,9 @@ const JlDueReport = ({ user }) => {
         // Shared Styles
         const thickBorder = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
         const lightBlueFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } };
+        const headerBlueFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF8DB4E2' } };
         const darkBlueFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF203764' } };
+        const partialFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2DCDB' } };
 
         if (isDetailed) {
             // DETAILED BLOCK-BASED LAYOUT (For O/S Report - Image 2 style)
@@ -561,48 +560,46 @@ const JlDueReport = ({ user }) => {
 
                     // Row 1: Header [PRIMARY - PARTY NAME] | [DATE]
                     const r1 = worksheet.getRow(cur);
-                    r1.values = [`${getAcronym(loan.primary_account_name)} - ${loan.client_name?.toUpperCase()}`, '', '', '', '', '', '', today];
-                    worksheet.mergeCells(cur, 1, cur, 4);
-                    r1.getCell(1).font = { name: 'Trebuchet MS', bold: true, size: 12 };
-                    r1.getCell(1).alignment = { horizontal: 'center' };
-                    r1.getCell(1).fill = lightBlueFill;
+                    r1.values = [
+                        loan.loan_date || '',
+                        loan.client_name?.toUpperCase() || '',
+                        loan.loan_ref_id || '',
+                        '', '', '', ''
+                    ];
+                    
+                    // Style Loan Date (A1)
+                    r1.getCell(1).font = { name: 'Trebuchet MS', bold: true };
+                    r1.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC4D79B' } };
                     r1.getCell(1).border = thickBorder;
+                    r1.getCell(1).alignment = { horizontal: 'center' };
 
-                    r1.getCell(8).font = { name: 'Trebuchet MS', bold: true, color: { argb: 'FF000000' } };
-                    r1.getCell(8).alignment = { horizontal: 'center' };
-                    r1.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF9794FE' } };
-                    r1.getCell(8).border = thickBorder;
-                    cur++;
+                    // Style Primary - Party Name (B1)
+                    r1.getCell(2).font = { name: 'Trebuchet MS', bold: true, size: 11 };
+                    r1.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC4D79B' } };
+                    r1.getCell(2).border = thickBorder;
+                    r1.getCell(2).alignment = { horizontal: 'left', indent: 1 };
 
-                    // Row 2: Metadata Labels [DATE | PRIMARY | LOAN NO | PARTY NAME]
-                    const r2 = worksheet.getRow(cur);
-                    r2.values = ['DATE', 'PRIMARY', 'LOAN NO', 'PARTY NAME'];
-                    for (let i = 1; i <= 4; i++) {
-                        r2.getCell(i).style = { font: { name: 'Trebuchet MS', bold: true }, fill: lightBlueFill, border: thickBorder, alignment: { horizontal: 'center' } };
-                    }
-                    cur++;
+                    // Style Loan No (C1)
+                    r1.getCell(3).font = { name: 'Trebuchet MS', bold: true };
+                    r1.getCell(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC4D79B' } };
+                    r1.getCell(3).border = thickBorder;
+                    r1.getCell(3).alignment = { horizontal: 'center' };
 
-                    // Row 3: Metadata Values
-                    const r3 = worksheet.getRow(cur);
-                    r3.values = [loan.loan_date || '', getAcronym(loan.primary_account_name).toUpperCase(), loan.loan_ref_id || '', loan.client_name?.toUpperCase() || ''];
-                    for (let i = 1; i <= 4; i++) {
-                        r3.getCell(i).style = { border: thickBorder, alignment: { horizontal: 'center' } };
-                    }
                     cur++;
 
                     // Row 4: Schedule Table Headers
                     const r4 = worksheet.getRow(cur);
-                    const sHeaders = ['DATE', 'AMOUNT', 'DATE'];
+                    const sHeaders = ['DATE', 'DUES', 'AMOUNT'];
                     const priAcr = getAcronym(loan.primary_account_name).toUpperCase();
-                    sHeaders.push(priAcr, 'TDS');
+                    sHeaders.push(priAcr);
                     secAccs.forEach(acc => {
-                        sHeaders.push('DATE', getAcronym(acc.account_name).toUpperCase(), 'TDS');
+                        sHeaders.push(getAcronym(acc.account_name).toUpperCase(), 'TDS');
                     });
                     sHeaders.push('PARTIAL');
 
                     r4.values = sHeaders;
                     for (let i = 1; i <= sHeaders.length; i++) {
-                        r4.getCell(i).style = { font: { name: 'Trebuchet MS', bold: true }, fill: lightBlueFill, border: thickBorder, alignment: { horizontal: 'center' } };
+                        r4.getCell(i).style = { font: { name: 'Trebuchet MS', bold: true }, fill: headerBlueFill, border: thickBorder, alignment: { horizontal: 'center' } };
                     }
                     cur++;
 
@@ -610,63 +607,69 @@ const JlDueReport = ({ user }) => {
                     const priLoanAmount = parseINR(loan.primary_account_amount) || 0;
                     const priInterestAmount = parseINR(loan.primary_account_interest) || 0;
                     const priRepayTotal = priLoanAmount + priInterestAmount;
-                    
+
                     const secPrincipalSum = secAccs.reduce((sum, acc) => sum + (parseINR(acc.share) || 0), 0);
                     const secInterestSum = secAccs.reduce((sum, acc) => sum + (parseINR(acc.interest_amount) || 0), 0);
                     const secRepayTotal = secPrincipalSum + secInterestSum;
-                    
+
                     const grandTotal = priRepayTotal + secRepayTotal;
                     const effectivePrimaryPercentage = grandTotal > 0 ? (priRepayTotal / grandTotal) * 100 : 0;
 
                     osInstallments.forEach(e => {
                         const rN = worksheet.getRow(cur);
-                        const rowVals = [e.date || '', parseINR(e.amount), '']; 
+                        const dueIdx = systemSched.findIndex(s => s.id === e.id) + 1;
+                        const dueText = `${dueIdx}/${systemSched.length}`;
+                        const rowVals = [e.date || '', dueText, parseINR(e.amount)];
                         const isIntRow = e.id === interestRowId;
 
                         const rawTarget = e.type === 'manual' ? 0 : parseINR(e.amount);
                         const priTarget = rawTarget * (effectivePrimaryPercentage / 100);
                         const priPaid = getRowAccountPaid(e, loan.primary_account_name, priTarget, true, 0);
                         const priOS = Math.max(0, priTarget - priPaid);
-                        
-                        let priTdsOS = 0;
-                        const priHasDate = e.received_date && e.received_date !== '—' && e.received_date !== 'dd-mm-yyyy' && e.received_date !== '-' && e.received_date !== '';
-                        if (!priHasDate) {
-                            const priTdsPaid = getSplitTDS(e.splits, loan.primary_account_name);
-                            priTdsOS = Math.max(0, 0 - priTdsPaid); // Primary has no auto-TDS
-                        }
 
-                        rowVals.push(priOS > 0.99 ? priOS : '', priTdsOS > 0.99 ? priTdsOS : '');
+                        rowVals.push(priOS > 0.99 ? priOS : '');
 
-                        // Secondary O/S
-                        secAccs.forEach(acc => {
+                        const partialColIndices = [];
+                        if (priPaid > 0.99 && priOS > 0.99) partialColIndices.push(4);
+
+                        let isAnyStakeholderPartial = (priPaid > 0.99 && priOS > 0.99);
+
+                        secAccs.forEach((acc, sIdx) => {
                             const accTotal = (parseINR(acc.share) || 0) + (parseINR(acc.interest_amount) || 0);
                             const sPercentage = grandTotal > 0 ? (accTotal / grandTotal) * 100 : 0;
                             const sTarget = rawTarget * (sPercentage / 100);
                             const sExpectedTds = isIntRow ? (parseINR(acc.interest_amount) || 0) * 0.10 : 0;
                             const sPaid = getRowAccountPaid(e, acc.account_name, sTarget, false, sExpectedTds);
-                            
+
                             const sOS = Math.max(0, sTarget - sPaid);
                             const sHasDate = e.payment_date && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-' && e.payment_date !== '';
-                            
+
                             let sTdsOS = 0;
                             if (!sHasDate) {
                                 const sTdsPaidFromSplits = getSplitTDS(e.splits, acc.account_name);
                                 sTdsOS = Math.max(0, sExpectedTds - sTdsPaidFromSplits);
                             }
 
-                            rowVals.push('', sOS > 0.99 ? sOS : '', sTdsOS > 0.99 ? sTdsOS : '');
+                            if (sPaid > 0.99 && sOS > 0.99) {
+                                isAnyStakeholderPartial = true;
+                                partialColIndices.push(5 + (sIdx * 2));
+                            }
+
+                            rowVals.push((sOS - sTdsOS) > 0.99 ? (sOS - sTdsOS) : '', sTdsOS > 0.99 ? sTdsOS : '');
                         });
 
-                        const totalPaidInRow = getRowPaidTotalRaw(e, loan);
-                        rowVals.push(totalPaidInRow > 0 ? 'Partial' : '');
+                        rowVals.push(isAnyStakeholderPartial ? 'Partial' : '');
 
                         rN.values = rowVals;
                         for (let i = 1; i <= rowVals.length; i++) {
                             const cell = rN.getCell(i);
                             cell.border = thickBorder;
+                            if (partialColIndices.includes(i)) {
+                                cell.fill = partialFill;
+                            }
                             if (typeof rowVals[i - 1] === 'number') {
                                 cell.numFmt = '#,##0';
-                                cell.alignment = { horizontal: 'right' };
+                                cell.alignment = { horizontal: 'center' };
                             } else {
                                 cell.alignment = { horizontal: 'center' };
                             }
@@ -722,18 +725,30 @@ const JlDueReport = ({ user }) => {
 
                 // Apply grouping (hiding) for columns from "PRIMARY LOAN" to the column before "OVERALL RECEIVED"
                 const hideStart = headers.indexOf('PRIMARY\nLOAN') + 1;
-                const hideEnd = headers.indexOf('OVERALL\nRECEIVED'); // 0-based index of OVERALL RECEIVED = 1-based index of preceding column
+                const hideEnd = headers.indexOf('OVERALL\nRECEIVED'); 
                 if (hideStart > 0 && hideEnd >= hideStart) {
                     for (let i = hideStart; i <= hideEnd; i++) {
                         const column = worksheet.getColumn(i);
                         column.outlineLevel = 1;
                         column.hidden = true;
                     }
-                    worksheet.properties.outlineProperties = {
-                        summaryDetailBelow: false,
-                        summaryRight: false,
-                    };
                 }
+
+                // Apply grouping (hiding) for individual Received columns (PRIMARY RECEIVED to last SEC RECEIVED)
+                const recStart = headers.indexOf('PRIMARY\nRECEIVED') + 1;
+                const recEnd = headers.indexOf('OVERALL\nO/S');
+                if (recStart > 0 && recEnd >= recStart) {
+                    for (let i = recStart; i <= recEnd; i++) {
+                        const column = worksheet.getColumn(i);
+                        column.outlineLevel = 1;
+                        column.hidden = true;
+                    }
+                }
+
+                worksheet.properties.outlineProperties = {
+                    summaryDetailBelow: false,
+                    summaryRight: false,
+                };
 
                 sortedLoans.forEach((loan, idx) => {
                     const schedule = loan.repayment_schedule || [];
@@ -771,7 +786,7 @@ const JlDueReport = ({ user }) => {
                     // Use dynamic percentages precisely matching LoanDetail.jsx
                     const grandTotal = priRepayTotal + secPrincipalSum + secInterestSum;
                     const effectivePrimaryPercentage = grandTotal > 0 ? (priRepayTotal / grandTotal) * 100 : 0;
-                    
+
                     const secAccsComputed = secAccs.map(acc => {
                         const accTotal = (parseINR(acc.share) || 0) + (parseINR(acc.interest_amount) || 0);
                         return {
@@ -785,11 +800,11 @@ const JlDueReport = ({ user }) => {
                     const getPaidShare = (accName, percentage, isPrimary, expectedTdsPerEntry = 0) => {
                         return schedule.reduce((sum, e) => {
                             if (e.type === 'manual') return sum;
-                            
+
                             const dVal = isPrimary ? e.received_date : e.payment_date;
                             const rKey = getDateKey(dVal);
                             const inWindow = rKey > 0 && rKey <= cutoffKey;
-                            
+
                             if (inWindow) {
                                 const isIntRow = e.id === interestRowId;
                                 const currentExpectedTds = isIntRow ? expectedTdsPerEntry : 0;
@@ -804,15 +819,17 @@ const JlDueReport = ({ user }) => {
                         return schedule.reduce((sum, e) => {
                             if (e.type === 'manual') return sum;
                             const dKey = getDateKey(e.date);
-                            
+
                             if (dKey > 0 && dKey <= cutoffKey) {
                                 const isIntRow = e.id === interestRowId;
                                 const currentExpectedTds = isIntRow ? expectedTdsPerEntry : 0;
                                 const target = parseINR(e.amount) * (percentage / 100);
-                                
+
                                 // For O/S calculation, we count it as paid only if the account's respective date is filled.
                                 const paid = getRowAccountPaid(e, accName, target, isPrimary, currentExpectedTds);
-                                return sum + Math.max(0, target - paid);
+                                const sTdsPaidFromSplits = e.splits ? getSplitTDS(e.splits, accName) : 0;
+                                const remainingTds = Math.max(0, currentExpectedTds - sTdsPaidFromSplits);
+                                return sum + Math.max(0, target - paid - remainingTds);
                             }
                             return sum;
                         }, 0);
@@ -854,7 +871,7 @@ const JlDueReport = ({ user }) => {
 
                     const totalDueCount = schedule.filter(e => parseINR(e.amount) > 0).length;
                     const receivedDueCount = schedule.filter(e => parseINR(e.amount) > 0 && !hasRowBalance(e, loan)).length;
-                    
+
                     let finalExcelStatus = statusInfo.label;
                     if (priOsVal > 0 && secOsValsSum <= 0) {
                         finalExcelStatus = 'TDS';
@@ -864,14 +881,14 @@ const JlDueReport = ({ user }) => {
 
                     const dataRow = worksheet.getRow(idx + 2);
                     dataRow.values = rowData;
-                    
+
                     const isRedRow = finalExcelStatus === 'DATE OVERDUE' || finalExcelStatus === 'OVERDUE';
 
                     for (let i = 1; i <= rowData.length; i++) {
                         const cell = dataRow.getCell(i);
                         cell.border = thickBorder;
                         cell.font = { name: 'Trebuchet MS', size: 10 };
-                        
+
                         const currentHeader = headers[i - 1];
 
                         // 1. Highlight Columns Styling (#C5D9F1 Light Blue)
@@ -932,9 +949,28 @@ const JlDueReport = ({ user }) => {
         const url = window.URL.createObjectURL(blob);
         const anchor = document.createElement('a');
         anchor.href = url;
-        const dateStr = selectedDate ? `_${selectedDate}` : '';
+        const exportDate = selectedDate || new Date().toISOString().split('T')[0];
+        const dateStr = `_${exportDate}`;
         anchor.download = `${reportPrefix}_${accountFilter || searchTerm || 'All'}${dateStr}.xlsx`;
         anchor.click();
+        
+        // Track the export in Google Sheets
+        try {
+            await fetch('/api/track-export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    report_type: reportPrefix.replace(/_/g, ' '),
+                    filters: `${accountFilter || 'All Accounts'} | Date: ${selectedDate || 'Current'} | Search: ${searchTerm || 'None'}`,
+                    total_entries: exportData.length,
+                    sw_categorized: exportData.length,
+                    remaining: 0
+                })
+            });
+        } catch (e) {
+            console.error('Failed to track export:', e);
+        }
+
         window.URL.revokeObjectURL(url);
     };
 
@@ -1070,7 +1106,7 @@ const JlDueReport = ({ user }) => {
                                         <tr>
                                             <th className="py-4 px-4 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">S.No</th>
                                             <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Loan ID</th>
-                                            <th 
+                                            <th
                                                 className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50 cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none"
                                                 onClick={() => setSortConfig(prev => ({ key: 'loan_date', direction: prev.key === 'loan_date' && prev.direction === 'asc' ? 'desc' : 'asc' }))}
                                             >
@@ -1085,7 +1121,7 @@ const JlDueReport = ({ user }) => {
                                             <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Pri Acc</th>
                                             <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Amount</th>
                                             <th className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">Others</th>
-                                            <th 
+                                            <th
                                                 className="py-4 px-2 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50 cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none"
                                                 onClick={() => setSortConfig(prev => ({ key: 'status', direction: prev.key === 'status' && prev.direction === 'asc' ? 'desc' : 'asc' }))}
                                             >
@@ -1146,13 +1182,10 @@ const JlDueReport = ({ user }) => {
                                             <tr
                                                 key={row.id}
                                                 onClick={() => {
-                                                    if (accountFilter || searchTerm || selectedDate) {
-                                                        setSelectedLoanId(row.id);
-                                                    } else {
-                                                        navigate(`/jl-due-report/${row.id}`);
-                                                    }
+                                                    navigate(`/jl-due-report/${row.id}`, { state: { filterDate: selectedDate } });
                                                 }}
-                                                className="hover:bg-slate-50 dark:hover:bg-slate-800/25 transition-colors group cursor-pointer"
+                                                title={row.approval_status === 'PENDING' ? 'Pending Approval - View only mode' : ''}
+                                                className="transition-colors group hover:bg-slate-50 dark:hover:bg-slate-800/25 cursor-pointer"
                                             >
                                                 <td className="py-2 px-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
                                                     {startIndex + index + 1}
@@ -1237,36 +1270,6 @@ const JlDueReport = ({ user }) => {
                 </div>
             </main>
 
-            {/* Loan Detail Card Modal */}
-            {selectedLoanId && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-                    {/* Backdrop */}
-                    <div
-                        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-                        onClick={() => setSelectedLoanId(null)}
-                    />
-                    {/* Card */}
-                    <div className="relative w-[70%] max-h-[90vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col animate-in zoom-in-95 fade-in duration-200">
-                        {/* Card Header */}
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
-                            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                <span className="material-symbols-outlined text-[18px]">receipt_long</span>
-                                Loan Detail
-                            </span>
-                            <button
-                                onClick={() => setSelectedLoanId(null)}
-                                className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 transition-colors"
-                            >
-                                <span className="material-symbols-outlined text-[20px]">close</span>
-                            </button>
-                        </div>
-                        {/* Card Content */}
-                        <div className="flex-1 overflow-y-auto">
-                            <LoanDetail loanId={selectedLoanId} onClose={() => setSelectedLoanId(null)} filterDate={selectedDate} />
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Document Import Modal Placeholder */}
             {showModal && (
@@ -1301,6 +1304,8 @@ const JlDueReport = ({ user }) => {
                                     <p className="text-[10px] text-slate-400 mt-1 text-right">{loanRefId.length}/11</p>
                                 </div>
                             )}
+
+
 
                             <div className="pt-2">
                                 <h4 className="font-semibold text-slate-900 dark:text-white uppercase tracking-wider text-sm mb-3">Remaining Accounts Details</h4>

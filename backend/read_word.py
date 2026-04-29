@@ -185,7 +185,7 @@ def build_final_output(data, remaining_accounts):
     # 🔸 Remaining accounts comprehension
     formatted_remaining = [
         {
-            "account_name": acc["name"],
+            "account_name": acc["name"].strip().upper(),
             "share": acc["share"],
             "percentage": round((acc["share"] / loan_amount) * 100, 2),
             "interest_amount": round((acc["share"] / loan_amount) * total_interest, 2),
@@ -201,7 +201,7 @@ def build_final_output(data, remaining_accounts):
         "total_repayment_amount": data["total_repayment"],
         "total_interest": round(total_interest, 2),
 
-        "primary_account_name": data["primary_account"],
+        "primary_account_name": data["primary_account"].strip().upper() if data["primary_account"] else None,
         "primary_account_share": primary_percentage,
         "primary_account_amount": primary_amount,
         "primary_account_interest": primary_interest,

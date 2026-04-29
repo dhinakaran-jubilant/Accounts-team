@@ -73,6 +73,10 @@ function Home() {
             });
 
             if (response.ok) {
+                const totalEntries = response.headers.get('X-Total-Entries');
+                const swCategorized = response.headers.get('X-SW-Categorized');
+                const remainingCount = response.headers.get('X-Remaining');
+
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -83,6 +87,23 @@ function Home() {
                 a.remove();
                 window.URL.revokeObjectURL(url);
                 setUploadStatus('success');
+
+                // Track the export in Google Sheets AFTER download
+                try {
+                    await fetch('/api/track-export', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            report_type: 'Matching Cheques',
+                            filters: `Bank: ${bankFile.name} | Cloud: ${cloudFile.name}`,
+                            total_entries: parseInt(totalEntries) || 0,
+                            sw_categorized: parseInt(swCategorized) || 0,
+                            remaining: parseInt(remainingCount) || 0
+                        })
+                    });
+                } catch (trackError) {
+                    console.error("Failed to track matching cheques export:", trackError);
+                }
             } else {
                 let errorMessage = "Unknown error";
                 try {

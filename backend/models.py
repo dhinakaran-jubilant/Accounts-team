@@ -23,6 +23,12 @@ class Loan(db.Model):
     total_repayment_amount = db.Column(db.Float, nullable=False)
     total_interest = db.Column(db.Float, nullable=False)
     is_deleted = db.Column(db.Boolean, default=False, nullable=False)
+    verified_by = db.Column(db.String(100), nullable=True)
+    approval_status = db.Column(db.String(20), default='PENDING', nullable=False) # PENDING, APPROVED, REJECTED
+    requester_name = db.Column(db.String(100), nullable=True)
+    requested_at = db.Column(db.String(100), nullable=True)
+    actioned_by = db.Column(db.String(100), nullable=True)
+    actioned_at = db.Column(db.String(100), nullable=True)
     
     # Relationships
     remaining_accounts = db.relationship('RemainingAccount', backref='loan', cascade="all, delete-orphan")

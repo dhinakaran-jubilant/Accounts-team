@@ -6,7 +6,7 @@
  * Date: 2026-04-08 11:53:28
  */
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 
 const fmtINR = (val, showSymbol = true, decimals = null) => {
@@ -80,14 +80,21 @@ const formatDateInput = (val) => {
 };
 
 const isDateFormatInvalid = (val) => {
-    if (!val || val.length < 10) return false;
+    if (!val) return false;
     const parts = val.split('-');
     if (parts.length !== 3) return true;
-    const d = parseInt(parts[0]);
-    const m = parseInt(parts[1]);
-    const y = parseInt(parts[2]);
+    const dStr = parts[0];
+    const mStr = parts[1];
+    const yStr = parts[2];
+    const d = parseInt(dStr);
+    const m = parseInt(mStr);
+    const y = parseInt(yStr);
     if (isNaN(d) || isNaN(m) || isNaN(y)) return true;
+    // Strictly require 4-digit year 
+    if (yStr.length !== 4) return true;
     if (m > 12 || m < 1) return true;
+    // Sensible year range check
+    if (y < 1900 || y > 2100) return true;
     const maxDays = new Date(y, m, 0).getDate();
     if (d > maxDays || d < 1) return true;
     return false;
@@ -207,12 +214,33 @@ const RepaymentTable = ({
         });
     };
 
+    const markFocused = (id, field) => {
+        setBlurredFields(prev => {
+            const next = new Set(prev);
+            next.delete(`${id}-${field}`);
+            return next;
+        });
+    };
+
     const todayObj = new Date();
     const todayYYYYMMDD = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
 
     return (
         <div className="mb-10 last:mb-0">
-            <SectionHeader title={title} icon={icon} />
+            <SectionHeader 
+                title={title} 
+                icon={icon} 
+                action={showAddButton && (
+                    <button
+                        onClick={handleAddRow}
+                        disabled={loan.approval_status !== 'APPROVED'}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all font-bold text-xs border border-indigo-200 dark:border-indigo-800 shadow-sm active:scale-95 disabled:opacity-50 ${loan.approval_status !== 'APPROVED' ? 'cursor-not-allowed' : ''}`}
+                    >
+                        <span className="material-symbols-outlined text-[16px]">add</span>
+                        Add Row
+                    </button>
+                )}
+            />
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
                 <div className="overflow-x-auto scrollbar-premium">
                     <table className="min-w-full w-max border-collapse">
@@ -298,6 +326,7 @@ const RepaymentTable = ({
                                     );
 
                                     const isReceivedDateInvalid = Boolean(entry.received_date && entry.date && entry.received_date.length >= 10 && toYYYYMMDD(entry.received_date) < toYYYYMMDD(entry.date));
+                                    const isPaymentDateInvalid = Boolean(entry.payment_date && entry.received_date && entry.payment_date.length >= 10 && toYYYYMMDD(entry.payment_date) < toYYYYMMDD(entry.received_date));
                                     const isFutureRow = Boolean(entry.date && toYYYYMMDD(entry.date) > todayYYYYMMDD);
 
                                     return (
@@ -320,16 +349,18 @@ const RepaymentTable = ({
                                                             <span className="w-4"></span>
                                                         )}
                                                         {idx + 1}
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                onClearRow && onClearRow(entry.id);
-                                                            }}
-                                                            className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 font-bold hover:text-red-500 p-0.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center justify-center mr-1"
-                                                            title="Clear all fields in this row"
-                                                        >
-                                                            <span className="material-symbols-outlined text-[16px]">backspace</span>
-                                                        </button>
+                                                        {loan.approval_status === 'APPROVED' && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    onClearRow && onClearRow(entry.id);
+                                                                }}
+                                                                className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 font-bold hover:text-red-500 p-0.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center justify-center mr-1"
+                                                                title="Clear all fields in this row"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[16px]">backspace</span>
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </td>
                                                 <td className="py-3 px-5 text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -343,22 +374,26 @@ const RepaymentTable = ({
                                                                     handleFieldChange(entry.id, 'date', e.target.value);
                                                                     markBlurred(entry.id, 'date');
                                                                 }}
-                                                                className={`bg-transparent text-left text-sm font-medium w-24 focus:outline-none focus:ring-1 rounded px-1 -ml-1 transition-all ${(blurredFields.has(`${entry.id}-date`) && isDateFormatInvalid(entry.date)) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'}`}
+                                                                onFocus={() => markFocused(entry.id, 'date')}
+                                                                readOnly={loan.approval_status !== 'APPROVED'}
+                                                                className={`bg-transparent text-left text-sm font-medium w-24 focus:outline-none focus:ring-1 rounded px-1 -ml-1 transition-all ${(blurredFields.has(`${entry.id}-date`) && isDateFormatInvalid(entry.date)) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${loan.approval_status !== 'APPROVED' ? 'cursor-not-allowed' : ''}`}
                                                                 placeholder="dd-mm-yyyy"
                                                             />
-                                                            <div className="relative">
-                                                                <span className="material-symbols-outlined text-[16px] text-slate-400 hover:text-primary cursor-pointer transition-colors opacity-0 group-hover:opacity-100">calendar_month</span>
-                                                                <input
-                                                                    type="date"
-                                                                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                                                                    value={toYYYYMMDD(entry.date)}
-                                                                    onChange={(e) => {
-                                                                        const val = toDDMMYYYY(e.target.value);
-                                                                        handleScheduleUpdate(entry.id, 'date', val);
-                                                                        handleFieldChange(entry.id, 'date', val);
-                                                                    }}
-                                                                />
-                                                            </div>
+                                                            {loan.approval_status === 'APPROVED' && (
+                                                                <div className="relative">
+                                                                    <span className="material-symbols-outlined text-[16px] text-slate-400 hover:text-primary cursor-pointer transition-colors opacity-0 group-hover:opacity-100">calendar_month</span>
+                                                                    <input
+                                                                        type="date"
+                                                                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                                                        value={toYYYYMMDD(entry.date)}
+                                                                        onChange={(e) => {
+                                                                            const val = toDDMMYYYY(e.target.value);
+                                                                            handleScheduleUpdate(entry.id, 'date', val);
+                                                                            handleFieldChange(entry.id, 'date', val);
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     ) : (
                                                         <span className="text-slate-900 dark:text-slate-100 font-bold">
@@ -373,7 +408,8 @@ const RepaymentTable = ({
                                                             value={entry.cheque_no || ''}
                                                             onChange={(e) => handleScheduleUpdate(entry.id, 'cheque_no', e.target.value)}
                                                             onBlur={(e) => handleFieldChange(entry.id, 'cheque_no', e.target.value)}
-                                                            className="bg-transparent border-none text-left text-sm font-medium w-full focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 -ml-1 transition-all"
+                                                            readOnly={loan.approval_status !== 'APPROVED'}
+                                                            className={`bg-transparent border-none text-left text-sm font-medium w-full focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 -ml-1 transition-all ${loan.approval_status !== 'APPROVED' ? 'cursor-not-allowed' : ''}`}
                                                             placeholder=""
                                                         />
                                                     ) : (
@@ -390,7 +426,8 @@ const RepaymentTable = ({
                                                             onBlur={(val) => {
                                                                 handleFieldChange(entry.id, 'amount', val);
                                                             }}
-                                                            className="bg-transparent border-none text-left text-sm font-bold w-full focus:outline-none focus:ring-1 focus:ring-primary/30 rounded transition-all"
+                                                            readOnly={loan.approval_status !== 'APPROVED'}
+                                                            className={`bg-transparent border-none text-left text-sm font-bold w-full focus:outline-none focus:ring-1 focus:ring-primary/30 rounded transition-all ${loan.approval_status !== 'APPROVED' ? 'cursor-not-allowed' : ''}`}
                                                             placeholder="0.00"
                                                         />
                                                     ) : (
@@ -407,7 +444,8 @@ const RepaymentTable = ({
                                                             onBlur={(val) => {
                                                                 handleFieldChange(entry.id, 'interest_amount', val);
                                                             }}
-                                                            className="bg-transparent border-none text-left text-sm font-bold w-full focus:outline-none focus:ring-1 focus:ring-primary/30 rounded transition-all"
+                                                            readOnly={loan.approval_status !== 'APPROVED'}
+                                                            className={`bg-transparent border-none text-left text-sm font-bold w-full focus:outline-none focus:ring-1 focus:ring-primary/30 rounded transition-all ${loan.approval_status !== 'APPROVED' ? 'cursor-not-allowed' : ''}`}
                                                             placeholder="0.00"
                                                         />
                                                     ) : (
@@ -421,7 +459,8 @@ const RepaymentTable = ({
                                                             value={entry.remarks || ''}
                                                             onChange={(e) => handleScheduleUpdate(entry.id, 'remarks', e.target.value)}
                                                             onBlur={(e) => handleFieldChange(entry.id, 'remarks', e.target.value)}
-                                                            className="bg-transparent border-none text-left text-sm w-full focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 -ml-1 transition-all resize-none overflow-hidden"
+                                                            readOnly={loan.approval_status !== 'APPROVED'}
+                                                            className={`bg-transparent border-none text-left text-sm w-full focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 -ml-1 transition-all resize-none overflow-hidden ${loan.approval_status !== 'APPROVED' ? 'cursor-not-allowed' : ''}`}
                                                             placeholder="Add remarks..."
                                                             onInput={(e) => {
                                                                 e.target.style.height = 'auto';
@@ -434,31 +473,35 @@ const RepaymentTable = ({
                                                     <div className="flex items-center justify-start gap-1">
                                                         <input
                                                             type="text"
+                                                            id={`received-date-${isManual ? 'manual' : 'system'}-${idx}`}
                                                             value={entry.received_date || ''}
-                                                            disabled={isFutureRow}
                                                             onChange={(e) => handleScheduleUpdate(entry.id, 'received_date', formatDateInput(e.target.value))}
                                                             onBlur={(e) => {
                                                                 handleFieldChange(entry.id, 'received_date', e.target.value);
                                                                 markBlurred(entry.id, 'received_date');
                                                             }}
-                                                            className={`bg-transparent text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 rounded transition-all -ml-1 ${(isReceivedDateInvalid || (blurredFields.has(`${entry.id}-received_date`) && isDateFormatInvalid(entry.received_date))) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${isFutureRow ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                            onFocus={() => markFocused(entry.id, 'received_date')}
+                                                            readOnly={loan.approval_status !== 'APPROVED'}
+                                                            className={`bg-transparent text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 rounded transition-all -ml-1 ${(isReceivedDateInvalid || (blurredFields.has(`${entry.id}-received_date`) && isDateFormatInvalid(entry.received_date))) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${isFutureRow || loan.approval_status !== 'APPROVED' ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                             placeholder="dd-mm-yyyy"
                                                         />
-                                                        <div className="relative h-5 w-5 flex justify-center items-center">
-                                                            <span className={`material-symbols-outlined text-[18px] text-slate-400 opacity-0 group-hover:opacity-100 transition-colors ${isFutureRow ? 'cursor-not-allowed' : 'cursor-pointer hover:text-primary'}`}>edit_calendar</span>
-                                                            <input
-                                                                type="date"
-                                                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
-                                                                disabled={isFutureRow}
-                                                                min={entry.date ? toYYYYMMDD(entry.date) : ''}
-                                                                value={toYYYYMMDD(entry.received_date)}
-                                                                onChange={(e) => {
-                                                                    const val = toDDMMYYYY(e.target.value);
-                                                                    handleScheduleUpdate(entry.id, 'received_date', val);
-                                                                    handleFieldChange(entry.id, 'received_date', val);
-                                                                }}
-                                                            />
-                                                        </div>
+                                                        {loan.approval_status === 'APPROVED' && (
+                                                            <div className="relative h-5 w-5 flex justify-center items-center">
+                                                                <span className={`material-symbols-outlined text-[18px] text-slate-400 opacity-0 group-hover:opacity-100 transition-colors ${isFutureRow ? 'cursor-not-allowed' : 'cursor-pointer hover:text-primary'}`}>edit_calendar</span>
+                                                                <input
+                                                                    type="date"
+                                                                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
+                                                                    disabled={isFutureRow}
+                                                                    min={entry.date ? toYYYYMMDD(entry.date) : ''}
+                                                                    value={toYYYYMMDD(entry.received_date)}
+                                                                    onChange={(e) => {
+                                                                        const val = toDDMMYYYY(e.target.value);
+                                                                        handleScheduleUpdate(entry.id, 'received_date', val);
+                                                                        handleFieldChange(entry.id, 'received_date', val);
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </td>
                                                 <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-right min-w-[150px]">
@@ -479,10 +522,10 @@ const RepaymentTable = ({
                                                         />
                                                     ) : (
                                                         <div
-                                                            className={`rounded px-1 transition-colors group relative inline-flex items-center justify-end gap-1 ${(!hasPrimaryOverride && !isFutureRow) ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : 'cursor-default'} ${isFutureRow ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                                            title={isFutureRow ? "Future date installments cannot be edited." : (hasPrimaryOverride ? "Override Applied. Edit payment details in sub-rows below." : "Click to override details")}
+                                                            className={`rounded px-1 transition-colors group relative inline-flex items-center justify-end gap-1 ${(!hasPrimaryOverride && !isFutureRow && loan.approval_status === 'APPROVED') ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : 'cursor-default'} ${isFutureRow || loan.approval_status !== 'APPROVED' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                            title={isFutureRow ? "Future date installments cannot be edited." : (loan.approval_status !== 'APPROVED' ? "View only mode" : (hasPrimaryOverride ? "Override Applied. Edit payment details in sub-rows below." : "Click to override details"))}
                                                             onClick={(e) => {
-                                                                if (hasPrimaryOverride || isFutureRow) return;
+                                                                if (hasPrimaryOverride || isFutureRow || loan.approval_status !== 'APPROVED') return;
                                                                 e.stopPropagation();
                                                                 const primarySystemTDS = 0; // Primary has no default TDS
                                                                 onEditAccountSplit && onEditAccountSplit(entry, loan.primary_account_name, primaryShare, false, 0, primarySystemTDS);
@@ -510,32 +553,46 @@ const RepaymentTable = ({
                                                 )}
                                                 <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-left group relative">
                                                     <div className="flex items-center justify-start gap-1">
-                                                        <input
-                                                            type="text"
-                                                            value={entry.payment_date || ''}
-                                                            disabled={!entry.received_date}
-                                                            onChange={(e) => handleScheduleUpdate(entry.id, 'payment_date', formatDateInput(e.target.value))}
-                                                            onBlur={(e) => {
-                                                                handleFieldChange(entry.id, 'payment_date', e.target.value);
-                                                                markBlurred(entry.id, 'payment_date');
-                                                            }}
-                                                            className={`bg-transparent text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 rounded transition-all ${(blurredFields.has(`${entry.id}-payment_date`) && isDateFormatInvalid(entry.payment_date)) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${(!entry.received_date) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                                            placeholder="dd-mm-yyyy"
-                                                        />
-                                                        <div className="relative h-5 w-5 flex justify-center items-center">
-                                                            <span className={`material-symbols-outlined text-[18px] text-slate-400 opacity-0 group-hover:opacity-100 transition-colors ${!entry.received_date ? 'cursor-not-allowed' : 'cursor-pointer hover:text-primary'}`}>edit_calendar</span>
-                                                            <input
-                                                                type="date"
-                                                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
-                                                                disabled={!entry.received_date}
-                                                                value={toYYYYMMDD(entry.payment_date)}
-                                                                onChange={(e) => {
-                                                                    const val = toDDMMYYYY(e.target.value);
-                                                                    handleScheduleUpdate(entry.id, 'payment_date', val);
-                                                                    handleFieldChange(entry.id, 'payment_date', val);
-                                                                }}
-                                                            />
-                                                        </div>
+                                                        {(() => {
+                                                            const hasReceivedDateError = isReceivedDateInvalid || (blurredFields.has(`${entry.id}-received_date`) && isDateFormatInvalid(entry.received_date));
+                                                            const isDueDateDisabled = !entry.received_date || hasReceivedDateError || loan.approval_status !== 'APPROVED';
+                                                            
+                                                            return (
+                                                                <>
+                                                                    <input
+                                                                        type="text"
+                                                                        id={`due-date-${isManual ? 'manual' : 'system'}-${idx}`}
+                                                                        value={entry.payment_date || ''}
+                                                                        onChange={(e) => handleScheduleUpdate(entry.id, 'payment_date', formatDateInput(e.target.value))}
+                                                                        onBlur={(e) => {
+                                                                            handleFieldChange(entry.id, 'payment_date', e.target.value);
+                                                                            markBlurred(entry.id, 'payment_date');
+                                                                        }}
+                                                                        onFocus={() => markFocused(entry.id, 'payment_date')}
+                                                                        readOnly={isDueDateDisabled}
+                                                                        className={`bg-transparent text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 rounded transition-all ${(isPaymentDateInvalid || (blurredFields.has(`${entry.id}-payment_date`) && isDateFormatInvalid(entry.payment_date))) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${isDueDateDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                                        placeholder="dd-mm-yyyy"
+                                                                    />
+                                                                    {loan.approval_status === 'APPROVED' && (
+                                                                        <div className="relative h-5 w-5 flex justify-center items-center">
+                                                                            <span className={`material-symbols-outlined text-[18px] text-slate-400 opacity-0 group-hover:opacity-100 transition-colors ${isDueDateDisabled ? 'cursor-not-allowed' : 'cursor-pointer hover:text-primary'}`}>edit_calendar</span>
+                                                                            <input
+                                                                                type="date"
+                                                                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
+                                                                                disabled={isDueDateDisabled}
+                                                                                min={entry.received_date ? toYYYYMMDD(entry.received_date) : ''}
+                                                                                value={toYYYYMMDD(entry.payment_date)}
+                                                                                onChange={(e) => {
+                                                                                    const val = toDDMMYYYY(e.target.value);
+                                                                                    handleScheduleUpdate(entry.id, 'payment_date', val);
+                                                                                    handleFieldChange(entry.id, 'payment_date', val);
+                                                                                }}
+                                                                            />
+                                                                        </div>
+                                                                    )}
+                                                                </>
+                                                            );
+                                                        })()}
                                                     </div>
                                                 </td>
                                                 {(loan.remaining_accounts || []).map((acc, i) => {
@@ -562,10 +619,10 @@ const RepaymentTable = ({
                                                                     />
                                                                 ) : (
                                                                     <div
-                                                                        className={`rounded px-1 transition-colors group relative inline-flex items-center justify-end gap-1 ${(!s.hasOverride && !isFutureRow && entry.received_date) ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : 'cursor-default'} ${(isFutureRow || !entry.received_date) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                                                        title={isFutureRow ? "Future date installments cannot be edited." : (!entry.received_date ? "Fill Received Date to edit secondary payments." : (s.hasOverride ? "Override Applied. Edit payment details in sub-rows below." : "Click to override details"))}
+                                                                        className={`rounded px-1 transition-colors group relative inline-flex items-center justify-end gap-1 ${(!s.hasOverride && !isFutureRow && entry.received_date && loan.approval_status === 'APPROVED') ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : 'cursor-default'} ${(isFutureRow || !entry.received_date || loan.approval_status !== 'APPROVED') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                                        title={isFutureRow ? "Future date installments cannot be edited." : (loan.approval_status !== 'APPROVED' ? "View only mode" : (!entry.received_date ? "Fill Received Date to edit secondary payments." : (s.hasOverride ? "Override Applied. Edit payment details in sub-rows below." : "Click to override details")))}
                                                                         onClick={(e) => {
-                                                                            if (s.hasOverride || isFutureRow || !entry.received_date) return;
+                                                                            if (s.hasOverride || isFutureRow || !entry.received_date || loan.approval_status !== 'APPROVED') return;
                                                                             e.stopPropagation();
                                                                             onEditAccountSplit && onEditAccountSplit(entry, acc.account_name, s.grossShare, false, 0, s.tds);
                                                                         }}
@@ -595,13 +652,15 @@ const RepaymentTable = ({
                                                 })}
                                                 {isManual && (
                                                     <td className="py-3 px-5 text-center">
-                                                        <button
-                                                            onClick={() => handleDeleteRow(entry.id)}
-                                                            className="inline-flex items-center justify-center h-7 w-7 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
-                                                            title="Delete Row"
-                                                        >
-                                                            <span className="material-symbols-outlined text-[18px]">delete</span>
-                                                        </button>
+                                                        {loan.approval_status === 'APPROVED' && (
+                                                            <button
+                                                                onClick={() => handleDeleteRow(entry.id)}
+                                                                className="inline-flex items-center justify-center h-7 w-7 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                                                title="Delete Row"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                            </button>
+                                                        )}
                                                     </td>
                                                 )}
                                             </tr>
@@ -726,9 +785,10 @@ const RepaymentTable = ({
                                                         <div className={`transition-all duration-300 ease-in-out overflow-hidden flex justify-end items-center ${expandedRows[entry.id] ? 'max-h-12 py-2.5 px-5 opacity-100' : 'max-h-0 py-0 px-5 opacity-0'}`}>
                                                             {balancePrimaryIsClickable ? (
                                                                 <div
-                                                                    className="cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded px-1.5 py-0.5 transition-colors group relative inline-flex items-center gap-1"
-                                                                    title="Click to add partial payment"
+                                                                    className={`${loan.approval_status === 'APPROVED' ? 'cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/50' : 'cursor-default opacity-50'} rounded px-1.5 py-0.5 transition-colors group relative inline-flex items-center gap-1`}
+                                                                    title={loan.approval_status !== 'APPROVED' ? "View only mode" : "Click to add partial payment"}
                                                                     onClick={(e) => {
+                                                                        if (loan.approval_status !== 'APPROVED') return;
                                                                         e.stopPropagation();
                                                                         onEditAccountSplit && onEditAccountSplit(entry, loan.primary_account_name, balancePrimaryAmount, true, -1);
                                                                     }}
@@ -760,9 +820,10 @@ const RepaymentTable = ({
                                                                     <div className={`transition-all duration-300 ease-in-out overflow-hidden flex justify-end items-center ${expandedRows[entry.id] ? 'max-h-12 py-2.5 px-5 opacity-100' : 'max-h-0 py-0 px-5 opacity-0'}`}>
                                                                         {clickable ? (
                                                                             <div
-                                                                                className="cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded px-1.5 py-0.5 transition-colors group relative inline-flex items-center gap-1"
-                                                                                title="Click to add partial payment"
+                                                                                className={`${loan.approval_status === 'APPROVED' ? 'cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/50' : 'cursor-default opacity-50'} rounded px-1.5 py-0.5 transition-colors group relative inline-flex items-center gap-1`}
+                                                                                title={loan.approval_status !== 'APPROVED' ? "View only mode" : "Click to add partial payment"}
                                                                                 onClick={(e) => {
+                                                                                    if (loan.approval_status !== 'APPROVED') return;
                                                                                     e.stopPropagation();
                                                                                     onEditAccountSplit && onEditAccountSplit(entry, acc.account_name, s.balance, true, -1);
                                                                                 }}
@@ -881,14 +942,14 @@ const RepaymentTable = ({
                     </table>
                 </div>
             </div>
-            {showAddButton && (
-                <div className="mt-4 flex justify-end">
+            {showAddButton && loan.approval_status === 'APPROVED' && (
+                <div className="mt-5 flex justify-center">
                     <button
                         onClick={handleAddRow}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95"
+                        className="flex items-center gap-2 px-6 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-2xl transition-all font-bold active:scale-95 border border-slate-200 dark:border-slate-700"
                     >
-                        <span className="material-symbols-outlined text-[20px]">add_box</span>
-                        Add Row
+                        <span className="material-symbols-outlined text-[20px]">add_circle</span>
+                        Add Manual Entry
                     </button>
                 </div>
             )}
@@ -1497,9 +1558,11 @@ const UploadStatusModal = ({ status, message, onClose }) => {
     );
 };
 
-const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
+const LoanDetail = ({ loanId: propLoanId, onClose, filterDate: propFilterDate } = {}) => {
     const params = useParams();
+    const location = useLocation();
     const id = propLoanId ?? params.id;
+    const filterDate = propFilterDate ?? location.state?.filterDate;
     const navigate = useNavigate();
     const scrollContainerRef = useRef(null);
     const [loan, setLoan] = useState(null);
@@ -1533,7 +1596,7 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                 const res = await fetch(`/api/loans/${id}`);
                 const result = await res.json();
                 if (res.ok && result.success) {
-                    setLoan(result.loan);
+                        setLoan(result.loan);
                 } else {
                     setError(result.error || 'Failed to load loan data.');
                 }
@@ -2197,6 +2260,24 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
         const idPart = loan.loan_ref_id ? `_${loan.loan_ref_id.replace(/\s+/g, '_')}` : '';
         a.download = `${namePart}${idPart}_SCHEDULE.xlsx`;
         a.click();
+
+        // Track the export in Google Sheets
+        try {
+            await fetch('/api/track-export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    report_type: `Loan Report - ${loan.client_name}`,
+                    filters: `Loan ID: ${loan.loan_ref_id || 'N/A'}`,
+                    total_entries: (loan.repayment_schedule || []).length,
+                    sw_categorized: (loan.repayment_schedule || []).length,
+                    remaining: 0
+                })
+            });
+        } catch (e) {
+            console.error('Failed to track export:', e);
+        }
+
         URL.revokeObjectURL(url);
     };
 
@@ -2265,18 +2346,20 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
     const systemSchedule = schedule.filter(s => s.type !== 'manual');
     const manualSchedule = schedule.filter(s => s.type === 'manual');
 
-    // When opened from a filtered view, only show overdue unpaid entries
-    const displayedSystemSchedule = filterDate
-        ? systemSchedule.filter(entry => {
-            const raw = entry.date || '';
-            // Convert dd-mm-yyyy to yyyy-mm-dd for comparison
-            const parts = raw.split('-');
-            const entryDateISO = parts.length === 3 && parts[0].length === 2
-                ? `${parts[2]}-${parts[1]}-${parts[0]}`
-                : raw;
-            return entryDateISO <= filterDate && !entry.received_date;
-        })
-        : systemSchedule;
+    const displayedSystemSchedule = filterDate ? systemSchedule.filter(entry => {
+        const scheduleDateStr = toYYYYMMDD(entry.date);
+        
+        // Match the filtering logic from JlDueReport for "Overdue" or "Current Due" items
+        const targetTotal = parseINR(entry.amount);
+        const paidTotal = getSplitAmount(entry.splits, loan.primary_account_name) +
+            getSplitTDS(entry.splits, loan.primary_account_name) +
+            (loan.remaining_accounts || []).reduce((s, acc) => s + getSplitAmount(entry.splits, acc.account_name) + getSplitTDS(entry.splits, acc.account_name), 0);
+
+        const hasNoReceivedDate = !entry.received_date || entry.received_date === '' || entry.received_date === '—' || entry.received_date === 'dd-mm-yyyy' || entry.received_date === '-';
+        const hasBalance = Math.round(paidTotal) < Math.round(targetTotal);
+        
+        return scheduleDateStr && scheduleDateStr <= filterDate && hasNoReceivedDate && hasBalance;
+    }) : systemSchedule;
 
 
 
@@ -2308,6 +2391,12 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                             <span className="material-symbols-outlined text-[13px]">calendar_today</span>
                             {loan.loan_date}
                         </span>
+                        {loan.verified_by && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800/50">
+                                <span className="material-symbols-outlined text-[13px]">verified_user</span>
+                                {loan.verified_by}
+                            </span>
+                        )}
                     </div>
                 </div>
 
@@ -2343,8 +2432,8 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                             />
                             <button
                                 onClick={() => fileInputRef.current?.click()}
-                                disabled={uploadStatus.status === 'uploading'}
-                                className="flex items-center gap-2 px-6 py-2.5 bg-orange-600 text-white rounded-2xl hover:bg-orange-700 transition-all font-bold shadow-lg shadow-orange-200 dark:shadow-none active:scale-95 disabled:opacity-70"
+                                disabled={uploadStatus.status === 'uploading' || loan.approval_status !== 'APPROVED'}
+                                className={`flex items-center gap-2 px-6 py-2.5 bg-orange-600 text-white rounded-2xl hover:bg-orange-700 transition-all font-bold shadow-lg shadow-orange-200 dark:shadow-none active:scale-95 disabled:opacity-70 ${loan.approval_status !== 'APPROVED' ? 'cursor-not-allowed' : ''}`}
                             >
                                 <span className="material-symbols-outlined text-[18px]">
                                     {uploadStatus.status === 'uploading' ? 'sync' : 'upload_file'}
@@ -2353,7 +2442,8 @@ const LoanDetail = ({ loanId: propLoanId, onClose, filterDate } = {}) => {
                             </button>
                             <button
                                 onClick={() => setIsEditModalOpen(true)}
-                                className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all font-bold shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95"
+                                disabled={loan.approval_status !== 'APPROVED'}
+                                className={`flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all font-bold shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95 disabled:opacity-70 ${loan.approval_status !== 'APPROVED' ? 'cursor-not-allowed' : ''}`}
                             >
                                 <span className="material-symbols-outlined text-[18px]">edit</span>
                                 Edit Accounts

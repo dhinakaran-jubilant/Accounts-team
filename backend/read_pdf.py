@@ -25,7 +25,10 @@ def extract_pdf_data(pdf_path):
         # 2. Branch (Primary Account Name)
         branch_match = re.search(r"Branch\s+(.+?)\s+Customer", text, re.S)
         if branch_match:
-            output["primary_account"] = str(branch_match.group(1).strip()).upper()
+            raw = branch_match.group(1).strip()
+            # Collapse any embedded newlines / extra whitespace (multi-line names)
+            raw = re.sub(r"\s+", " ", raw)
+            output["primary_account"] = raw.upper()
 
         # 3. Customer Name
         cust_block = re.search(r"Customer Details\s*\n\s*([^\n]+)", text, re.S)

@@ -435,6 +435,118 @@ def ensure_db_and_tables():
         except Exception as e:
             print(f"Table creation error: {e}")
 
+@app.route('/api/users/list', methods=['GET'])
+def get_users_list():
+    try:
+        ensure_db_and_tables()
+        users = User.query.with_entities(User.name).all()
+        # Filter out 'System Admin' and 'Administrator'
+        excluded_names = {'system admin', 'administrator'}
+        user_names = [u.name for u in users if u.name and u.name.lower().strip() not in excluded_names]
+        return jsonify({'success': True, 'users': sorted(list(set(user_names)))}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/approvals', methods=['GET'])
+def get_approvals():
+    try:
+        ensure_db_and_tables()
+        user_name = request.args.get('user_name')
+        if not user_name:
+            return jsonify({'error': 'User name is required'}), 400
+        
+        # Identify requester role
+        user = User.query.filter_by(name=user_name).first()
+        is_admin = user and user.role == 'admin'
+
+        show_history = request.args.get('history') == 'true'
+        is_requester_view = request.args.get('requester') == 'true'
+
+        if is_requester_view:
+            # Show all loans submitted by this user (including rejected ones which are marked is_deleted=True)
+            loans = Loan.query.filter(
+                Loan.requester_name == user_name,
+                db.or_(Loan.is_deleted == False, Loan.approval_status == 'REJECTED')
+            ).order_by(Loan.id.desc()).all()
+        elif show_history:
+            if is_admin:
+                # Admins see everything they've actioned (including rejected ones)
+                loans = Loan.query.filter(
+                    Loan.actioned_by == user_name,
+                    db.or_(Loan.is_deleted == False, Loan.approval_status == 'REJECTED')
+                ).order_by(Loan.id.desc()).all()
+            else:
+                # Verifiers see loans they've verified or rejected
+                loans = Loan.query.filter(
+                    Loan.verified_by == user_name,
+                    Loan.approval_status != 'PENDING',
+                    db.or_(Loan.is_deleted == False, Loan.approval_status == 'REJECTED')
+                ).order_by(Loan.id.desc()).all()
+        else:
+            if is_admin:
+                # Admins see loans that are PENDING or VERIFIED
+                loans = Loan.query.filter(Loan.approval_status.in_(['PENDING', 'VERIFIED']), Loan.is_deleted == False).order_by(Loan.id.desc()).all()
+            else:
+                # Regular verifiers see PENDING loans assigned to them
+                loans = Loan.query.filter_by(verified_by=user_name, approval_status='PENDING', is_deleted=False).all()
+        
+        results = [{
+            'id': l.id,
+            'client_name': l.client_account_name,
+            'loan_amount': l.loan_amount,
+            'loan_date': l.loan_date,
+            'loan_ref_id': l.loan_ref_id,
+            'verified_by': l.verified_by,
+            'approval_status': l.approval_status,
+            'requester_name': l.requester_name or 'System',
+            'requested_at': l.requested_at or '—',
+            'repayment_amount': l.total_repayment_amount,
+            'actioned_by': l.actioned_by,
+            'actioned_at': l.actioned_at
+        } for l in loans]
+        
+        return jsonify({'success': True, 'approvals': results, 'user_role': user.role if user else 'user'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/approvals/<int:loan_id>/action', methods=['POST'])
+def handle_approval_action(loan_id):
+    try:
+        ensure_db_and_tables()
+        data = request.json
+        action = data.get('action') # 'APPROVE' or 'REJECT'
+        actioner_name = data.get('actioner_name')
+        
+        if action not in ['APPROVE', 'REJECT']:
+            return jsonify({'error': 'Invalid action'}), 400
+            
+        loan = db.session.get(Loan, loan_id)
+        if not loan:
+            return jsonify({'error': 'Loan not found'}), 404
+            
+        # Verify actioner role
+        user = User.query.filter_by(name=actioner_name).first()
+        if not user:
+            return jsonify({'error': 'User not found in system'}), 404
+            
+        if action == 'REJECT':
+            loan.approval_status = 'REJECTED'
+            loan.is_deleted = True # Remove from main report but keep for requester/actioner history
+        else: # APPROVE
+            if user.role == 'admin':
+                loan.approval_status = 'APPROVED'
+            else:
+                loan.approval_status = 'VERIFIED'
+                
+        loan.actioned_by = actioner_name
+        loan.actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': f'Loan {action}D successfully', 'new_status': loan.approval_status}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/upload-docx', methods=['POST'])
 def handle_docx_upload():
     # Guarantee DB and tables are present before attempting insertion
@@ -477,6 +589,15 @@ def handle_docx_upload():
                     }), 403
         # -----------------------------
         
+        # Determine status: if uploader is admin, auto-approve
+        loan_status = 'PENDING'
+        actioned_by = None
+        actioned_at = None
+        if user and user.role == 'admin':
+            loan_status = 'APPROVED'
+            actioned_by = user.name
+            actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
+
         # Commit into Postgres utilizing our models!
         loan = Loan(
             loan_ref_id=loan_ref_id,
@@ -488,7 +609,13 @@ def handle_docx_upload():
             primary_account_share=final_output['primary_account_share'],
             primary_account_interest=final_output['primary_account_interest'],
             total_repayment_amount=final_output['total_repayment_amount'],
-            total_interest=final_output['total_interest']
+            total_interest=final_output['total_interest'],
+            verified_by=request.form.get('verified_by') or 'System Admin',
+            approval_status=loan_status,
+            requester_name=user.name if user else 'Anonymous',
+            requested_at=datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p"),
+            actioned_by=actioned_by,
+            actioned_at=actioned_at
         )
         db.session.add(loan)
         db.session.flush()
@@ -565,6 +692,15 @@ def handle_pdf_upload():
                     }), 403
         # -----------------------------
         
+        # Determine status: if uploader is admin, auto-approve
+        loan_status = 'PENDING'
+        actioned_by = None
+        actioned_at = None
+        if user and user.role == 'admin':
+            loan_status = 'APPROVED'
+            actioned_by = user.name
+            actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
+
         loan = Loan(
             loan_ref_id=final_loan_ref_id,
             client_account_name=final_output['client_account_name'],
@@ -575,7 +711,13 @@ def handle_pdf_upload():
             primary_account_share=final_output['primary_account_share'],
             primary_account_interest=final_output['primary_account_interest'],
             total_repayment_amount=final_output['total_repayment_amount'],
-            total_interest=final_output['total_interest']
+            total_interest=final_output['total_interest'],
+            verified_by=request.form.get('verified_by') or 'System Admin',
+            approval_status=loan_status,
+            requester_name=user.name if user else 'Anonymous',
+            requested_at=datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p"),
+            actioned_by=actioned_by,
+            actioned_at=actioned_at
         )
         db.session.add(loan)
         db.session.flush()
@@ -642,6 +784,8 @@ def get_loans():
                 'primary_account_interest': loan.primary_account_interest,
                 'primary_account_share': loan.primary_account_share,
                 'repayment_amount': loan.total_repayment_amount,
+                'verified_by': loan.verified_by,
+                'approval_status': loan.approval_status,
                 'secondary_accounts': [{
                     'account_name': acc.account_name,
                     'percentage': acc.percentage,
@@ -660,7 +804,7 @@ def get_loan_detail(loan_id):
     try:
         ensure_db_and_tables()
         loan = db.session.get(Loan, loan_id)
-        if not loan or loan.is_deleted:
+        if not loan or (loan.is_deleted and loan.approval_status != 'REJECTED'):
             return jsonify({'error': 'Loan not found'}), 404
 
         total_i = loan.primary_account_interest + sum(a.interest_amount for a in loan.remaining_accounts)
@@ -705,6 +849,8 @@ def get_loan_detail(loan_id):
             'primary_account_interest': loan.primary_account_interest,
             'total_repayment_amount': loan.total_repayment_amount,
             'total_interest': loan.total_interest,
+            'verified_by': loan.verified_by,
+            'approval_status': loan.approval_status,
             'remaining_accounts': remaining,
             'repayment_schedule': schedule,
         }
@@ -743,17 +889,39 @@ def upload_files():
         try:
             output_file, total_entries, sw_categorized, remaining = process_files(bank_path, cloud_path, app.config['UPLOAD_FOLDER'])
             
-            # Update Google Sheet in the background to avoid blocking the file download
-            threading.Thread(
-                target=update_google_sheet, 
-                args=(user_name, bank_file.filename, cloud_file.filename, total_entries, sw_categorized, remaining)
-            ).start()
-            
-            return send_file(output_file, as_attachment=True)
+            response = send_file(output_file, as_attachment=True)
+            response.headers['X-Total-Entries'] = str(total_entries)
+            response.headers['X-SW-Categorized'] = str(sw_categorized)
+            response.headers['X-Remaining'] = str(remaining)
+            return response
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
     return jsonify({'error': 'Unknown error'}), 500
+
+@app.route('/api/track-export', methods=['POST'])
+def track_export():
+    try:
+        data = request.json
+        report_type = data.get('report_type', 'Unknown Report')
+        user_name = get_windows_username_from_request(request) or "Unknown"
+        
+        # Map frontend data to Google Sheet columns
+        bank_file_name = report_type
+        cloud_file_name = data.get('filters', 'N/A')
+        total_entries = data.get('total_entries', 0)
+        sw_categorized = data.get('sw_categorized', 0)
+        remaining = data.get('remaining', 0)
+        
+        threading.Thread(
+            target=update_google_sheet, 
+            args=(user_name, bank_file_name, cloud_file_name, total_entries, sw_categorized, remaining)
+        ).start()
+        
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        print(f"Error in track_export: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/loans/<int:loan_id>/accounts', methods=['PATCH'])
 def update_loan_accounts(loan_id):
@@ -1122,7 +1290,7 @@ def delete_user(user_id):
 def login():
     try:
         data = request.json
-        emp_code = data.get('employee_code')
+        emp_code = data.get('employee_code', '').strip().upper()
         password = data.get('password')
         
         user = User.query.filter_by(employee_code=emp_code).first()
@@ -1145,7 +1313,7 @@ def login():
 def initial_setup():
     try:
         data = request.json
-        emp_code = data.get('employee_code')
+        emp_code = data.get('employee_code', '').strip().upper()
         new_password = data.get('new_password')
         question = data.get('q1')
         answer = data.get('a1')
@@ -1169,7 +1337,7 @@ def initial_setup():
 def forgot_password_request():
     try:
         data = request.json
-        emp_code = data.get('employee_code')
+        emp_code = data.get('employee_code', '').strip().upper()
         
         user = User.query.filter_by(employee_code=emp_code).first()
         if user and user.security_question:
@@ -1182,7 +1350,7 @@ def forgot_password_request():
 def forgot_password_reset():
     try:
         data = request.json
-        emp_code = data.get('employee_code')
+        emp_code = data.get('employee_code', '').strip().upper()
         answer = data.get('answer', '').lower().strip()
         new_password = data.get('new_password')
         

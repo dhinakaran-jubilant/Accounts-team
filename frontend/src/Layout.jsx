@@ -14,6 +14,7 @@ const Layout = ({ children, user, onLogout, activeMenu, showFooter = false }) =>
     const [isDark, setIsDark] = useState(() => {
         return localStorage.getItem('isDark') === 'true';
     });
+    const [approvalCount, setApprovalCount] = useState(0);
 
     useEffect(() => {
         if (isDark) {
@@ -22,6 +23,23 @@ const Layout = ({ children, user, onLogout, activeMenu, showFooter = false }) =>
             document.documentElement.classList.remove('dark');
         }
     }, [isDark]);
+
+    useEffect(() => {
+        const fetchCount = async () => {
+            if (user?.name) {
+                try {
+                    const res = await fetch(`/api/approvals?user_name=${encodeURIComponent(user.name)}`);
+                    const result = await res.json();
+                    if (res.ok && result.success) {
+                        setApprovalCount(result.approvals?.length || 0);
+                    }
+                } catch (e) {}
+            }
+        };
+        fetchCount();
+        const interval = setInterval(fetchCount, 30000); // Check every 30s
+        return () => clearInterval(interval);
+    }, [user]);
 
     const toggleTheme = () => {
         setIsDark(prev => {
@@ -81,6 +99,31 @@ const Layout = ({ children, user, onLogout, activeMenu, showFooter = false }) =>
                         >
                             <span className="material-symbols-outlined text-[20px]">account_balance_wallet</span>
                             <span className="text-sm font-semibold">JL Due Report</span>
+                        </Link>
+                        {user?.role === 'admin' && (
+                            <Link
+                                to="/approvals"
+                                className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all group relative ${activeMenu === 'approvals'
+                                    ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
+                                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-100'}`}
+                            >
+                                <span className="material-symbols-outlined text-[20px]">verified_user</span>
+                                <span className="text-sm font-semibold">Approval</span>
+                                {approvalCount > 0 && (
+                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-lg shadow-rose-500/20 animate-in zoom-in-50 duration-300">
+                                        {approvalCount}
+                                    </span>
+                                )}
+                            </Link>
+                        )}
+                        <Link
+                            to="/my-requests"
+                            className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all group ${activeMenu === 'my-requests'
+                                ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
+                                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-100'}`}
+                        >
+                            <span className="material-symbols-outlined text-[20px]">assignment_turned_in</span>
+                            <span className="text-sm font-semibold">My Requests</span>
                         </Link>
                         {user?.role === 'admin' && (
                             <Link

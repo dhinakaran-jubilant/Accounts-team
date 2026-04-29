@@ -41,7 +41,7 @@ export default function Login({ onLogin }) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ employee_code: email, password }),
+        body: JSON.stringify({ employee_code: email.toUpperCase(), password }),
       });
 
       const data = await response.json();

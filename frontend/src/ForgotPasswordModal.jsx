@@ -31,7 +31,7 @@ export default function ForgotPasswordModal({ onClose }) {
       const response = await fetch(`${config.API_BASE_URL}/api/forgot-password/request/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employee_code: employeeCode }),
+        body: JSON.stringify({ employee_code: employeeCode.toUpperCase() }),
       });
       const data = await response.json();
       if (data.success) {
@@ -74,7 +74,7 @@ export default function ForgotPasswordModal({ onClose }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          employee_code: employeeCode, 
+          employee_code: employeeCode.toUpperCase(), 
           answer: answer, 
           new_password: newPassword 
         }),

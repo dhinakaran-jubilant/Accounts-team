@@ -13,6 +13,7 @@ import LoanDetail from './LoanDetail';
 import Layout from './Layout';
 import Login from './Login';
 import UsersManager from './UsersManager';
+import Approval from './Approval';
 
 function App() {
     const [user, setUser] = useState(null);
@@ -80,6 +81,26 @@ function App() {
                         user ? (
                             <Layout user={user} onLogout={handleLogout} activeMenu="jl-due-report">
                                 <LoanDetail />
+                            </Layout>
+                        ) : <Navigate to="/login" replace />
+                    } 
+                />
+                <Route 
+                    path="/approvals" 
+                    element={
+                        user ? (
+                            <Layout user={user} onLogout={handleLogout} activeMenu="approvals">
+                                <Approval user={user} />
+                            </Layout>
+                        ) : <Navigate to="/login" replace />
+                    } 
+                />
+                <Route 
+                    path="/my-requests" 
+                    element={
+                        user ? (
+                            <Layout user={user} onLogout={handleLogout} activeMenu="my-requests">
+                                <Approval user={user} defaultTab="my-requests" />
                             </Layout>
                         ) : <Navigate to="/login" replace />
                     } 
