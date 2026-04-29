@@ -481,7 +481,18 @@ const RepaymentTable = ({
                                                                 markBlurred(entry.id, 'received_date');
                                                             }}
                                                             onFocus={() => markFocused(entry.id, 'received_date')}
-                                                            readOnly={loan.approval_status !== 'APPROVED'}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.preventDefault();
+                                                                    if (!isDateFormatInvalid(entry.received_date)) {
+                                                                        const dueDateInput = document.getElementById(`due-date-${isManual ? 'manual' : 'system'}-${idx}`);
+                                                                        if (dueDateInput && !dueDateInput.readOnly && !dueDateInput.disabled) {
+                                                                            dueDateInput.focus();
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }}
+                                                            readOnly={isFutureRow || loan.approval_status !== 'APPROVED'}
                                                             className={`bg-transparent text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 rounded transition-all -ml-1 ${(isReceivedDateInvalid || (blurredFields.has(`${entry.id}-received_date`) && isDateFormatInvalid(entry.received_date))) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${isFutureRow || loan.approval_status !== 'APPROVED' ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                             placeholder="dd-mm-yyyy"
                                                         />
@@ -569,6 +580,17 @@ const RepaymentTable = ({
                                                                             markBlurred(entry.id, 'payment_date');
                                                                         }}
                                                                         onFocus={() => markFocused(entry.id, 'payment_date')}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                e.preventDefault();
+                                                                                if (!isDateFormatInvalid(entry.payment_date)) {
+                                                                                    const nextReceivedDateInput = document.getElementById(`received-date-${isManual ? 'manual' : 'system'}-${idx + 1}`);
+                                                                                    if (nextReceivedDateInput && !nextReceivedDateInput.readOnly && !nextReceivedDateInput.disabled) {
+                                                                                        nextReceivedDateInput.focus();
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }}
                                                                         readOnly={isDueDateDisabled}
                                                                         className={`bg-transparent text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 rounded transition-all ${(isPaymentDateInvalid || (blurredFields.has(`${entry.id}-payment_date`) && isDateFormatInvalid(entry.payment_date))) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${isDueDateDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                                         placeholder="dd-mm-yyyy"

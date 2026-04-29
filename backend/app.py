@@ -572,6 +572,19 @@ def handle_docx_upload():
         extracted_data = extract_word_data(file_path)
         final_output = build_final_output(extracted_data, remaining_accounts)
         
+        # --- PREVENT SAME PRIMARY AND SECONDARY ACRONYM ---
+        primary_acc_name = final_output.get('primary_account_name', '')
+        primary_acronym = get_acronym(primary_acc_name).strip().upper()
+        
+        for acc in remaining_accounts:
+            sec_name = acc.get('name', '').strip().upper()
+            if sec_name == primary_acronym:
+                return jsonify({
+                    'success': False,
+                    'error': 'Primary and secondary account name is same, Please check and correct it.'
+                }), 400
+        # --------------------------------------------------
+        
         # --- PERMISSION VALIDATION ---
         emp_code = request.form.get('employee_code')
         if emp_code:
@@ -597,6 +610,22 @@ def handle_docx_upload():
             loan_status = 'APPROVED'
             actioned_by = user.name
             actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
+
+        # --- DUPLICATE LOAN CHECK ---
+        duplicate_loan = Loan.query.filter_by(
+            client_account_name=final_output['client_account_name'],
+            loan_date=final_output['loan_date'],
+            loan_amount=final_output['loan_amount'],
+            total_repayment_amount=final_output['total_repayment_amount'],
+            is_deleted=False
+        ).first()
+
+        if duplicate_loan:
+            return jsonify({
+                'success': False,
+                'error': "The file already exists"
+            }), 400
+        # ----------------------------
 
         # Commit into Postgres utilizing our models!
         loan = Loan(
@@ -677,6 +706,19 @@ def handle_pdf_upload():
         # Build final formatted output (shares, interest splits)
         final_output = build_final_output(pdf_data, remaining_accounts)
         
+        # --- PREVENT SAME PRIMARY AND SECONDARY ACRONYM ---
+        primary_acc_name = final_output.get('primary_account_name', '')
+        primary_acronym = get_acronym(primary_acc_name).strip().upper()
+        
+        for acc in remaining_accounts:
+            sec_name = acc.get('name', '').strip().upper()
+            if sec_name == primary_acronym:
+                return jsonify({
+                    'success': False,
+                    'error': 'Primary and secondary account name is same, please check and correct.'
+                }), 400
+        # --------------------------------------------------
+        
         # --- PERMISSION VALIDATION ---
         emp_code = request.form.get('employee_code')
         if emp_code:
@@ -700,6 +742,22 @@ def handle_pdf_upload():
             loan_status = 'APPROVED'
             actioned_by = user.name
             actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
+
+        # --- DUPLICATE LOAN CHECK ---
+        duplicate_loan = Loan.query.filter_by(
+            client_account_name=final_output['client_account_name'],
+            loan_date=final_output['loan_date'],
+            loan_amount=final_output['loan_amount'],
+            total_repayment_amount=final_output['total_repayment_amount'],
+            is_deleted=False
+        ).first()
+
+        if duplicate_loan:
+            return jsonify({
+                'success': False,
+                'error': "The file already exists"
+            }), 400
+        # ----------------------------
 
         loan = Loan(
             loan_ref_id=final_loan_ref_id,
