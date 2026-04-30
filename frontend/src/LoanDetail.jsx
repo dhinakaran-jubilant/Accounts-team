@@ -1026,7 +1026,7 @@ const EditAccountSplitModal = ({ isOpen, onClose, entry, loanData, accountName, 
         const totalEntry = numericAmount + numericTds;
         const numericCurrentShare = parseINR(currentShare);
 
-        if (totalEntry > numericCurrentShare) {
+        if (totalEntry - numericCurrentShare > 0.1) {
             setErrorMsg(`Amount + TDS (${fmtINR(totalEntry, false)}) cannot exceed the limit (${fmtINR(numericCurrentShare, false)})`);
             return;
         }
@@ -1069,7 +1069,7 @@ const EditAccountSplitModal = ({ isOpen, onClose, entry, loanData, accountName, 
                                 const numAmt = parseINR(val);
                                 const numTds = parseINR(tds);
                                 const limit = parseINR(currentShare);
-                                if (numAmt + numTds > limit) {
+                                if (numAmt + numTds - limit > 0.1) {
                                     setErrorMsg(`Amount + TDS (${fmtINR(numAmt + numTds, false)}) cannot exceed the limit (${fmtINR(limit, false)})`);
                                 } else {
                                     setErrorMsg('');
@@ -1090,7 +1090,18 @@ const EditAccountSplitModal = ({ isOpen, onClose, entry, loanData, accountName, 
                             type="text"
                             value={formatINRInput(tds)}
                             disabled={accountName !== loanData?.primary_account_name}
-                            onChange={e => setTds(formatINRInput(e.target.value))}
+                            onChange={e => {
+                                const val = formatINRInput(e.target.value);
+                                setTds(val);
+                                const numTds = parseINR(val);
+                                const numAmt = parseINR(amount);
+                                const limit = parseINR(currentShare);
+                                if (numAmt + numTds - limit > 0.1) {
+                                    setErrorMsg(`Amount + TDS (${fmtINR(numAmt + numTds, false)}) cannot exceed the limit (${fmtINR(limit, false)})`);
+                                } else {
+                                    setErrorMsg('');
+                                }
+                            }}
                             className={`w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 ${accountName !== loanData?.primary_account_name ? 'opacity-50 cursor-not-allowed select-none' : ''}`}
                         />
                     </div>
