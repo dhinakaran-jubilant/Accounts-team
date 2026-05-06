@@ -188,6 +188,31 @@ def get_acronym(name):
     if 'raja priya' in n: return 'RP'
     return name.upper()
 
+def find_secondary_manager(secondary_accounts):
+    """
+    Finds a user who manages one of the secondary accounts as their primary.
+    Returns the first matching user's name, or 'System Admin' if no match.
+    """
+    if not secondary_accounts:
+        return 'System Admin'
+    
+    # Get acronyms for all secondary accounts
+    sec_acronyms = [get_acronym(acc.get('name') or acc.get('account_name')).strip().upper() for acc in secondary_accounts]
+    
+    # Fetch all users who are not System Admin
+    users = User.query.filter(User.name != 'System Admin').all()
+    
+    for acronym in sec_acronyms:
+        for u in users:
+            try:
+                perms = json.loads(u.permissions) if u.permissions else []
+                if acronym in perms:
+                    return u.name
+            except:
+                continue
+                
+    return 'System Admin'
+
 # Serve React frontend
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
@@ -533,10 +558,13 @@ def handle_approval_action(loan_id):
             loan.approval_status = 'REJECTED'
             loan.is_deleted = True # Remove from main report but keep for requester/actioner history
         else: # APPROVE
-            if user.role == 'admin':
+            # Multi-step approval: Only System Admin can set status to APPROVED
+            # Others set it to VERIFIED and reassign to System Admin
+            if actioner_name == 'System Admin':
                 loan.approval_status = 'APPROVED'
             else:
                 loan.approval_status = 'VERIFIED'
+                loan.verified_by = 'System Admin'
                 
         loan.actioned_by = actioner_name
         loan.actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
@@ -628,6 +656,9 @@ def handle_docx_upload():
         # ----------------------------
 
         # Commit into Postgres utilizing our models!
+        # Automatically determine verifier based on secondary accounts
+        target_verifier = find_secondary_manager(final_output.get('remaining_accounts', []))
+
         loan = Loan(
             loan_ref_id=loan_ref_id,
             client_account_name=final_output['client_account_name'],
@@ -639,7 +670,7 @@ def handle_docx_upload():
             primary_account_interest=final_output['primary_account_interest'],
             total_repayment_amount=final_output['total_repayment_amount'],
             total_interest=final_output['total_interest'],
-            verified_by=request.form.get('verified_by') or 'System Admin',
+            verified_by=target_verifier,
             approval_status=loan_status,
             requester_name=user.name if user else 'Anonymous',
             requested_at=datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p"),
@@ -759,6 +790,9 @@ def handle_pdf_upload():
             }), 400
         # ----------------------------
 
+        # Automatically determine verifier based on secondary accounts
+        target_verifier = find_secondary_manager(final_output.get('remaining_accounts', []))
+
         loan = Loan(
             loan_ref_id=final_loan_ref_id,
             client_account_name=final_output['client_account_name'],
@@ -770,7 +804,7 @@ def handle_pdf_upload():
             primary_account_interest=final_output['primary_account_interest'],
             total_repayment_amount=final_output['total_repayment_amount'],
             total_interest=final_output['total_interest'],
-            verified_by=request.form.get('verified_by') or 'System Admin',
+            verified_by=target_verifier,
             approval_status=loan_status,
             requester_name=user.name if user else 'Anonymous',
             requested_at=datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p"),
@@ -956,6 +990,75 @@ def upload_files():
             return jsonify({'error': str(e)}), 500
 
     return jsonify({'error': 'Unknown error'}), 500
+
+@app.route('/api/upload-day-book', methods=['POST'])
+def upload_day_book():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    try:
+        df = pd.read_excel(file)
+        receipt_df = df[df["Voucher Type"] == "Receipt Voucher"].copy()
+        updated_count = 0
+        updated_details = []
+
+        for index, row in receipt_df.iterrows():
+            try:
+                particulars = str(row.get("Particulars", ""))
+                comments = str(row.get("Comments", ""))
+                trans_date_raw = row.get("Transaction Date")
+                
+                loan_parts = particulars.split('-')
+                if len(loan_parts) < 2: continue
+                loan_ref_id = loan_parts[-1].strip()
+                
+                emi_parts = comments.split('_')
+                if len(emi_parts) < 2: continue
+                try:
+                    emi_no = int(emi_parts[-1].strip())
+                except ValueError: continue
+
+                received_date = ""
+                if pd.notna(trans_date_raw):
+                    if isinstance(trans_date_raw, (datetime.datetime, datetime.date)):
+                        received_date = trans_date_raw.strftime("%d-%m-%Y")
+                    else:
+                        s_date = str(trans_date_raw).strip()
+                        if re.match(r'\d{2}-\d{2}-\d{2}$', s_date):
+                            d, m, y = s_date.split('-')
+                            received_date = f"{d}-{m}-20{y}"
+                        else:
+                            received_date = s_date
+
+                loan = Loan.query.filter_by(loan_ref_id=loan_ref_id, is_deleted=False).first()
+                if loan:
+                    system_schedule = [s for s in loan.repayment_schedule if s.type != 'manual']
+                    if 1 <= emi_no <= len(system_schedule):
+                        target_installment = system_schedule[emi_no - 1]
+                        # Only update if received_date is not already filled
+                        if not target_installment.received_date or not str(target_installment.received_date).strip():
+                            target_installment.received_date = received_date
+                            updated_count += 1
+                            updated_details.append(f"{loan.client_account_name} ({loan_ref_id}) - EMI {emi_no}")
+                
+            except Exception:
+                continue
+        
+        db.session.commit()
+        message = f'Successfully updated {updated_count} installments from Day Book.' if updated_count > 0 else "No updates"
+        return jsonify({
+            'success': True, 
+            'message': message,
+            'updated_count': updated_count,
+            'updated_details': updated_details
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/track-export', methods=['POST'])
 def track_export():

@@ -29,6 +29,19 @@ const getAcronym = (name) => {
     return name;
 };
 
+const REQUIRED_DAY_BOOK_COLUMNS = [
+    'Transaction Date',
+    'Details',
+    'Debit',
+    'Voucher Type',
+    'Voucher Number',
+    'Instrument No.',
+    'Particulars',
+    'Credit',
+    'Comments',
+    'Actions'
+];
+
 const parseINR = (val) => {
     if (typeof val === 'number') return val;
     if (!val) return 0;
@@ -214,13 +227,15 @@ const getLoanStatus = (loan) => {
 const JlDueReport = ({ user }) => {
     const navigate = useNavigate();
     const [showModal, setShowModal] = useState(false);
+    const [uploadError, setUploadError] = useState('');
+    const [successMessage, setSuccessMessage] = useState('');
+    const [updatedDetails, setUpdatedDetails] = useState([]);
     const [showSuccessPopup, setShowSuccessPopup] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
     const [accounts, setAccounts] = useState([{ name: '', share: '' }]);
     const [loanRefId, setLoanRefId] = useState('');
     const [verifiedBy, setVerifiedBy] = useState('System Admin');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [uploadError, setUploadError] = useState('');
     const [accountFilter, setAccountFilter] = useState('');
     const [adminAccountFilter, setAdminAccountFilter] = useState([]);
     const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
@@ -229,10 +244,14 @@ const JlDueReport = ({ user }) => {
     const [isDeleting, setIsDeleting] = useState(false);
     const [loanToDelete, setLoanToDelete] = useState(null);
     const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+    const [isImportDropdownOpen, setIsImportDropdownOpen] = useState(false);
     const [sortConfig, setSortConfig] = useState({ key: 'loan_date', direction: 'desc' });
     const pageRef = useRef(null);
     const exportDropdownRef = useRef(null);
+    const importDropdownRef = useRef(null);
     const accountDropdownRef = useRef(null);
+    const fileInputRef = useRef(null);
+    const dayBookInputRef = useRef(null);
 
     const ACCOUNT_OPTIONS = [
         { value: 'SCS', label: 'Surge Capital Solutions - SCS' },
@@ -255,6 +274,9 @@ const JlDueReport = ({ user }) => {
             if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target)) {
                 setIsExportDropdownOpen(false);
             }
+            if (importDropdownRef.current && !importDropdownRef.current.contains(event.target)) {
+                setIsImportDropdownOpen(false);
+            }
             if (accountDropdownRef.current && !accountDropdownRef.current.contains(event.target)) {
                 setIsAccountDropdownOpen(false);
             }
@@ -263,15 +285,84 @@ const JlDueReport = ({ user }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    const processDayBookExcel = async (file, inputElement) => {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const data = new Uint8Array(event.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                const headers = jsonData[0] || [];
+                const sanitizedHeaders = headers.map(h => String(h || '').trim());
+
+                const missingColumns = REQUIRED_DAY_BOOK_COLUMNS.filter(
+                    col => !sanitizedHeaders.includes(col)
+                );
+
+                if (missingColumns.length > 0) {
+                    setUploadError('The selected Excel file is not a valid Day Book. Missing columns: ' + missingColumns.join(', '));
+                    console.error('Missing columns:', missingColumns);
+                } else {
+                    setIsSubmitting(true);
+                    try {
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        
+                        const response = await fetch('/api/upload-day-book', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success) {
+                            setSuccessMessage(result.message);
+                            setUpdatedDetails(result.updated_details || []);
+                            setShowSuccessPopup(true);
+                            fetchLoans();
+                        } else {
+                            setUploadError(result.error || 'Failed to process Day Book');
+                        }
+                    } catch (uploadErr) {
+                        setUploadError(uploadErr.message || 'Network error during upload');
+                    } finally {
+                        setIsSubmitting(false);
+                    }
+                }
+            } catch (error) {
+                console.error('Error reading excel file:', error);
+                setUploadError('Failed to read Excel file. Please ensure it is a valid Day Book export.');
+            }
+            if (inputElement) inputElement.value = '';
+        };
+        reader.readAsArrayBuffer(file);
+    };
+
     const handleFileSelect = (e) => {
-        if (e.target.files && e.target.files[0]) {
-            setSelectedFile(e.target.files[0]);
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const isExcel = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
+        
+        if (isExcel) {
+            setUploadError('Excel files cannot be processed via the "New Loan" option. Please use the "Day Book" button to upload Day Book files.');
+            e.target.value = '';
+        } else {
+            // Standard Docx/PDF behavior
+            setSelectedFile(file);
             setAccounts([{ name: '', share: '' }]);
             setLoanRefId('');
             setUploadError('');
             setShowModal(true);
+            e.target.value = '';
         }
-        e.target.value = null; // Reset file input so picking same file again works
+    };
+
+    const handleDayBookFileSelect = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        processDayBookExcel(file, e.target);
     };
 
     const handleAddAccount = () => setAccounts([...accounts, { name: '', share: '' }]);
@@ -304,6 +395,7 @@ const JlDueReport = ({ user }) => {
             if (response.ok) {
                 setShowModal(false);
                 setSelectedFile(null);
+                setSuccessMessage('The document has been correctly extracted and all remaining accounts have been securely saved to the database.');
                 setShowSuccessPopup(true);
                 fetchLoans();
             } else {
@@ -333,11 +425,11 @@ const JlDueReport = ({ user }) => {
                 setLoanToDelete(null);
                 fetchLoans(); // Automatically refresh from server
             } else {
-                alert(result.error || "Failed to delete loan");
+                setUploadError(result.error || "Failed to delete loan");
             }
         } catch (e) {
             console.error("Delete error:", e);
-            alert("Network error while deleting loan");
+            setUploadError("Network error while deleting loan");
         } finally {
             setIsDeleting(false);
         }
@@ -379,8 +471,12 @@ const JlDueReport = ({ user }) => {
         if (user?.role !== 'admin' && user?.permissions?.length < 10) {
             const userPerms = user?.permissions || [];
             result = result.filter(row => {
-                const acronym = getAcronym(row.primary_account_name);
-                return userPerms.includes(acronym);
+                const priAcronym = getAcronym(row.primary_account_name);
+                if (userPerms.includes(priAcronym)) return true;
+
+                // Check secondary accounts
+                const secAccs = row.secondary_accounts || row.remaining_accounts || [];
+                return secAccs.some(acc => userPerms.includes(getAcronym(acc.account_name)));
             });
         }
 
@@ -544,7 +640,7 @@ const JlDueReport = ({ user }) => {
         }
 
         if (osData.length === 0) {
-            alert("No outstanding loans found for this selection.");
+            setUploadError("No outstanding loans found for this selection.");
             return;
         }
 
@@ -603,11 +699,12 @@ const JlDueReport = ({ user }) => {
                 const DATA_START = 4; // col D
                 const PRI_COL = DATA_START + 3; // col G = 7
                 const PARTIAL_COL = PRI_COL + 1 + maxSecAccs * 2; // after all sec pairs
+                const PAYABLE_COL = PARTIAL_COL + 1;
 
-                // Set column widths once
+                // Set column widths
                 worksheet.getColumn(1).width = 13;  // Loan Date
-                worksheet.getColumn(2).width = 35;  // Client Name (full)
-                worksheet.getColumn(3).width = 12;  // Loan Ref
+                worksheet.getColumn(2).width = 35;  // Client Name
+                worksheet.getColumn(3).width = 12;  // Loan ID
                 worksheet.getColumn(4).width = 13;  // DATE
                 worksheet.getColumn(5).width = 8;   // DUES
                 worksheet.getColumn(6).width = 12;  // AMOUNT
@@ -617,6 +714,9 @@ const JlDueReport = ({ user }) => {
                     worksheet.getColumn(8 + s * 2 + 1).width = 10; // TDS
                 }
                 worksheet.getColumn(PARTIAL_COL).width = 10; // PARTIAL
+                worksheet.getColumn(PAYABLE_COL).width = 20; // PAYABLE
+
+
 
                 // --- Second pass: render each loan block ---
                 loans.forEach((loan) => {
@@ -632,50 +732,29 @@ const JlDueReport = ({ user }) => {
 
                     if (osInstallments.length === 0) return;
 
-                    const priAcr = getAcronym(loan.primary_account_name).toUpperCase();
-
-                    // --- Combined header + sub-header row (Row 1 of this loan block) ---
-                    const headerRow = worksheet.getRow(cur);
-
-                    // Col A: Loan date
-                    headerRow.getCell(1).value = loan.loan_date || '';
-                    headerRow.getCell(1).font = { name: 'Trebuchet MS', bold: true };
-                    headerRow.getCell(1).border = thickBorder;
-                    headerRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-
-                    // Col B: Full client name
-                    headerRow.getCell(2).value = loan.client_name?.toUpperCase() || '';
-                    headerRow.getCell(2).font = { name: 'Trebuchet MS', bold: true, size: 11 };
-                    headerRow.getCell(2).border = thickBorder;
-                    headerRow.getCell(2).alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
-
-                    // Col C: Loan ref
-                    headerRow.getCell(3).value = loan.loan_ref_id || '';
-                    headerRow.getCell(3).font = { name: 'Trebuchet MS', bold: true };
-                    headerRow.getCell(3).border = thickBorder;
-                    headerRow.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
-
-                    // Cols D onwards: sub-header labels on same row
-                    const subHeaders = ['DATE', 'DUES', 'AMOUNT', priAcr];
+                    // --- Loan-wise Header Row ---
+                    const loanAcr = getAcronym(loan.primary_account_name).toUpperCase();
+                    const loanHeaders = ['LOAN DATE', 'CLIENT NAME', 'LOAN ID', 'DATE', 'DUES', 'AMOUNT', loanAcr];
                     for (let s = 0; s < maxSecAccs; s++) {
                         const acc = secAccs[s];
-                        subHeaders.push(acc ? getAcronym(acc.account_name).toUpperCase() : '');
-                        subHeaders.push(acc ? 'TDS' : '');
+                        loanHeaders.push(acc ? getAcronym(acc.account_name).toUpperCase() : '');
+                        loanHeaders.push(acc ? 'TDS' : '');
                     }
-                    subHeaders.push('PARTIAL');
+                    loanHeaders.push('PARTIAL', 'PAYABLE');
 
-                    subHeaders.forEach((val, idx) => {
-                        const col = DATA_START + idx;
-                        const cell = headerRow.getCell(col);
+                    const headerRow = worksheet.getRow(cur);
+                    headerRow.height = 25;
+                    loanHeaders.forEach((val, idx) => {
+                        const cell = headerRow.getCell(idx + 1);
                         cell.value = val;
-                        cell.fill = headerBlueFill;
-                        cell.font = { name: 'Trebuchet MS', bold: true };
+                        cell.fill = darkBlueFill;
+                        cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Trebuchet MS' };
                         cell.border = thickBorder;
                         cell.alignment = { horizontal: 'center', vertical: 'middle' };
                     });
-
-                    const loanStartRow = cur;
                     cur++;
+
+
 
                     // --- Amounts setup ---
                     const priLoanAmount = parseINR(loan.primary_account_amount) || 0;
@@ -694,10 +773,18 @@ const JlDueReport = ({ user }) => {
                         const isIntRow = e.id === interestRowId;
                         const rawTarget = e.type === 'manual' ? 0 : parseINR(e.amount);
 
-                        // Cols A-C: blank (loan info is merged from header row)
-                        [1, 2, 3].forEach(col => {
-                            dataRow.getCell(col).border = thickBorder;
-                        });
+                        // Cols A-C: repeat loan info (no merging as per user request)
+                        dataRow.getCell(1).value = loan.loan_date || '';
+                        dataRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+                        dataRow.getCell(1).border = thickBorder;
+
+                        dataRow.getCell(2).value = loan.client_name?.toUpperCase() || '';
+                        dataRow.getCell(2).alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+                        dataRow.getCell(2).border = thickBorder;
+
+                        dataRow.getCell(3).value = loan.loan_ref_id || '';
+                        dataRow.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+                        dataRow.getCell(3).border = thickBorder;
 
                         // Col D: date, Col E: dues, Col F: amount
                         dataRow.getCell(4).value = e.date || '';
@@ -747,9 +834,12 @@ const JlDueReport = ({ user }) => {
 
                         // PARTIAL col
                         dataRow.getCell(PARTIAL_COL).value = isAnyStakeholderPartial ? 'Partial' : '';
+                        
+                        const payableStr = secAccs.map(acc => getAcronym(acc.account_name).toUpperCase()).join(', ');
+                        dataRow.getCell(PAYABLE_COL).value = payableStr;
 
-                        // Style all data columns (D to PARTIAL)
-                        for (let col = DATA_START; col <= PARTIAL_COL; col++) {
+                        // Style all data columns (D to PAYABLE)
+                        for (let col = DATA_START; col <= PAYABLE_COL; col++) {
                             const cell = dataRow.getCell(col);
                             cell.border = thickBorder;
                             if (partialColIndices.includes(col)) {
@@ -766,13 +856,7 @@ const JlDueReport = ({ user }) => {
                         cur++;
                     });
 
-                    // Merge cols A-C vertically across header + all installment rows
-                    const loanEndRow = cur - 1;
-                    if (loanEndRow > loanStartRow) {
-                        worksheet.mergeCells(loanStartRow, 1, loanEndRow, 1);
-                        worksheet.mergeCells(loanStartRow, 2, loanEndRow, 2);
-                        worksheet.mergeCells(loanStartRow, 3, loanEndRow, 3);
-                    }
+                    // Vertical merging removed as per user request
 
                     cur++; // Spacer row between loans
                 });
@@ -1251,16 +1335,57 @@ const JlDueReport = ({ user }) => {
                                 <span className="material-symbols-outlined text-[18px]">filter_alt_off</span>
                             </button>
                         )}
-                        <label className="h-9 px-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-2 text-sm cursor-pointer">
+                        <div className="relative" ref={importDropdownRef}>
+                            <button
+                                onClick={() => setIsImportDropdownOpen(!isImportDropdownOpen)}
+                                className="h-9 px-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-2 text-sm"
+                            >
+                                <span className="material-symbols-outlined text-sm">upload_file</span>
+                                Import
+                                <span className="material-symbols-outlined text-sm">expand_more</span>
+                            </button>
+
+                            {isImportDropdownOpen && (
+                                <div className="absolute right-0 mt-2 w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+                                    <button
+                                        onClick={() => {
+                                            fileInputRef.current?.click();
+                                            setIsImportDropdownOpen(false);
+                                        }}
+                                        className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2"
+                                    >
+                                        <span className="material-symbols-outlined text-[18px] text-primary">add_circle</span>
+                                        New Loan
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            // Trigger Day Book Import
+                                            dayBookInputRef.current?.click();
+                                            setIsImportDropdownOpen(false);
+                                        }}
+                                        className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2 border-t border-slate-200/50 dark:border-slate-700/50"
+                                    >
+                                        <span className="material-symbols-outlined text-[18px] text-amber-500">book</span>
+                                        Day Book
+                                    </button>
+                                </div>
+                            )}
+
                             <input
                                 type="file"
-                                accept=".docx,.pdf"
+                                ref={fileInputRef}
+                                accept=".docx,.pdf,.xlsx,.xls"
                                 className="hidden"
                                 onChange={handleFileSelect}
                             />
-                            <span className="material-symbols-outlined text-sm">upload_file</span>
-                            Import
-                        </label>
+                            <input
+                                type="file"
+                                ref={dayBookInputRef}
+                                accept=".xlsx,.xls"
+                                className="hidden"
+                                onChange={handleDayBookFileSelect}
+                            />
+                        </div>
                         <div className="relative" ref={exportDropdownRef}>
                             <button
                                 onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
@@ -1609,9 +1734,9 @@ const JlDueReport = ({ user }) => {
                 <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col items-center text-center p-8 animate-in zoom-in-95 duration-200">
                         <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mb-6 shadow-inner">
-                            <span className="material-symbols-outlined text-[40px]">error</span>
+                            <span className="material-symbols-outlined text-[35px]">error</span>
                         </div>
-                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Upload Failed</h3>
+                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Action Failed</h3>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">
                             {uploadError}
                         </p>
@@ -1628,19 +1753,38 @@ const JlDueReport = ({ user }) => {
             {/* Success Popup Modal */}
             {showSuccessPopup && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col items-center text-center p-8 animate-in zoom-in-95 duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col items-center text-center p-8 animate-in zoom-in-95 duration-200">
                         <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mb-6 shadow-inner">
-                            <span className="material-symbols-outlined text-[40px]">check_circle</span>
+                            <span className="material-symbols-outlined text-[35px]">check_circle</span>
                         </div>
-                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Upload Successful!</h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">
-                            The document has been correctly extracted and all remaining accounts have been securely saved to the database.
+                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Success!</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+                            {successMessage}
                         </p>
+                        
+                        {updatedDetails && updatedDetails.length > 0 && (
+                            <div className="w-full text-left mb-6">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">Updated Records:</p>
+                                <div className="max-h-48 overflow-y-auto pr-2 scrollbar-premium bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 p-3">
+                                    <ul className="space-y-1.5">
+                                        {[...updatedDetails].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map((detail, i) => (
+                                            <li key={i} className="text-xs font-medium text-slate-600 dark:text-slate-300 flex items-start gap-2">
+                                                <span className="material-symbols-outlined text-[14px] text-green-500 mt-0.5">check_circle</span>
+                                                {detail}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+                        )}
                         <button
-                            onClick={() => setShowSuccessPopup(false)}
+                            onClick={() => {
+                                setShowSuccessPopup(false);
+                                setUpdatedDetails([]);
+                            }}
                             className="w-full py-3 px-4 text-sm font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800/50 dark:text-emerald-400 dark:hover:bg-emerald-900/60 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
                         >
-                            <span className="material-symbols-outlined text-[18px]">done</span> Completed
+                            <span className="material-symbols-outlined text-[18px]">done</span> Close
                         </button>
                     </div>
                 </div>

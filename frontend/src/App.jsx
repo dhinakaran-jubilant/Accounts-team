@@ -80,7 +80,7 @@ function App() {
                     element={
                         user ? (
                             <Layout user={user} onLogout={handleLogout} activeMenu="jl-due-report">
-                                <LoanDetail />
+                                <LoanDetail user={user} />
                             </Layout>
                         ) : <Navigate to="/login" replace />
                     } 

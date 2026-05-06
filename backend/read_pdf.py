@@ -115,8 +115,7 @@ def extract_pdf_data(pdf_path):
                         except:
                             continue
 
-        # Remove duplicates and sort by date if needed
-        unique_schedule = list({r["date"]: r for r in schedule}.values())
-        output["table"] = unique_schedule
+        # Preservation of all installments in order (no deduplication by date)
+        output["table"] = schedule
 
     return output
