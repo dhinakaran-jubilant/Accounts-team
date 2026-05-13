@@ -14,6 +14,7 @@ import Layout from './Layout';
 import Login from './Login';
 import UsersManager from './UsersManager';
 import Approval from './Approval';
+import Dashboard from './Dashboard';
 
 function App() {
     const [user, setUser] = useState(null);
@@ -51,7 +52,7 @@ function App() {
                 {/* Public Route */}
                 <Route 
                     path="/login" 
-                    element={user ? <Navigate to="/db-ac-report" replace /> : <Login onLogin={handleLogin} />} 
+                    element={user ? <Navigate to="/" replace /> : <Login onLogin={handleLogin} />} 
                 />
 
                 {/* Protected Routes */}
@@ -119,9 +120,15 @@ function App() {
                 {/* Root Redirects */}
                 <Route 
                     path="/" 
-                    element={<Navigate to={user ? "/db-ac-report" : "/login"} replace />} 
+                    element={
+                        user ? (
+                            <Layout user={user} onLogout={handleLogout} activeMenu="home" showFooter={true}>
+                                <Dashboard user={user} />
+                            </Layout>
+                        ) : <Navigate to="/login" replace />
+                    } 
                 />
-                <Route path="*" element={<Navigate to={user ? "/db-ac-report" : "/login"} replace />} />
+                <Route path="*" element={<Navigate to={user ? "/" : "/login"} replace />} />
             </Routes>
         </BrowserRouter>
     );

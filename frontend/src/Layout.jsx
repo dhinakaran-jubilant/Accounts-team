@@ -83,6 +83,15 @@ const Layout = ({ children, user, onLogout, activeMenu, showFooter = false }) =>
 
                     <div className="flex flex-col gap-1 p-6 pt-2 flex-1 overflow-y-auto scrollbar-premium">
                         <Link
+                            to="/"
+                            className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all group ${activeMenu === 'home'
+                                ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
+                                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-100'}`}
+                        >
+                            <span className="material-symbols-outlined text-[20px]">home</span>
+                            <span className="text-sm font-semibold">Home</span>
+                        </Link>
+                        <Link
                             to="/db-ac-report"
                             className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all group ${activeMenu === 'db-ac-report'
                                 ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'

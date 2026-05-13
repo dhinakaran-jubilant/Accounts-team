@@ -230,6 +230,7 @@ const JlDueReport = ({ user }) => {
     const [uploadError, setUploadError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
     const [updatedDetails, setUpdatedDetails] = useState([]);
+    const [skippedDetails, setSkippedDetails] = useState([]);
     const [showSuccessPopup, setShowSuccessPopup] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
     const [accounts, setAccounts] = useState([{ name: '', share: '' }]);
@@ -319,6 +320,7 @@ const JlDueReport = ({ user }) => {
                         if (response.ok && result.success) {
                             setSuccessMessage(result.message);
                             setUpdatedDetails(result.updated_details || []);
+                            setSkippedDetails(result.skipped_details || []);
                             setShowSuccessPopup(true);
                             fetchLoans();
                         } else {
@@ -1729,6 +1731,23 @@ const JlDueReport = ({ user }) => {
                     </div>
                 </div>
             )}
+            {/* Processing Overlay */}
+            {isSubmitting && (
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px] animate-in fade-in duration-300">
+                    <div className="bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl p-10 flex flex-col items-center border border-white/20 transform transition-all animate-in zoom-in-95 duration-300">
+                        <div className="relative mb-8">
+                            <div className="w-20 h-20 border-4 border-slate-100 dark:border-slate-800 rounded-full"></div>
+                            <div className="absolute inset-0 w-20 h-20 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <span className="material-symbols-outlined text-primary text-3xl animate-pulse">sync</span>
+                            </div>
+                        </div>
+                        <h3 className="text-xl font-black text-slate-900 dark:text-white mb-2 tracking-tight">Processing Day Book</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Please wait while we sync your records...</p>
+                    </div>
+                </div>
+            )}
+
             {/* Error Popup Modal */}
             {uploadError && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -1753,7 +1772,7 @@ const JlDueReport = ({ user }) => {
             {/* Success Popup Modal */}
             {showSuccessPopup && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col items-center text-center p-8 animate-in zoom-in-95 duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col items-center text-center p-8 animate-in zoom-in-95 duration-200">
                         <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mb-6 shadow-inner">
                             <span className="material-symbols-outlined text-[35px]">check_circle</span>
                         </div>
@@ -1765,7 +1784,7 @@ const JlDueReport = ({ user }) => {
                         {updatedDetails && updatedDetails.length > 0 && (
                             <div className="w-full text-left mb-6">
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">Updated Records:</p>
-                                <div className="max-h-48 overflow-y-auto pr-2 scrollbar-premium bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 p-3">
+                                <div className="max-h-32 overflow-y-auto pr-2 scrollbar-premium bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 p-3">
                                     <ul className="space-y-1.5">
                                         {[...updatedDetails].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map((detail, i) => (
                                             <li key={i} className="text-xs font-medium text-slate-600 dark:text-slate-300 flex items-start gap-2">
@@ -1777,10 +1796,12 @@ const JlDueReport = ({ user }) => {
                                 </div>
                             </div>
                         )}
+
                         <button
                             onClick={() => {
                                 setShowSuccessPopup(false);
                                 setUpdatedDetails([]);
+                                setSkippedDetails([]);
                             }}
                             className="w-full py-3 px-4 text-sm font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800/50 dark:text-emerald-400 dark:hover:bg-emerald-900/60 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
                         >

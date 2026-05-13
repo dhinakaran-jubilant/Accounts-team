@@ -2399,19 +2399,23 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
 
 
     return (
-        <div ref={scrollContainerRef} className={isPanel ? 'flex flex-col h-full scrollbar-premium' : 'flex-1 overflow-y-auto w-full flex flex-col scrollbar-premium'}>
-            <main className="mx-auto p-8 flex-1 flex flex-col w-full">
-                {/* Header */}
+        <div className="flex-1 w-full flex flex-col">
+            {/* Sticky Header - Works with the parent Layout scroll */}
+            {!isPanel && (
+                <div className="sticky top-0 z-50 flex-shrink-0 h-14 flex items-center px-8 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-[#101822]/95 backdrop-blur-md transition-colors">
+                    <button
+                        onClick={() => navigate(-1)}
+                        className="flex items-center gap-1.5 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-primary dark:hover:text-primary transition-colors group"
+                    >
+                        <span className="material-symbols-outlined text-[20px] group-hover:-translate-x-1 transition-transform">arrow_back</span>
+                        Back to JL Due Report
+                    </button>
+                </div>
+            )}
+
+            <main className="mx-auto px-8 py-8 flex-1 flex flex-col w-full">
+                {/* Header Info */}
                 <div className="mb-8">
-                    {!isPanel && (
-                        <button
-                            onClick={() => navigate(-1)}
-                            className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-primary dark:hover:text-primary transition-colors mb-4 group"
-                        >
-                            <span className="material-symbols-outlined text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
-                            Back to JL Due Report
-                        </button>
-                    )}
                     <div className="flex items-center gap-3 flex-wrap">
                         <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                             {loan.client_name}

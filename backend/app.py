@@ -141,6 +141,10 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+TEMP_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'temp_folder')
+if not os.path.exists(TEMP_FOLDER):
+    os.makedirs(TEMP_FOLDER)
+
 # Google Sheets Configuration
 SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets',
@@ -993,34 +997,124 @@ def upload_files():
 
 @app.route('/api/upload-day-book', methods=['POST'])
 def upload_day_book():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+    account_name = request.form.get('account_name', 'Unknown')
+    file = request.files.get('file')
     
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
+    # Standardized filename
+    staged_filename = f"{account_name}_DayBook.xlsx"
+    file_path = os.path.join(TEMP_FOLDER, staged_filename)
+
+    if file:
+        # If a file is provided in the request, save/overwrite it
+        if not os.path.exists(TEMP_FOLDER):
+            os.makedirs(TEMP_FOLDER)
+        file.save(file_path)
+    elif not os.path.exists(file_path):
+        # If no file in request and no staged file exists
+        return jsonify({'error': f'No Day Book staged or provided for {account_name}'}), 400
 
     try:
-        df = pd.read_excel(file)
+        df = pd.read_excel(file_path)
         receipt_df = df[df["Voucher Type"] == "Receipt Voucher"].copy()
+        
+        # --- Pre-check for Reversals ---
+        # Get set of Instrument Numbers that were reversed (Payment Voucher + "Reversal EMI" in comments)
+        reversed_instruments = set()
+        if "Instrument No." in df.columns and "Voucher Type" in df.columns and "Comments" in df.columns:
+            # Clean Instrument No: remove .0 and strip whitespace
+            def clean_inst_val(v):
+                if pd.isna(v): return None
+                s = str(v).strip()
+                if s.endswith('.0'): s = s[:-2]
+                return s if s else None
+
+            rev_mask = (df["Voucher Type"] == "Payment Voucher") & (df["Comments"].str.contains("Reversal EMI", na=False, case=False))
+            reversed_instruments = {clean_inst_val(v) for v in df[rev_mask]["Instrument No."].dropna() if clean_inst_val(v)}
+        # -------------------------------
+        
+        # --- Validation: Ensure file matches the account folder ---
+        mismatch_found = False
+        mismatch_acronym = ""
+        valid_sample_count = 0
+        
+        # Skip validation for individual imports (where account_name is "Unknown")
+        if account_name != 'Unknown':
+            for _, row in receipt_df.iterrows():
+                try:
+                    p_text = str(row.get("Particulars", ""))
+                    p_parts = p_text.split('-')
+                    if len(p_parts) < 2: continue
+                    l_ref = p_parts[-1].strip()
+                    
+                    loan_obj = Loan.query.filter_by(loan_ref_id=l_ref, is_deleted=False).first()
+                    if loan_obj:
+                        loan_acronym = get_acronym(loan_obj.primary_account_name)
+                        if loan_acronym != account_name:
+                            mismatch_found = True
+                            mismatch_acronym = loan_acronym
+                            break
+                        valid_sample_count += 1
+                        if valid_sample_count >= 5: # Checked 5 and they all match
+                            break
+                except:
+                    continue
+                    
+            if mismatch_found:
+                return jsonify({
+                    'success': False,
+                    'error': f'Incorrect Folder: This file appears to contain data for {mismatch_acronym}, but was uploaded to the {account_name} folder. Please upload to the correct folder.'
+                }), 400
+        # ---------------------------------------------------------
+
+        # Get all approved loans for substring matching (sorted by length descending for precision)
+        all_approved_loans = [l for l in Loan.query.filter_by(approval_status='APPROVED', is_deleted=False).all() if l.loan_ref_id]
+        all_approved_loans.sort(key=lambda x: len(x.loan_ref_id), reverse=True)
+
         updated_count = 0
         updated_details = []
+        skipped_details = []
 
         for index, row in receipt_df.iterrows():
             try:
+                # Robust cleaning for Instrument No
+                inst_raw = row.get("Instrument No.")
+                instrument_no = ""
+                if pd.notna(inst_raw):
+                    instrument_no = str(inst_raw).strip()
+                    if instrument_no.endswith('.0'): instrument_no = instrument_no[:-2]
+
+                if instrument_no and instrument_no in reversed_instruments:
+                    skipped_details.append(f"Row {index+1}: Instrument No '{instrument_no}' is in Reversal Set")
+                    continue
+
                 particulars = str(row.get("Particulars", ""))
                 comments = str(row.get("Comments", ""))
                 trans_date_raw = row.get("Transaction Date")
                 
-                loan_parts = particulars.split('-')
-                if len(loan_parts) < 2: continue
-                loan_ref_id = loan_parts[-1].strip()
+                # --- New Substring Matching Logic ---
+                # Check which DB loan ID is present in the daybook particulars
+                loan = None
+                for l in all_approved_loans:
+                    if l.loan_ref_id in particulars:
+                        loan = l
+                        break
+                
+                if not loan:
+                    skipped_details.append(f"Row {index+1}: No matching Loan ID found in Particulars '{particulars}'")
+                    continue
+                
+                loan_ref_id = loan.loan_ref_id
+                # -------------------------------------
                 
                 emi_parts = comments.split('_')
-                if len(emi_parts) < 2: continue
+                if len(emi_parts) < 2:
+                    skipped_details.append(f"Row {index+1} ({loan_ref_id}): Comments '{comments}' missing '_'")
+                    continue
                 try:
                     emi_no = int(emi_parts[-1].strip())
-                except ValueError: continue
+                except ValueError:
+                    skipped_details.append(f"Row {index+1} ({loan_ref_id}): EMI '{emi_parts[-1]}' not a number")
+                    continue
 
                 received_date = ""
                 if pd.notna(trans_date_raw):
@@ -1033,17 +1127,45 @@ def upload_day_book():
                             received_date = f"{d}-{m}-20{y}"
                         else:
                             received_date = s_date
+                else:
+                    skipped_details.append(f"Row {index+1} ({loan_ref_id}): Missing Transaction Date")
+                    continue
 
-                loan = Loan.query.filter_by(loan_ref_id=loan_ref_id, is_deleted=False).first()
-                if loan:
-                    system_schedule = [s for s in loan.repayment_schedule if s.type != 'manual']
-                    if 1 <= emi_no <= len(system_schedule):
-                        target_installment = system_schedule[emi_no - 1]
-                        # Only update if received_date is not already filled
-                        if not target_installment.received_date or not str(target_installment.received_date).strip():
-                            target_installment.received_date = received_date
-                            updated_count += 1
-                            updated_details.append(f"{loan.client_account_name} ({loan_ref_id}) - EMI {emi_no}")
+                if loan.approval_status != 'APPROVED':
+                    skipped_details.append(f"{loan_ref_id}: Status '{loan.approval_status}' is not APPROVED")
+                    continue
+                    
+                system_schedule = [s for s in loan.repayment_schedule if s.type != 'manual']
+                if emi_no < 1 or emi_no > len(system_schedule):
+                    skipped_details.append(f"{loan_ref_id}: EMI {emi_no} out of range (Total {len(system_schedule)})")
+                    continue
+                
+                target_installment = system_schedule[emi_no - 1]
+                
+                # Only update if received_date is not already filled
+                if target_installment.received_date and str(target_installment.received_date).strip() and str(target_installment.received_date).strip() != 'dd-mm-yyyy':
+                    skipped_details.append(f"{loan_ref_id} EMI {emi_no}: Already has date '{target_installment.received_date}'")
+                    continue
+
+                try:
+                    today = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                    due_dt = datetime.datetime.strptime(target_installment.date, "%d-%m-%Y")
+                    rec_dt = datetime.datetime.strptime(received_date, "%d-%m-%Y")
+                    
+                    if due_dt > today:
+                        skipped_details.append(f"{loan_ref_id} EMI {emi_no}: Future installment (Due {target_installment.date})")
+                        continue
+                        
+                    if rec_dt < due_dt:
+                        skipped_details.append(f"{loan_ref_id} EMI {emi_no}: Early payment ({received_date} < {target_installment.date})")
+                        continue
+
+                    target_installment.received_date = received_date
+                    updated_count += 1
+                    updated_details.append(f"{loan.client_account_name} - EMI {emi_no}")
+                except Exception as e:
+                    skipped_details.append(f"{loan_ref_id} EMI {emi_no}: Date Error ({str(e)})")
+                    continue
                 
             except Exception:
                 continue
@@ -1054,10 +1176,66 @@ def upload_day_book():
             'success': True, 
             'message': message,
             'updated_count': updated_count,
-            'updated_details': updated_details
+            'updated_details': updated_details,
+            'skipped_details': skipped_details
         }), 200
     except Exception as e:
         db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/staged-folders', methods=['GET'])
+def get_staged_folders():
+    try:
+        if not os.path.exists(TEMP_FOLDER):
+            return jsonify({'success': True, 'folders': []})
+        
+        # Files are named like "{account_name}_DayBook.xlsx"
+        files = os.listdir(TEMP_FOLDER)
+        folders = []
+        for f in files:
+            if f.endswith('_DayBook.xlsx'):
+                folders.append(f.replace('_DayBook.xlsx', ''))
+        return jsonify({'success': True, 'folders': list(set(folders))})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/stage-day-book', methods=['POST'])
+def stage_day_book():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    
+    file = request.files['file']
+    account_name = request.form.get('account_name')
+    
+    if not account_name:
+        return jsonify({'error': 'Account name is required'}), 400
+        
+    try:
+        if not os.path.exists(TEMP_FOLDER):
+            os.makedirs(TEMP_FOLDER)
+            
+        # Standardize filename so other users can see it
+        filename = f"{account_name}_DayBook.xlsx"
+        file_path = os.path.join(TEMP_FOLDER, filename)
+        file.save(file_path)
+        
+        return jsonify({'success': True, 'message': f'Staged {account_name} successfully'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/clear-temp-folder', methods=['POST'])
+def clear_temp_folder():
+    try:
+        if os.path.exists(TEMP_FOLDER):
+            for filename in os.listdir(TEMP_FOLDER):
+                file_path = os.path.join(TEMP_FOLDER, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                except Exception as e:
+                    print(f'Failed to delete {file_path}. Reason: {e}')
+        return jsonify({'success': True, 'message': 'Temp folder cleared'})
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/track-export', methods=['POST'])
