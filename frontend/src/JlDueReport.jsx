@@ -1227,11 +1227,12 @@ const JlDueReport = ({ user }) => {
         <div ref={pageRef} className="h-[calc(100vh-64px)] w-full flex flex-col overflow-hidden">
             <main className="mx-auto p-8 flex-1 flex flex-col w-full min-h-0">
                 {/* Header Section */}
-                <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="mb-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                         <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white">JL Due Report</h1>
                     </div>
-                    <div className="flex items-center gap-3">
+                </div>
+                    <div className="flex items-center gap-3 mb-5 justify-end">
                         <div className="relative group">
                             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm transition-colors group-focus-within:text-primary">search</span>
                             <input
@@ -1425,7 +1426,6 @@ const JlDueReport = ({ user }) => {
                             )}
                         </div>
                     </div>
-                </div>
 
                 {/* Table Section */}
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm flex flex-col flex-1 min-h-0">
