@@ -290,7 +290,7 @@ const Dashboard = ({ user }) => {
                     </p>
                 </header>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-6 xl:grid-cols-6 gap-4">
                     {ACCOUNT_OPTIONS.map((account) => {
                         // Check permissions: Admins see everything, users see only assigned acronyms
                         const permissions = typeof user?.permissions === 'string' 
