@@ -237,11 +237,59 @@ const JlDueReport = ({ user }) => {
     const [loanRefId, setLoanRefId] = useState('');
     const [verifiedBy, setVerifiedBy] = useState('System Admin');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [accountFilter, setAccountFilter] = useState('');
-    const [adminAccountFilter, setAdminAccountFilter] = useState([]);
+    const [accountFilter, setAccountFilter] = useState(() => {
+        return sessionStorage.getItem('jl_due_report_accountFilter') || '';
+    });
+    const [adminAccountFilter, setAdminAccountFilter] = useState(() => {
+        const saved = sessionStorage.getItem('jl_due_report_adminAccountFilter');
+        try {
+            return saved ? JSON.parse(saved) : [];
+        } catch {
+            return [];
+        }
+    });
+    const [statusFilter, setStatusFilter] = useState(() => {
+        const saved = sessionStorage.getItem('jl_due_report_statusFilter');
+        try {
+            return saved ? JSON.parse(saved) : [];
+        } catch {
+            return [];
+        }
+    });
     const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [selectedDate, setSelectedDate] = useState('');
+    const [searchTerm, setSearchTerm] = useState(() => {
+        return sessionStorage.getItem('jl_due_report_searchTerm') || '';
+    });
+    const [startDate, setStartDate] = useState(() => {
+        return sessionStorage.getItem('jl_due_report_startDate') || '';
+    });
+    const [endDate, setEndDate] = useState(() => {
+        return sessionStorage.getItem('jl_due_report_endDate') || '';
+    });
+
+    useEffect(() => {
+        sessionStorage.setItem('jl_due_report_accountFilter', accountFilter);
+    }, [accountFilter]);
+
+    useEffect(() => {
+        sessionStorage.setItem('jl_due_report_adminAccountFilter', JSON.stringify(adminAccountFilter));
+    }, [adminAccountFilter]);
+
+    useEffect(() => {
+        sessionStorage.setItem('jl_due_report_statusFilter', JSON.stringify(statusFilter));
+    }, [statusFilter]);
+
+    useEffect(() => {
+        sessionStorage.setItem('jl_due_report_searchTerm', searchTerm);
+    }, [searchTerm]);
+
+    useEffect(() => {
+        sessionStorage.setItem('jl_due_report_startDate', startDate);
+    }, [startDate]);
+
+    useEffect(() => {
+        sessionStorage.setItem('jl_due_report_endDate', endDate);
+    }, [endDate]);
     const [isDeleting, setIsDeleting] = useState(false);
     const [loanToDelete, setLoanToDelete] = useState(null);
     const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
@@ -253,6 +301,127 @@ const JlDueReport = ({ user }) => {
     const accountDropdownRef = useRef(null);
     const fileInputRef = useRef(null);
     const dayBookInputRef = useRef(null);
+
+    const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+    const [calendarViewDate, setCalendarViewDate] = useState(() => {
+        const initialDate = sessionStorage.getItem('jl_due_report_startDate') || '';
+        return initialDate ? new Date(initialDate) : new Date();
+    });
+    const calendarRef = useRef(null);
+
+    const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
+    const statusDropdownRef = useRef(null);
+
+    const todayString = useMemo(() => {
+        const today = new Date();
+        const y = today.getFullYear();
+        const m = String(today.getMonth() + 1).padStart(2, '0');
+        const d = String(today.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }, []);
+
+    const calendarDays = useMemo(() => {
+        const year = calendarViewDate.getFullYear();
+        const month = calendarViewDate.getMonth();
+
+        const firstDayIndex = new Date(year, month, 1).getDay();
+        const totalDays = new Date(year, month + 1, 0).getDate();
+        const prevTotalDays = new Date(year, month, 0).getDate();
+
+        const cells = [];
+
+        // Padding from previous month
+        for (let i = firstDayIndex - 1; i >= 0; i--) {
+            const dayNum = prevTotalDays - i;
+            const dateObj = new Date(year, month - 1, dayNum);
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            cells.push({
+                day: dayNum,
+                date: dateObj,
+                isCurrentMonth: false,
+                dateString: `${y}-${m}-${d}`
+            });
+        }
+
+        // Days of current month
+        for (let i = 1; i <= totalDays; i++) {
+            const dateObj = new Date(year, month, i);
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            cells.push({
+                day: i,
+                date: dateObj,
+                isCurrentMonth: true,
+                dateString: `${y}-${m}-${d}`
+            });
+        }
+
+        // Padding from next month
+        const remaining = 42 - cells.length;
+        for (let i = 1; i <= remaining; i++) {
+            const dateObj = new Date(year, month + 1, i);
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            cells.push({
+                day: i,
+                date: dateObj,
+                isCurrentMonth: false,
+                dateString: `${y}-${m}-${d}`
+            });
+        }
+
+        return cells;
+    }, [calendarViewDate]);
+
+    const handleDayClick = (dateString) => {
+        if (!startDate || (startDate && endDate)) {
+            setStartDate(dateString);
+            setEndDate('');
+        } else {
+            if (dateString < startDate) {
+                setStartDate(dateString);
+            } else {
+                setEndDate(dateString);
+            }
+        }
+    };
+
+    const handlePrevMonth = () => {
+        setCalendarViewDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+    };
+
+    const handleNextMonth = () => {
+        setCalendarViewDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+    };
+
+    const formatDisplayDateRange = () => {
+        if (!startDate && !endDate) return "Select Date Range";
+        
+        const formatDateStr = (isoStr) => {
+            if (!isoStr) return "";
+            const parts = isoStr.split('-');
+            const year = parts[0];
+            const monthIdx = parseInt(parts[1], 10) - 1;
+            const day = parseInt(parts[2], 10);
+            const shortMonths = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            return `${String(day).padStart(2, '0')} ${shortMonths[monthIdx]}, ${year}`;
+        };
+
+        if (startDate && !endDate) {
+            return `${formatDateStr(startDate)} - Select End Date`;
+        }
+        
+        return `${formatDateStr(startDate)} - ${formatDateStr(endDate)}`;
+    };
+
+    const MONTH_NAMES = [
+        "January", "February", "March", "April", "May", "June", 
+        "July", "August", "September", "October", "November", "December"
+    ];
 
     const ACCOUNT_OPTIONS = [
         { value: 'SCS', label: 'Surge Capital Solutions - SCS' },
@@ -280,6 +449,12 @@ const JlDueReport = ({ user }) => {
             }
             if (accountDropdownRef.current && !accountDropdownRef.current.contains(event.target)) {
                 setIsAccountDropdownOpen(false);
+            }
+            if (calendarRef.current && !calendarRef.current.contains(event.target)) {
+                setIsCalendarOpen(false);
+            }
+            if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target)) {
+                setIsStatusDropdownOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -438,8 +613,15 @@ const JlDueReport = ({ user }) => {
     };
 
     // Pagination states
-    const [currentPage, setCurrentPage] = useState(1);
+    const [currentPage, setCurrentPage] = useState(() => {
+        const saved = sessionStorage.getItem('jl_due_report_page');
+        return saved ? parseInt(saved, 10) : 1;
+    });
     const itemsPerPage = 20;
+
+    useEffect(() => {
+        sessionStorage.setItem('jl_due_report_page', currentPage);
+    }, [currentPage]);
 
     const fetchLoans = async () => {
         try {
@@ -462,9 +644,7 @@ const JlDueReport = ({ user }) => {
 
     }, []);
 
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [data]);
+
 
     const filteredData = useMemo(() => {
         let result = data;
@@ -503,11 +683,15 @@ const JlDueReport = ({ user }) => {
             });
         }
 
-        if (selectedDate) {
+        if (startDate || endDate) {
             result = result.filter(row => {
                 const schedule = row.repayment_schedule || [];
                 return schedule.some(entry => {
                     const scheduleDateStr = toYYYYMMDD(entry.date);
+                    if (!scheduleDateStr || scheduleDateStr === '0000-00-00') return false;
+
+                    if (startDate && scheduleDateStr < startDate) return false;
+                    if (endDate && scheduleDateStr > endDate) return false;
 
                     // Logic to check if this specific entry has ANY outstanding balance across accounts
                     const targetTotal = parseINR(entry.amount);
@@ -518,8 +702,15 @@ const JlDueReport = ({ user }) => {
                     const hasNoReceivedDate = !entry.received_date || entry.received_date === '' || entry.received_date === '—' || entry.received_date === 'dd-mm-yyyy' || entry.received_date === '-';
 
                     const hasBalance = Math.round(paidTotal) < Math.round(targetTotal);
-                    return scheduleDateStr && scheduleDateStr <= selectedDate && hasNoReceivedDate && hasBalance;
+                    return hasNoReceivedDate && hasBalance;
                 });
+            });
+        }
+
+        if (statusFilter && statusFilter.length > 0) {
+            result = result.filter(row => {
+                const statusInfo = getLoanStatus(row);
+                return statusFilter.includes(statusInfo.label);
             });
         }
 
@@ -576,13 +767,28 @@ const JlDueReport = ({ user }) => {
         }
 
         return result;
-    }, [data, accountFilter, adminAccountFilter, user, searchTerm, selectedDate, sortConfig]);
+    }, [data, accountFilter, adminAccountFilter, user, searchTerm, startDate, endDate, statusFilter, sortConfig]);
 
     // Pagination calculations
     const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = Math.min(startIndex + itemsPerPage, filteredData.length);
     const currentData = filteredData.slice(startIndex, endIndex);
+
+    const isFirstRender = useRef(true);
+    useEffect(() => {
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            return;
+        }
+        setCurrentPage(1);
+    }, [accountFilter, adminAccountFilter, searchTerm, startDate, endDate, statusFilter]);
+
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [filteredData, totalPages, currentPage]);
 
     const TAG_COLORS = [
         'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800/50',
@@ -661,7 +867,7 @@ const JlDueReport = ({ user }) => {
             groups.get(key).push(loan);
         });
 
-        const todayISO = selectedDate || new Date().toISOString().split('T')[0];
+        const todayISO = endDate || startDate || new Date().toISOString().split('T')[0];
         const today = todayISO.split('-').reverse().join('-');
 
         // Shared Styles
@@ -678,7 +884,7 @@ const JlDueReport = ({ user }) => {
                 const worksheet = workbook.addWorksheet(sheetName);
                 let cur = 1;
 
-                const cutoffKey = getDateKey(selectedDate || new Date().toLocaleDateString('en-CA'));
+                const cutoffKey = getDateKey(endDate || startDate || new Date().toLocaleDateString('en-CA'));
 
                 // --- First pass: find max secondary accounts for uniform column layout ---
                 let maxSecAccs = 0;
@@ -875,7 +1081,7 @@ const JlDueReport = ({ user }) => {
                     const secAccs2 = loan.secondary_accounts || [];
                     const systemSched2 = schedule.filter(x => x.type !== 'manual');
                     const interestRowId2 = systemSched2[0]?.id;
-                    const cutoffKey2 = getDateKey(selectedDate || new Date().toLocaleDateString('en-CA'));
+                    const cutoffKey2 = getDateKey(endDate || startDate || new Date().toLocaleDateString('en-CA'));
                     const grandTotal2 = (Number(loan.primary_account_amount) || 0) + (Number(loan.primary_account_interest) || 0)
                         + secAccs2.reduce((sum, a) => sum + (Number(a.share) || 0) + (Number(a.interest_amount) || 0), 0);
                     const effectivePriPct = grandTotal2 > 0 ? ((Number(loan.primary_account_amount) + Number(loan.primary_account_interest)) / grandTotal2) * 100 : 0;
@@ -1036,7 +1242,7 @@ const JlDueReport = ({ user }) => {
                         };
                     });
 
-                    const cutoffKey = getDateKey(selectedDate || new Date().toLocaleDateString('en-CA'));
+                    const cutoffKey = getDateKey(endDate || startDate || new Date().toLocaleDateString('en-CA'));
 
                     const getPaidShare = (accName, percentage, isPrimary, expectedTdsPerEntry = 0) => {
                         return schedule.reduce((sum, e) => {
@@ -1192,7 +1398,7 @@ const JlDueReport = ({ user }) => {
         const url = window.URL.createObjectURL(blob);
         const anchor = document.createElement('a');
         anchor.href = url;
-        const exportDate = selectedDate || new Date().toISOString().split('T')[0];
+        const exportDate = endDate || startDate || new Date().toISOString().split('T')[0];
         const dateStr = `_${exportDate}`;
         
         const activeFilterStr = user?.role === 'admin' && adminAccountFilter.length > 0 
@@ -1210,7 +1416,7 @@ const JlDueReport = ({ user }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     report_type: reportPrefix.replace(/_/g, ' '),
-                    filters: `${activeFilterStr} | Date: ${selectedDate || 'Current'} | Search: ${searchTerm || 'None'}`,
+                    filters: `${activeFilterStr} | Status: ${statusFilter.length > 0 ? statusFilter.join(', ') : 'All'} | Date: ${startDate || 'None'} to ${endDate || 'None'} | Search: ${searchTerm || 'None'}`,
                     total_entries: exportData.length,
                     sw_categorized: exportData.length,
                     remaining: 0
@@ -1227,12 +1433,11 @@ const JlDueReport = ({ user }) => {
         <div ref={pageRef} className="h-[calc(100vh-64px)] w-full flex flex-col overflow-hidden">
             <main className="mx-auto p-8 flex-1 flex flex-col w-full min-h-0">
                 {/* Header Section */}
-                <div className="mb-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white">JL Due Report</h1>
-                    </div>
-                </div>
-                    <div className="flex items-center gap-3 mb-5 justify-end">
+                <div className="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white whitespace-nowrap">JL Due Report</h1>
+                    
+                    <div className="flex flex-row items-center gap-4">
+                        {/* Search Bar */}
                         <div className="relative group">
                             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm transition-colors group-focus-within:text-primary">search</span>
                             <input
@@ -1240,9 +1445,30 @@ const JlDueReport = ({ user }) => {
                                 placeholder="Search Loan ID or Client..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-64 transition-all"
+                                className="pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-80 transition-all"
                             />
                         </div>
+
+                        {/* Clear Filters Button */}
+                        {(accountFilter || adminAccountFilter.length > 0 || searchTerm || startDate || endDate || statusFilter.length > 0) && (
+                            <button
+                                onClick={() => {
+                                    setAccountFilter('');
+                                    setAdminAccountFilter([]);
+                                    setSearchTerm('');
+                                    setStartDate('');
+                                    setEndDate('');
+                                    setStatusFilter([]);
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all flex items-center justify-center"
+                                title="Clear All Filters"
+                            >
+                                <span className="material-symbols-outlined text-[20px]">filter_alt_off</span>
+                            </button>
+                        )}
+                    </div>
+                </div>
+                    <div className="flex items-center gap-3 mb-5 justify-end">
                         {user?.role === 'admin' ? (
                             <div className="relative" ref={accountDropdownRef}>
                                 <button
@@ -1316,28 +1542,153 @@ const JlDueReport = ({ user }) => {
                                 <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">expand_more</span>
                             </div>
                         )}
-                        <div className="relative">
-                            <input
-                                type="date"
-                                value={selectedDate}
-                                onChange={(e) => setSelectedDate(e.target.value)}
-                                className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-40 cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"
-                            />
-                        </div>
-                        {(accountFilter || adminAccountFilter.length > 0 || searchTerm || selectedDate) && (
+                        <div className="relative" ref={statusDropdownRef}>
                             <button
-                                onClick={() => {
-                                    setAccountFilter('');
-                                    setAdminAccountFilter([]);
-                                    setSearchTerm('');
-                                    setSelectedDate('');
-                                }}
-                                className="h-9 px-3 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider"
-                                title="Clear Filters"
+                                onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                                className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-200 w-44 flex items-center justify-between transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-sm cursor-pointer select-none"
                             >
-                                <span className="material-symbols-outlined text-[18px]">filter_alt_off</span>
+                                <span className="truncate">
+                                    {statusFilter.length === 0
+                                        ? 'All Statuses'
+                                        : statusFilter.length === 1
+                                            ? statusFilter[0]
+                                            : `${statusFilter.length} Statuses`}
+                                </span>
+                                <span className="material-symbols-outlined text-slate-400 text-sm leading-none">expand_more</span>
                             </button>
-                        )}
+
+                            {isStatusDropdownOpen && (
+                                <div className="absolute top-full left-0 mt-2 w-52 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-[110] overflow-hidden py-2 animate-in fade-in slide-in-from-top-2 duration-150 select-none">
+                                    <div className="max-h-60 overflow-y-auto scrollbar-premium">
+                                        {[
+                                            { value: 'ACTIVE', label: 'ACTIVE' },
+                                            { value: 'OVERDUE', label: 'OVERDUE' },
+                                            { value: 'DATE OVERDUE', label: 'DATE OVERDUE' },
+                                            { value: 'CLOSED', label: 'CLOSED' },
+                                            { value: 'PENDING', label: 'PENDING' }
+                                        ].map((opt) => (
+                                            <label key={opt.value} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={statusFilter.includes(opt.value)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setStatusFilter([...statusFilter, opt.value]);
+                                                        } else {
+                                                            setStatusFilter(statusFilter.filter(v => v !== opt.value));
+                                                        }
+                                                    }}
+                                                    className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
+                                                />
+                                                <span className="text-sm text-slate-700 dark:text-slate-300 font-bold">{opt.label}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    {statusFilter.length > 0 && (
+                                        <div className="p-2.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                                            <button
+                                                onClick={() => setStatusFilter([])}
+                                                className="w-full py-1.5 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
+                                            >
+                                                Clear Selection
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        <div className="relative" ref={calendarRef}>
+                            <button
+                                onClick={() => setIsCalendarOpen(!isCalendarOpen)}
+                                className="h-9 px-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-200 flex items-center gap-2 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-sm min-w-56 justify-between select-none"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-slate-400 text-lg leading-none">calendar_month</span>
+                                    <span className="font-semibold text-[13px]">{formatDisplayDateRange()}</span>
+                                </div>
+                                <span className="material-symbols-outlined text-slate-400 text-sm leading-none">expand_more</span>
+                            </button>
+
+                            {isCalendarOpen && (
+                                <div className="absolute top-full right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-5 z-[120] w-[340px] animate-in fade-in slide-in-from-top-2 duration-150 select-none">
+                                    {/* Header */}
+                                    <div className="flex items-center justify-between mb-4">
+                                        <button 
+                                            onClick={handlePrevMonth}
+                                            className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors"
+                                        >
+                                            <span className="material-symbols-outlined text-lg leading-none">chevron_left</span>
+                                        </button>
+                                        <h4 className="text-[14px] font-extrabold text-slate-800 dark:text-white">
+                                            {MONTH_NAMES[calendarViewDate.getMonth()]} {calendarViewDate.getFullYear()}
+                                        </h4>
+                                        <button 
+                                            onClick={handleNextMonth}
+                                            className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors"
+                                        >
+                                            <span className="material-symbols-outlined text-lg leading-none">chevron_right</span>
+                                        </button>
+                                    </div>
+
+                                    <hr className="border-slate-100 dark:border-slate-800 mb-4" />
+
+                                    {/* Weekdays */}
+                                    <div className="grid grid-cols-7 text-center mb-2">
+                                        {["S", "M", "T", "W", "T", "F", "S"].map((day, idx) => (
+                                            <span key={idx} className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                                {day}
+                                            </span>
+                                        ))}
+                                    </div>
+
+                                    {/* Days grid */}
+                                    <div className="grid grid-cols-7 gap-y-1">
+                                        {calendarDays.map((cell, idx) => {
+                                            const isStart = cell.dateString === startDate;
+                                            const isEnd = cell.dateString === endDate;
+                                            const isBetween = startDate && endDate && cell.dateString > startDate && cell.dateString < endDate;
+                                            return (
+                                                <div 
+                                                    key={idx} 
+                                                    onClick={() => handleDayClick(cell.dateString)}
+                                                    className={`h-10 flex items-center justify-center relative select-none cursor-pointer ${
+                                                        !cell.isCurrentMonth ? 'opacity-40 hover:opacity-75' : ''
+                                                    }`}
+                                                >
+                                                    {/* Background range highlight layer */}
+                                                    {(isStart && endDate) && (
+                                                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1/2 h-8 bg-indigo-50 dark:bg-indigo-950/30 z-0 rounded-l-full" />
+                                                    )}
+                                                    {(isEnd && startDate) && (
+                                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1/2 h-8 bg-indigo-50 dark:bg-indigo-950/30 z-0 rounded-r-full" />
+                                                    )}
+                                                    {isBetween && (
+                                                        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-8 bg-indigo-50 dark:bg-indigo-950/30 z-0" />
+                                                    )}
+
+                                                    {/* Day label wrapper */}
+                                                    <div className={`w-8 h-8 flex flex-col items-center justify-center text-xs relative z-10 ${
+                                                        (isStart || isEnd) 
+                                                            ? 'rounded-full bg-primary text-white font-bold shadow-md shadow-primary/20' 
+                                                            : isBetween 
+                                                                ? 'text-primary font-semibold bg-transparent' 
+                                                                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full'
+                                                    }`}>
+                                                        {cell.day}
+                                                        
+                                                        {/* Today indicator dot */}
+                                                        {cell.dateString === todayString && !(isStart || isEnd) && (
+                                                            <span className="absolute bottom-0.5 w-1 h-1 rounded-full bg-primary" />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         <div className="relative" ref={importDropdownRef}>
                             <button
                                 onClick={() => setIsImportDropdownOpen(!isImportDropdownOpen)}
@@ -1528,7 +1879,7 @@ const JlDueReport = ({ user }) => {
                                                         </div>
                                                         <p className="text-slate-900 dark:text-white text-lg font-bold mb-1">No Results Found</p>
                                                         <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto px-10">
-                                                            {accountFilter || searchTerm || selectedDate
+                                                            {accountFilter || adminAccountFilter.length > 0 || searchTerm || startDate || endDate || statusFilter.length > 0
                                                                 ? "We couldn't find any loans matching your current search or date filters. Try adjusting your criteria."
                                                                 : "There are no loan records to display based on your access level or account activity."}
                                                         </p>
@@ -1539,7 +1890,7 @@ const JlDueReport = ({ user }) => {
                                             <tr
                                                 key={row.id}
                                                 onClick={() => {
-                                                    navigate(`/jl-due-report/${row.id}`, { state: { filterDate: selectedDate } });
+                                                    navigate(`/jl-due-report/${row.id}`, { state: { filterDate: endDate || startDate } });
                                                 }}
                                                 title={row.approval_status === 'PENDING' ? 'Pending Approval - View only mode' : ''}
                                                 className="transition-colors group hover:bg-slate-50 dark:hover:bg-slate-800/25 cursor-pointer"

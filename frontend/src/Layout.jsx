@@ -102,6 +102,15 @@ const Layout = ({ children, user, onLogout, activeMenu, showFooter = false }) =>
                         </Link>
                         <Link
                             to="/jl-due-report"
+                            onClick={() => {
+                                sessionStorage.removeItem('jl_due_report_page');
+                                sessionStorage.removeItem('jl_due_report_accountFilter');
+                                sessionStorage.removeItem('jl_due_report_adminAccountFilter');
+                                sessionStorage.removeItem('jl_due_report_statusFilter');
+                                sessionStorage.removeItem('jl_due_report_searchTerm');
+                                sessionStorage.removeItem('jl_due_report_startDate');
+                                sessionStorage.removeItem('jl_due_report_endDate');
+                            }}
                             className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all group ${activeMenu === 'jl-due-report'
                                 ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
                                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-100'}`}

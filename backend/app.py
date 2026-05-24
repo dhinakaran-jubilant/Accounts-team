@@ -192,6 +192,18 @@ def get_acronym(name):
     if 'raja priya' in n: return 'RP'
     return name.upper()
 
+def format_loan_ref_id(ref_id):
+    if not ref_id:
+        return None
+    ref_str = str(ref_id).strip()
+    if not ref_str:
+        return None
+    if not ref_str.upper().startswith('JL'):
+        ref_str = f"JL{ref_str}"
+    if ref_str.lower().startswith('jl'):
+        ref_str = f"JL{ref_str[2:]}"
+    return ref_str[:11]
+
 def find_secondary_manager(secondary_accounts):
     """
     Finds a user who manages one of the secondary accounts as their primary.
@@ -595,7 +607,8 @@ def handle_docx_upload():
         # Parse dynamic arrays from the frontend popup
         accounts_str = request.form.get('remaining_accounts', '[]')
         remaining_accounts = json.loads(accounts_str)
-        loan_ref_id = request.form.get('loan_ref_id', '').strip()[:11] or None
+        loan_ref_id_raw = request.form.get('loan_ref_id', '').strip()
+        loan_ref_id = format_loan_ref_id(loan_ref_id_raw)
         
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
         file.save(file_path)
@@ -727,7 +740,8 @@ def handle_pdf_upload():
     try:
         accounts_str = request.form.get('remaining_accounts', '[]')
         remaining_accounts = json.loads(accounts_str)
-        loan_ref_id_input = request.form.get('loan_ref_id', '').strip()[:11] or None
+        loan_ref_id_raw = request.form.get('loan_ref_id', '').strip()
+        loan_ref_id_input = format_loan_ref_id(loan_ref_id_raw)
         
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
         file.save(file_path)
@@ -736,7 +750,8 @@ def handle_pdf_upload():
         pdf_data = extract_pdf_data(file_path)
         
         # If user didn't provide a Loan ID in modal, use the one from PDF if available
-        final_loan_ref_id = loan_ref_id_input or (pdf_data.get('loan_number')[:11] if pdf_data.get('loan_number') else None)
+        extracted_id = format_loan_ref_id(pdf_data.get('loan_number')) if pdf_data.get('loan_number') else None
+        final_loan_ref_id = loan_ref_id_input or extracted_id
 
         # Build final formatted output (shares, interest splits)
         final_output = build_final_output(pdf_data, remaining_accounts)
@@ -1047,6 +1062,8 @@ def upload_day_book():
                     l_ref = p_parts[-1].strip()
                     
                     loan_obj = Loan.query.filter_by(loan_ref_id=l_ref, is_deleted=False).first()
+                    if not loan_obj and not l_ref.upper().startswith('JL'):
+                        loan_obj = Loan.query.filter_by(loan_ref_id=f"JL{l_ref}", is_deleted=False).first()
                     if loan_obj:
                         loan_acronym = get_acronym(loan_obj.primary_account_name)
                         if loan_acronym != account_name:
@@ -1096,6 +1113,9 @@ def upload_day_book():
                 loan = None
                 for l in all_approved_loans:
                     if l.loan_ref_id in particulars:
+                        loan = l
+                        break
+                    if l.loan_ref_id.upper().startswith('JL') and l.loan_ref_id[2:] in particulars:
                         loan = l
                         break
                 
@@ -1273,7 +1293,7 @@ def update_loan_accounts(loan_id):
         data = request.json
 
         if 'loan_ref_id' in data:
-            loan.loan_ref_id = (data['loan_ref_id'] or '').strip()[:11] or None
+            loan.loan_ref_id = format_loan_ref_id(data['loan_ref_id'])
 
         if 'primary' in data:
             loan.primary_account_amount = float(data['primary'].get('amount', loan.primary_account_amount))
