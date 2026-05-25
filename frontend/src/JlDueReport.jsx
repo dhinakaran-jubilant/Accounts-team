@@ -237,17 +237,8 @@ const JlDueReport = ({ user }) => {
     const [loanRefId, setLoanRefId] = useState('');
     const [verifiedBy, setVerifiedBy] = useState('System Admin');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [accountFilter, setAccountFilter] = useState(() => {
-        return sessionStorage.getItem('jl_due_report_accountFilter') || '';
-    });
-    const [adminAccountFilter, setAdminAccountFilter] = useState(() => {
-        const saved = sessionStorage.getItem('jl_due_report_adminAccountFilter');
-        try {
-            return saved ? JSON.parse(saved) : ['SCS', 'GC', 'FC', 'AS', 'ASE', 'SCE', 'ASQ', 'SN', 'FE', 'JC', 'RP'];
-        } catch {
-            return ['SCS', 'GC', 'FC', 'AS', 'ASE', 'SCE', 'ASQ', 'SN', 'FE', 'JC', 'RP'];
-        }
-    });
+    const [accountFilter, setAccountFilter] = useState('');
+    const [adminAccountFilter, setAdminAccountFilter] = useState(['SCS', 'GC', 'FC', 'AS', 'ASE', 'SCE', 'ASQ', 'SN', 'FE', 'JC', 'RP']);
     const [statusFilter, setStatusFilter] = useState(() => {
         const saved = sessionStorage.getItem('jl_due_report_statusFilter');
         try {
@@ -266,14 +257,6 @@ const JlDueReport = ({ user }) => {
     const [endDate, setEndDate] = useState(() => {
         return sessionStorage.getItem('jl_due_report_endDate') || '';
     });
-
-    useEffect(() => {
-        sessionStorage.setItem('jl_due_report_accountFilter', accountFilter);
-    }, [accountFilter]);
-
-    useEffect(() => {
-        sessionStorage.setItem('jl_due_report_adminAccountFilter', JSON.stringify(adminAccountFilter));
-    }, [adminAccountFilter]);
 
     useEffect(() => {
         sessionStorage.setItem('jl_due_report_statusFilter', JSON.stringify(statusFilter));
@@ -604,6 +587,7 @@ const JlDueReport = ({ user }) => {
     }, [activeAccountAcronyms]);
 
     const isAllAccountsSelected = useMemo(() => {
+        if (adminAccountFilter.length === ACCOUNT_OPTIONS.length) return true;
         return filteredAccountOptions.length > 0 && filteredAccountOptions.every(opt => adminAccountFilter.includes(opt.value));
     }, [filteredAccountOptions, adminAccountFilter]);
 
