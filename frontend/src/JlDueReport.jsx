@@ -371,6 +371,7 @@ const JlDueReport = ({ user }) => {
                 setEndDate(dateString);
             }
         }
+        setCurrentPage(1);
     };
 
     const handlePrevMonth = () => {
@@ -778,14 +779,7 @@ const JlDueReport = ({ user }) => {
     const endIndex = Math.min(startIndex + itemsPerPage, filteredData.length);
     const currentData = filteredData.slice(startIndex, endIndex);
 
-    const isFirstRender = useRef(true);
-    useEffect(() => {
-        if (isFirstRender.current) {
-            isFirstRender.current = false;
-            return;
-        }
-        setCurrentPage(1);
-    }, [accountFilter, adminAccountFilter, searchTerm, startDate, endDate, statusFilter]);
+
 
     useEffect(() => {
         if (!isLoadingData && currentPage > totalPages) {
@@ -1447,7 +1441,10 @@ const JlDueReport = ({ user }) => {
                                 type="text"
                                 placeholder="Search Loan ID or Client..."
                                 value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
+                                onChange={(e) => {
+                                    setSearchTerm(e.target.value);
+                                    setCurrentPage(1);
+                                }}
                                 className="pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-80 transition-all"
                             />
                         </div>
@@ -1461,6 +1458,7 @@ const JlDueReport = ({ user }) => {
                                     setStartDate('');
                                     setEndDate('');
                                     setStatusFilter(['ACTIVE', 'OVERDUE', 'DATE OVERDUE', 'CLOSED', 'PENDING']);
+                                    setCurrentPage(1);
                                 }}
                                 className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all flex items-center justify-center"
                                 title="Clear All Filters"
@@ -1502,6 +1500,7 @@ const JlDueReport = ({ user }) => {
                                                         } else {
                                                             setAdminAccountFilter([]);
                                                         }
+                                                        setCurrentPage(1);
                                                     }}
                                                     className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
                                                 />
@@ -1518,6 +1517,7 @@ const JlDueReport = ({ user }) => {
                                                             } else {
                                                                 setAdminAccountFilter(adminAccountFilter.filter(v => v !== opt.value));
                                                             }
+                                                            setCurrentPage(1);
                                                         }}
                                                         className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
                                                     />
@@ -1528,7 +1528,10 @@ const JlDueReport = ({ user }) => {
                                         {adminAccountFilter.length > 0 && (
                                             <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
                                                 <button
-                                                    onClick={() => setAdminAccountFilter([])}
+                                                    onClick={() => {
+                                                        setAdminAccountFilter([]);
+                                                        setCurrentPage(1);
+                                                    }}
                                                     className="w-full py-1.5 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
                                                 >
                                                     Clear Selection
@@ -1542,7 +1545,10 @@ const JlDueReport = ({ user }) => {
                             <div className="relative">
                                 <select
                                     value={accountFilter}
-                                    onChange={(e) => setAccountFilter(e.target.value)}
+                                    onChange={(e) => {
+                                        setAccountFilter(e.target.value);
+                                        setCurrentPage(1);
+                                    }}
                                     className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-56 appearance-none cursor-pointer pr-10"
                                 >
                                     <option value="">All Accounts</option>
@@ -1583,6 +1589,7 @@ const JlDueReport = ({ user }) => {
                                                     } else {
                                                         setStatusFilter([]);
                                                     }
+                                                    setCurrentPage(1);
                                                 }}
                                                 className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
                                             />
@@ -1605,6 +1612,7 @@ const JlDueReport = ({ user }) => {
                                                         } else {
                                                             setStatusFilter(statusFilter.filter(v => v !== opt.value));
                                                         }
+                                                        setCurrentPage(1);
                                                     }}
                                                     className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
                                                 />
@@ -1615,7 +1623,10 @@ const JlDueReport = ({ user }) => {
                                     {statusFilter.length > 0 && (
                                         <div className="p-2.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
                                             <button
-                                                onClick={() => setStatusFilter([])}
+                                                onClick={() => {
+                                                    setStatusFilter([]);
+                                                    setCurrentPage(1);
+                                                }}
                                                 className="w-full py-1.5 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
                                             >
                                                 Clear Selection
