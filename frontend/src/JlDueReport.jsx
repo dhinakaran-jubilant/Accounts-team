@@ -243,9 +243,9 @@ const JlDueReport = ({ user }) => {
     const [adminAccountFilter, setAdminAccountFilter] = useState(() => {
         const saved = sessionStorage.getItem('jl_due_report_adminAccountFilter');
         try {
-            return saved ? JSON.parse(saved) : [];
+            return saved ? JSON.parse(saved) : ['SCS', 'GC', 'FC', 'AS', 'ASE', 'SCE', 'ASQ', 'SN', 'FE', 'JC', 'RP'];
         } catch {
-            return [];
+            return ['SCS', 'GC', 'FC', 'AS', 'ASE', 'SCE', 'ASQ', 'SN', 'FE', 'JC', 'RP'];
         }
     });
     const [statusFilter, setStatusFilter] = useState(() => {
@@ -603,6 +603,10 @@ const JlDueReport = ({ user }) => {
         return ACCOUNT_OPTIONS.filter(opt => activeAccountAcronyms.has(opt.value.toUpperCase()));
     }, [activeAccountAcronyms]);
 
+    const isAllAccountsSelected = useMemo(() => {
+        return filteredAccountOptions.length > 0 && filteredAccountOptions.every(opt => adminAccountFilter.includes(opt.value));
+    }, [filteredAccountOptions, adminAccountFilter]);
+
     const handleDeleteClick = (loanId) => {
         setLoanToDelete(loanId);
     };
@@ -677,10 +681,10 @@ const JlDueReport = ({ user }) => {
             });
         }
 
-        if (user?.role === 'admin' && adminAccountFilter && adminAccountFilter.length > 0) {
+        if (user?.role === 'admin' && adminAccountFilter) {
             result = result.filter(row => {
-                const priAcronym = getAcronym(row.primary_account_name).toUpperCase();
-                return adminAccountFilter.some(term => priAcronym === term);
+                const acronym = getAcronym(row.primary_account_name).toUpperCase();
+                return adminAccountFilter.includes(acronym);
             });
         } else if (accountFilter) {
             const term = accountFilter.toUpperCase();
@@ -1464,12 +1468,11 @@ const JlDueReport = ({ user }) => {
                             />
                         </div>
 
-                        {/* Clear Filters Button */}
-                        {(accountFilter || adminAccountFilter.length > 0 || searchTerm || startDate || endDate || statusFilter.length < 5) && (
+                        {(accountFilter || !isAllAccountsSelected || searchTerm || startDate || endDate || statusFilter.length < 5) && (
                             <button
                                 onClick={() => {
                                     setAccountFilter('');
-                                    setAdminAccountFilter([]);
+                                    setAdminAccountFilter(['SCS', 'GC', 'FC', 'AS', 'ASE', 'SCE', 'ASQ', 'SN', 'FE', 'JC', 'RP']);
                                     setSearchTerm('');
                                     setStartDate('');
                                     setEndDate('');
@@ -1491,11 +1494,13 @@ const JlDueReport = ({ user }) => {
                                     className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-56 flex items-center justify-between transition-all"
                                 >
                                     <span className="truncate">
-                                        {adminAccountFilter.length === 0 
-                                            ? 'All Accounts' 
-                                            : adminAccountFilter.length === 1
-                                                ? filteredAccountOptions.find(o => o.value === adminAccountFilter[0])?.label || adminAccountFilter[0]
-                                                : `${adminAccountFilter.length} Accounts Selected`}
+                                        {isAllAccountsSelected
+                                            ? 'All Accounts'
+                                            : adminAccountFilter.length === 0
+                                                ? 'No Accounts'
+                                                : adminAccountFilter.length === 1
+                                                    ? filteredAccountOptions.find(o => o.value === adminAccountFilter[0])?.label || adminAccountFilter[0]
+                                                    : `${adminAccountFilter.length} Accounts Selected`}
                                     </span>
                                     <span className="material-symbols-outlined text-slate-400 text-sm">expand_more</span>
                                 </button>
@@ -1503,6 +1508,21 @@ const JlDueReport = ({ user }) => {
                                 {isAccountDropdownOpen && (
                                     <div className="absolute top-full left-0 mt-2 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[100] overflow-hidden py-2 animate-in fade-in slide-in-from-top-2 duration-150">
                                         <div className="max-h-64 overflow-y-auto scrollbar-premium">
+                                            <label className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-800/20">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isAllAccountsSelected}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setAdminAccountFilter(['SCS', 'GC', 'FC', 'AS', 'ASE', 'SCE', 'ASQ', 'SN', 'FE', 'JC', 'RP']);
+                                                        } else {
+                                                            setAdminAccountFilter([]);
+                                                        }
+                                                    }}
+                                                    className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
+                                                />
+                                                <span className="text-sm text-slate-800 dark:text-slate-100 font-extrabold">All Accounts</span>
+                                            </label>
                                             {filteredAccountOptions.map((opt) => (
                                                 <label key={opt.value} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
                                                     <input
@@ -1515,9 +1535,9 @@ const JlDueReport = ({ user }) => {
                                                                 setAdminAccountFilter(adminAccountFilter.filter(v => v !== opt.value));
                                                             }
                                                         }}
-                                                        className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600"
+                                                        className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
                                                     />
-                                                    <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">{opt.label}</span>
+                                                    <span className="text-sm text-slate-700 dark:text-slate-300 font-semibold">{opt.label}</span>
                                                 </label>
                                             ))}
                                         </div>
@@ -1903,7 +1923,7 @@ const JlDueReport = ({ user }) => {
                                                         </div>
                                                         <p className="text-slate-900 dark:text-white text-lg font-bold mb-1">No Results Found</p>
                                                         <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto px-10">
-                                                            {accountFilter || adminAccountFilter.length > 0 || searchTerm || startDate || endDate || statusFilter.length < 5
+                                                            {accountFilter || !isAllAccountsSelected || searchTerm || startDate || endDate || statusFilter.length < 5
                                                                 ? "We couldn't find any loans matching your current search or date filters. Try adjusting your criteria."
                                                                 : "There are no loan records to display based on your access level or account activity."}
                                                         </p>
