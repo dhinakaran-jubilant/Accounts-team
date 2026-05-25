@@ -588,6 +588,21 @@ const JlDueReport = ({ user }) => {
     const [data, setData] = useState([]);
     const [isLoadingData, setIsLoadingData] = useState(true);
 
+    const activeAccountAcronyms = useMemo(() => {
+        const acronymSet = new Set();
+        data.forEach(loan => {
+            if (loan.primary_account_name) {
+                const acronym = getAcronym(loan.primary_account_name).toUpperCase();
+                acronymSet.add(acronym);
+            }
+        });
+        return acronymSet;
+    }, [data]);
+
+    const filteredAccountOptions = useMemo(() => {
+        return ACCOUNT_OPTIONS.filter(opt => activeAccountAcronyms.has(opt.value.toUpperCase()));
+    }, [activeAccountAcronyms]);
+
     const handleDeleteClick = (loanId) => {
         setLoanToDelete(loanId);
     };
@@ -1479,7 +1494,7 @@ const JlDueReport = ({ user }) => {
                                         {adminAccountFilter.length === 0 
                                             ? 'All Accounts' 
                                             : adminAccountFilter.length === 1
-                                                ? ACCOUNT_OPTIONS.find(o => o.value === adminAccountFilter[0])?.label || adminAccountFilter[0]
+                                                ? filteredAccountOptions.find(o => o.value === adminAccountFilter[0])?.label || adminAccountFilter[0]
                                                 : `${adminAccountFilter.length} Accounts Selected`}
                                     </span>
                                     <span className="material-symbols-outlined text-slate-400 text-sm">expand_more</span>
@@ -1488,7 +1503,7 @@ const JlDueReport = ({ user }) => {
                                 {isAccountDropdownOpen && (
                                     <div className="absolute top-full left-0 mt-2 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[100] overflow-hidden py-2 animate-in fade-in slide-in-from-top-2 duration-150">
                                         <div className="max-h-64 overflow-y-auto scrollbar-premium">
-                                            {ACCOUNT_OPTIONS.map((opt) => (
+                                            {filteredAccountOptions.map((opt) => (
                                                 <label key={opt.value} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
                                                     <input
                                                         type="checkbox"
@@ -1527,17 +1542,9 @@ const JlDueReport = ({ user }) => {
                                     className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-56 appearance-none cursor-pointer pr-10"
                                 >
                                     <option value="">All Accounts</option>
-                                    <option value="SCS">Surge Capital Solutions - SCS</option>
-                                    <option value="GC">Growth Capital - GC</option>
-                                    <option value="FC">Finova Capital - FC</option>
-                                    <option value="AS">Ascend Solutions - AS</option>
-                                    <option value="ASE">AS Enterprises - ASE</option>
-                                    <option value="SCE">SC Enterprises - SCE</option>
-                                    <option value="ASQ">A Square Enterprises - ASQ</option>
-                                    <option value="SN">S Nirmala - SN</option>
-                                    <option value="FE">Fortune Enterprises - FE</option>
-                                    <option value="JC">Jubilant Capital - JC</option>
-                                    <option value="RP">Raja Priya - RP</option>
+                                    {filteredAccountOptions.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                    ))}
                                 </select>
                                 <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">expand_more</span>
                             </div>
