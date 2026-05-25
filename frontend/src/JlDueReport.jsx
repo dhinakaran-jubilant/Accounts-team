@@ -1560,6 +1560,15 @@ const JlDueReport = ({ user }) => {
                             {isStatusDropdownOpen && (
                                 <div className="absolute top-full left-0 mt-2 w-52 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-[110] overflow-hidden py-2 animate-in fade-in slide-in-from-top-2 duration-150 select-none">
                                     <div className="max-h-60 overflow-y-auto scrollbar-premium">
+                                        <label className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-800/20">
+                                            <input
+                                                type="checkbox"
+                                                checked={statusFilter.length === 0}
+                                                onChange={() => setStatusFilter([])}
+                                                className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
+                                            />
+                                            <span className="text-sm text-slate-800 dark:text-slate-100 font-extrabold">All Statuses</span>
+                                        </label>
                                         {[
                                             { value: 'ACTIVE', label: 'ACTIVE' },
                                             { value: 'OVERDUE', label: 'OVERDUE' },
@@ -1580,7 +1589,7 @@ const JlDueReport = ({ user }) => {
                                                     }}
                                                     className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
                                                 />
-                                                <span className="text-sm text-slate-700 dark:text-slate-300 font-bold">{opt.label}</span>
+                                                <span className="text-sm text-slate-700 dark:text-slate-300 font-semibold">{opt.label}</span>
                                             </label>
                                         ))}
                                     </div>
