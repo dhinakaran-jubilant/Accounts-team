@@ -788,10 +788,10 @@ const JlDueReport = ({ user }) => {
     }, [accountFilter, adminAccountFilter, searchTerm, startDate, endDate, statusFilter]);
 
     useEffect(() => {
-        if (currentPage > totalPages) {
+        if (!isLoadingData && currentPage > totalPages) {
             setCurrentPage(totalPages);
         }
-    }, [filteredData, totalPages, currentPage]);
+    }, [filteredData, totalPages, currentPage, isLoadingData]);
 
     const TAG_COLORS = [
         'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800/50',
