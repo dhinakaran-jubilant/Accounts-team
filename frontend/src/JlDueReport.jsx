@@ -251,9 +251,9 @@ const JlDueReport = ({ user }) => {
     const [statusFilter, setStatusFilter] = useState(() => {
         const saved = sessionStorage.getItem('jl_due_report_statusFilter');
         try {
-            return saved ? JSON.parse(saved) : [];
+            return saved ? JSON.parse(saved) : ['ACTIVE', 'OVERDUE', 'DATE OVERDUE', 'CLOSED', 'PENDING'];
         } catch {
-            return [];
+            return ['ACTIVE', 'OVERDUE', 'DATE OVERDUE', 'CLOSED', 'PENDING'];
         }
     });
     const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
@@ -707,7 +707,7 @@ const JlDueReport = ({ user }) => {
             });
         }
 
-        if (statusFilter && statusFilter.length > 0) {
+        if (statusFilter) {
             result = result.filter(row => {
                 const statusInfo = getLoanStatus(row);
                 return statusFilter.includes(statusInfo.label);
@@ -1416,7 +1416,7 @@ const JlDueReport = ({ user }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     report_type: reportPrefix.replace(/_/g, ' '),
-                    filters: `${activeFilterStr} | Status: ${statusFilter.length > 0 ? statusFilter.join(', ') : 'All'} | Date: ${startDate || 'None'} to ${endDate || 'None'} | Search: ${searchTerm || 'None'}`,
+                    filters: `${activeFilterStr} | Status: ${statusFilter.length === 5 ? 'All' : statusFilter.length > 0 ? statusFilter.join(', ') : 'None'} | Date: ${startDate || 'None'} to ${endDate || 'None'} | Search: ${searchTerm || 'None'}`,
                     total_entries: exportData.length,
                     sw_categorized: exportData.length,
                     remaining: 0
@@ -1450,7 +1450,7 @@ const JlDueReport = ({ user }) => {
                         </div>
 
                         {/* Clear Filters Button */}
-                        {(accountFilter || adminAccountFilter.length > 0 || searchTerm || startDate || endDate || statusFilter.length > 0) && (
+                        {(accountFilter || adminAccountFilter.length > 0 || searchTerm || startDate || endDate || statusFilter.length < 5) && (
                             <button
                                 onClick={() => {
                                     setAccountFilter('');
@@ -1458,7 +1458,7 @@ const JlDueReport = ({ user }) => {
                                     setSearchTerm('');
                                     setStartDate('');
                                     setEndDate('');
-                                    setStatusFilter([]);
+                                    setStatusFilter(['ACTIVE', 'OVERDUE', 'DATE OVERDUE', 'CLOSED', 'PENDING']);
                                 }}
                                 className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all flex items-center justify-center"
                                 title="Clear All Filters"
@@ -1548,11 +1548,13 @@ const JlDueReport = ({ user }) => {
                                 className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-200 w-44 flex items-center justify-between transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-sm cursor-pointer select-none"
                             >
                                 <span className="truncate">
-                                    {statusFilter.length === 0
+                                    {statusFilter.length === 5
                                         ? 'All Statuses'
-                                        : statusFilter.length === 1
-                                            ? statusFilter[0]
-                                            : `${statusFilter.length} Statuses`}
+                                        : statusFilter.length === 0
+                                            ? 'No Statuses'
+                                            : statusFilter.length === 1
+                                                ? statusFilter[0]
+                                                : `${statusFilter.length} Statuses`}
                                 </span>
                                 <span className="material-symbols-outlined text-slate-400 text-sm leading-none">expand_more</span>
                             </button>
@@ -1563,8 +1565,14 @@ const JlDueReport = ({ user }) => {
                                         <label className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-800/20">
                                             <input
                                                 type="checkbox"
-                                                checked={statusFilter.length === 0}
-                                                onChange={() => setStatusFilter([])}
+                                                checked={statusFilter.length === 5}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setStatusFilter(['ACTIVE', 'OVERDUE', 'DATE OVERDUE', 'CLOSED', 'PENDING']);
+                                                    } else {
+                                                        setStatusFilter([]);
+                                                    }
+                                                }}
                                                 className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
                                             />
                                             <span className="text-sm text-slate-800 dark:text-slate-100 font-extrabold">All Statuses</span>
@@ -1888,7 +1896,7 @@ const JlDueReport = ({ user }) => {
                                                         </div>
                                                         <p className="text-slate-900 dark:text-white text-lg font-bold mb-1">No Results Found</p>
                                                         <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto px-10">
-                                                            {accountFilter || adminAccountFilter.length > 0 || searchTerm || startDate || endDate || statusFilter.length > 0
+                                                            {accountFilter || adminAccountFilter.length > 0 || searchTerm || startDate || endDate || statusFilter.length < 5
                                                                 ? "We couldn't find any loans matching your current search or date filters. Try adjusting your criteria."
                                                                 : "There are no loan records to display based on your access level or account activity."}
                                                         </p>
