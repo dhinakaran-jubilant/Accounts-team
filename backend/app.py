@@ -656,12 +656,12 @@ def handle_docx_upload():
             actioned_by = user.name
             actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
 
-        # --- DUPLICATE LOAN CHECK ---
         duplicate_loan = Loan.query.filter_by(
             client_account_name=final_output['client_account_name'],
             loan_date=final_output['loan_date'],
             loan_amount=final_output['loan_amount'],
             total_repayment_amount=final_output['total_repayment_amount'],
+            loan_ref_id=loan_ref_id,
             is_deleted=False
         ).first()
 
@@ -799,6 +799,7 @@ def handle_pdf_upload():
             loan_date=final_output['loan_date'],
             loan_amount=final_output['loan_amount'],
             total_repayment_amount=final_output['total_repayment_amount'],
+            loan_ref_id=final_loan_ref_id,
             is_deleted=False
         ).first()
 
