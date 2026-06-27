@@ -15,6 +15,8 @@ import Login from './Login';
 import UsersManager from './UsersManager';
 import Approval from './Approval';
 import Dashboard from './Dashboard';
+import Settings from './Settings';
+import ShortLoan from './ShortLoan';
 
 function App() {
     const [user, setUser] = useState(null);
@@ -87,6 +89,16 @@ function App() {
                     } 
                 />
                 <Route 
+                    path="/loans/:id" 
+                    element={
+                        user ? (
+                            <Layout user={user} onLogout={handleLogout} activeMenu="jl-due-report">
+                                <LoanDetail user={user} />
+                            </Layout>
+                        ) : <Navigate to="/login" replace />
+                    } 
+                />
+                <Route 
                     path="/approvals" 
                     element={
                         user ? (
@@ -112,6 +124,26 @@ function App() {
                         user ? (
                             <Layout user={user} onLogout={handleLogout} activeMenu="users">
                                 <UsersManager />
+                            </Layout>
+                        ) : <Navigate to="/login" replace />
+                    } 
+                />
+                <Route 
+                    path="/settings" 
+                    element={
+                        user && user.role === 'admin' ? (
+                            <Layout user={user} onLogout={handleLogout} activeMenu="settings">
+                                <Settings />
+                            </Layout>
+                        ) : <Navigate to={user ? "/" : "/login"} replace />
+                    } 
+                />
+                <Route 
+                    path="/short-loan" 
+                    element={
+                        user ? (
+                            <Layout user={user} onLogout={handleLogout} activeMenu="short-loan">
+                                <ShortLoan user={user} />
                             </Layout>
                         ) : <Navigate to="/login" replace />
                     } 

@@ -13,9 +13,9 @@ export default function SuccessModal({ title, message, onClose }) {
       <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-white/20 transform transition-all animate-in zoom-in-95 duration-300">
         <div className="p-10 flex flex-col items-center text-center">
           {/* Animated Checkmark Circle */}
-          <div className="w-24 h-24 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center mb-8 relative group">
+          <div className="w-20 h-20 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center mb-8 relative group">
             <div className="absolute inset-0 rounded-full bg-emerald-400 opacity-20 animate-ping group-hover:animate-none" />
-            <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/30">
               <span className="material-symbols-outlined text-4xl text-white font-bold">check</span>
             </div>
           </div>

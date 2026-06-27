@@ -112,7 +112,7 @@ const toYYYYMMDD = (val) => {
 };
 
 const getRowAccountPaid = (entry, accName, targetShare, isPrimary, expectedTds = 0) => {
-    const dVal = isPrimary ? entry.received_date : entry.payment_date;
+    const dVal = isPrimary ? entry.received_date : (entry.date_approval_status === 'APPROVED' ? entry.payment_date : '');
     const hasDate = dVal && dVal !== '—' && dVal !== 'dd-mm-yyyy' && dVal !== '-' && dVal !== '';
 
     // Priority 1: Check splits for actual recorded payments (Amount + TDS)
@@ -226,6 +226,19 @@ const getLoanStatus = (loan) => {
 
 const JlDueReport = ({ user }) => {
     const navigate = useNavigate();
+    const userPermissions = useMemo(() => {
+        if (!user) return [];
+        let perms = user.permissions;
+        if (typeof perms === 'string') {
+            try {
+                perms = JSON.parse(perms);
+            } catch (e) {
+                perms = [];
+            }
+        }
+        return Array.isArray(perms) ? perms : [];
+    }, [user]);
+
     const [showModal, setShowModal] = useState(false);
     const [uploadError, setUploadError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
@@ -237,7 +250,7 @@ const JlDueReport = ({ user }) => {
     const [loanRefId, setLoanRefId] = useState('');
     const [verifiedBy, setVerifiedBy] = useState('System Admin');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [accountFilter, setAccountFilter] = useState('');
+    const [accountFilter, setAccountFilter] = useState([]);
     const [adminAccountFilter, setAdminAccountFilter] = useState(['SCS', 'GC', 'FC', 'AS', 'ASE', 'SCE', 'ASQ', 'SN', 'FE', 'JC', 'RP']);
     const [statusFilter, setStatusFilter] = useState(() => {
         const saved = sessionStorage.getItem('jl_due_report_statusFilter');
@@ -530,7 +543,7 @@ const JlDueReport = ({ user }) => {
     const handleRemoveAccount = (index) => setAccounts(accounts.filter((_, i) => i !== index));
     const handleAccountChange = (index, field, value) => {
         const newAccs = [...accounts];
-        newAccs[index][field] = field === 'name' ? value.toUpperCase() : value;
+        newAccs[index][field] = field === 'name' ? value.replace(/\d/g, '').toUpperCase() : value;
         setAccounts(newAccs);
     };
 
@@ -654,8 +667,8 @@ const JlDueReport = ({ user }) => {
         let result = data;
 
         // Apply Permissions Filter: If not admin and doesn't have all permissions, show only which primary account acronym is in their list
-        if (user?.role !== 'admin' && user?.permissions?.length < 10) {
-            const userPerms = user?.permissions || [];
+        const userPerms = userPermissions;
+        if (user?.role !== 'admin' && userPerms.length < 10) {
             result = result.filter(row => {
                 const priAcronym = getAcronym(row.primary_account_name);
                 if (userPerms.includes(priAcronym)) return true;
@@ -671,10 +684,10 @@ const JlDueReport = ({ user }) => {
                 const acronym = getAcronym(row.primary_account_name).toUpperCase();
                 return adminAccountFilter.includes(acronym);
             });
-        } else if (accountFilter) {
-            const term = accountFilter.toUpperCase();
+        } else if (accountFilter && accountFilter.length > 0) {
             result = result.filter(row => {
-                return getAcronym(row.primary_account_name).toUpperCase() === term;
+                const acronym = getAcronym(row.primary_account_name).toUpperCase();
+                return accountFilter.includes(acronym);
             });
         }
 
@@ -822,16 +835,29 @@ const JlDueReport = ({ user }) => {
         // Filter out closed loans for the O/S report
         let osData = data.filter(loan => getLoanStatus(loan).label !== 'Closed');
 
+        // Apply Permissions Filter: If not admin and doesn't have all permissions, show only allowed loans
+        const userPerms = userPermissions;
+        if (user?.role !== 'admin' && userPerms.length < 10) {
+            osData = osData.filter(row => {
+                const priAcronym = getAcronym(row.primary_account_name);
+                if (userPerms.includes(priAcronym)) return true;
+
+                // Check secondary accounts
+                const secAccs = row.secondary_accounts || row.remaining_accounts || [];
+                return secAccs.some(acc => userPerms.includes(getAcronym(acc.account_name)));
+            });
+        }
+
         // If an account filter is active in the UI, respect it in the O/S report too
         if (user?.role === 'admin' && adminAccountFilter && adminAccountFilter.length > 0) {
             osData = osData.filter(row => {
                 const priAcronym = getAcronym(row.primary_account_name).toUpperCase();
                 return adminAccountFilter.some(term => priAcronym === term);
             });
-        } else if (accountFilter) {
-            const term = accountFilter.toUpperCase();
+        } else if (accountFilter && accountFilter.length > 0) {
             osData = osData.filter(row => {
-                return getAcronym(row.primary_account_name).toUpperCase() === term;
+                const priAcronym = getAcronym(row.primary_account_name).toUpperCase();
+                return accountFilter.includes(priAcronym);
             });
         }
 
@@ -872,203 +898,491 @@ const JlDueReport = ({ user }) => {
         const headerBlueFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF8DB4E2' } };
         const darkBlueFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF203764' } };
         const partialFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2DCDB' } };
-        if (isDetailed) {
-            // DETAILED LAYOUT (O/S Report - Image 2 style)
-            // Cols A-C: Loan date, Client name, Loan ref (merged vertically per loan)
-            // Col D onwards: DATE | DUES | AMOUNT | priAcr | [SecAcr TDS]... | PARTIAL
-            groups.forEach((loans, primaryAccName) => {
-                const sheetName = getAcronym(primaryAccName).slice(0, 31);
-                const worksheet = workbook.addWorksheet(sheetName);
-                let cur = 1;
 
-                const cutoffKey = getDateKey(endDate || startDate || new Date().toLocaleDateString('en-CA'));
+        const formatToDDMMYYYY = (dateStr) => {
+            if (!dateStr) return '';
+            const trimmed = dateStr.trim();
+            if (trimmed === '—' || trimmed === 'dd-mm-yyyy' || trimmed === '-' || trimmed === '') return '';
+            const parts = trimmed.split(/[-/]/);
+            if (parts.length !== 3) return dateStr;
+            let y, m, d;
+            if (parts[0].length === 4) { // YYYY-MM-DD
+                y = parts[0]; m = parts[1].padStart(2, '0'); d = parts[2].padStart(2, '0');
+                return `${d}-${m}-${y}`;
+            }
+            return dateStr;
+        };
 
-                // --- First pass: find max secondary accounts for uniform column layout ---
-                let maxSecAccs = 0;
-                loans.forEach(loan => {
-                    const schedule = loan.repayment_schedule || [];
-                    const hasOS = schedule.some(e => {
-                        const dKey = getDateKey(e.date);
-                        return (dKey > 0 && dKey <= cutoffKey) && hasRowBalance(e, loan);
-                    });
-                    if (hasOS) {
-                        maxSecAccs = Math.max(maxSecAccs, (loan.secondary_accounts || []).length);
+        const getDaysDiffFromToday = (dateStr) => {
+            if (!dateStr) return '';
+            const trimmed = dateStr.trim();
+            if (trimmed === '—' || trimmed === 'dd-mm-yyyy' || trimmed === '-' || trimmed === '') return '';
+            const parts = trimmed.split(/[-/]/);
+            if (parts.length !== 3) return '';
+            let y, m, d;
+            if (parts[0].length === 4) { // YYYY-MM-DD
+                y = parseInt(parts[0]);
+                m = parseInt(parts[1]) - 1;
+                d = parseInt(parts[2]);
+            } else { // DD-MM-YYYY
+                d = parseInt(parts[0]);
+                m = parseInt(parts[1]) - 1;
+                y = parseInt(parts[2]);
+            }
+            const receivedDate = new Date(y, m, d);
+            if (isNaN(receivedDate.getTime())) return '';
+            const todayObj = new Date();
+            const utcReceived = Date.UTC(receivedDate.getFullYear(), receivedDate.getMonth(), receivedDate.getDate());
+            const utcToday = Date.UTC(todayObj.getFullYear(), todayObj.getMonth(), todayObj.getDate());
+            const diffMs = utcToday - utcReceived;
+            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            return diffDays >= 0 ? diffDays : 0;
+        };
+
+        // Detailed O/S Report Layout with Primary and Secondary Sheets
+if (isDetailed) {
+    // Map to collect rows for secondary sheets per account acronym
+    const secondaryRowsMap = new Map(); // acronym -> array of row objects
+
+    // Primary Sheets Generation (one per primary account acronym)
+    groups.forEach((loans, primaryAccName) => {
+        const primaryAcr = getAcronym(primaryAccName).toUpperCase();
+        const hasPrimaryPermission = user?.role === 'admin' || userPermissions.length >= 10 || userPermissions.includes(primaryAcr);
+
+        let worksheet = null;
+        if (hasPrimaryPermission) {
+            const sheetName = `${primaryAcr}-PRIMARY`.slice(0, 31);
+            worksheet = workbook.addWorksheet(sheetName);
+
+            // Set column widths
+            worksheet.getColumn(1).width = 14; // LOAN DATE
+            worksheet.getColumn(2).width = 35; // CLIENT NAME
+            worksheet.getColumn(3).width = 15; // LOAN ID
+            worksheet.getColumn(4).width = 14; // DATE
+            worksheet.getColumn(5).width = 10; // DUES
+            worksheet.getColumn(6).width = 14; // AMOUNT
+            worksheet.getColumn(7).width = 14; // PRIMARY ACRONYM
+            worksheet.getColumn(8).width = 14; // DUE (secondary OS)
+            worksheet.getColumn(9).width = 20; // PAYABLE (secondary acronym)
+            worksheet.getColumn(10).width = 16; // REMARKS
+            worksheet.getColumn(11).width = 8; // D/O
+
+            // Title Row (merged across A-K)
+            const titleRow = worksheet.getRow(1);
+            titleRow.height = 30;
+            worksheet.mergeCells('A1:K1');
+            const titleCell = titleRow.getCell(1);
+            titleCell.value = `${primaryAcr}-PRIMARY`;
+            titleCell.fill = darkBlueFill;
+            titleCell.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Trebuchet MS', size: 11 };
+            titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+            for (let col = 1; col <= 11; col++) titleRow.getCell(col).border = thickBorder;
+
+            // Header Row (Row 2)
+            const headerRow = worksheet.getRow(2);
+            headerRow.height = 25;
+            const headers = [
+                'LOAN DATE', 'CLIENT NAME', 'LOAN ID', 'DATE', 'DUES',
+                'AMOUNT', primaryAcr, 'DUE', 'PAYABLE', 'REMARKS', 'D/O'
+            ];
+            headers.forEach((val, idx) => {
+                const cell = headerRow.getCell(idx + 1);
+                cell.value = val;
+                cell.fill = darkBlueFill;
+                cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Trebuchet MS', size: 10 };
+                cell.border = thickBorder;
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            });
+        }
+
+        const cutoffKey = getDateKey(endDate || startDate || new Date().toLocaleDateString('en-CA'));
+        const rowItems = [];
+
+        loans.forEach((loan) => {
+            const schedule = loan.repayment_schedule || [];
+            const secAccs = loan.secondary_accounts || [];
+            const systemSched = schedule.filter(s => s.type !== 'manual');
+            const interestRowId = systemSched[0]?.id;
+
+            const osInstallments = schedule.filter(e => {
+                const dKey = getDateKey(e.date);
+                return (dKey > 0 && dKey <= cutoffKey) && hasRowBalance(e, loan);
+            });
+            if (osInstallments.length === 0) return;
+
+            // Compute share percentages
+            const priLoanAmount = parseINR(loan.primary_account_amount) || 0;
+            const priInterestAmount = parseINR(loan.primary_account_interest) || 0;
+            const priRepayTotal = priLoanAmount + priInterestAmount;
+            const secPrincipalSum = secAccs.reduce((s, acc) => s + (parseINR(acc.share) || 0), 0);
+            const secInterestSum = secAccs.reduce((s, acc) => s + (parseINR(acc.interest_amount) || 0), 0);
+            const secRepayTotal = secPrincipalSum + secInterestSum;
+            const grandTotal = priRepayTotal + secRepayTotal;
+            const effectivePrimaryPct = grandTotal > 0 ? (priRepayTotal / grandTotal) * 100 : 0;
+
+            osInstallments.forEach(e => {
+                const rawTarget = e.type === 'manual' ? 0 : parseINR(e.amount);
+                const dueIdx = systemSched.findIndex(s => s.id === e.id) + 1;
+                const isIntRow = e.id === interestRowId;
+
+                // Primary calculations
+                const priTarget = rawTarget * (effectivePrimaryPct / 100);
+                const priPaid = getRowAccountPaid(e, loan.primary_account_name, priTarget, true, 0);
+                const priOS = Math.max(0, priTarget - priPaid);
+                const isPriPartial = priPaid > 0.99 && priOS > 0.99;
+
+                // Secondary calculations
+                const activeSecList = [];
+                const allSecList = [];
+                secAccs.forEach(acc => {
+                    const accTotal = (parseINR(acc.share) || 0) + (parseINR(acc.interest_amount) || 0);
+                    const sPct = grandTotal > 0 ? (accTotal / grandTotal) * 100 : 0;
+                    const sTarget = rawTarget * (sPct / 100);
+                    const sExpectedTds = isIntRow ? (parseINR(acc.interest_amount) || 0) * 0.10 : 0;
+                    const sPaid = getRowAccountPaid(e, acc.account_name, sTarget, false, sExpectedTds);
+                    const sOS = Math.max(0, sTarget - sPaid);
+                    const sHasDate = e.payment_date && e.date_approval_status === 'APPROVED' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-' && e.payment_date !== '';
+                    let sTdsOS = 0;
+                    if (!sHasDate) {
+                        sTdsOS = Math.max(0, sExpectedTds - getSplitTDS(e.splits, acc.account_name));
+                    }
+                    const sNetOS = sOS - sTdsOS;
+                    const acronym = getAcronym(acc.account_name).toUpperCase();
+                    allSecList.push({ name: acronym, netOS: sNetOS, isPartial: sPaid > 0.99 && sOS > 0.99 });
+                    if (sNetOS > 0.99) {
+                        activeSecList.push({ name: acronym, netOS: sNetOS, isPartial: sPaid > 0.99 && sOS > 0.99 });
                     }
                 });
 
-                // Column positions:
-                // A=1(loan date), B=2(client), C=3(ref)
-                // D=4(DATE), E=5(DUES), F=6(AMOUNT), G=7(priAcr)
-                // then [secAcr, TDS] pairs starting col 8
-                // PARTIAL = last col
-                const DATA_START = 4; // col D
-                const PRI_COL = DATA_START + 3; // col G = 7
-                const PARTIAL_COL = PRI_COL + 1 + maxSecAccs * 2; // after all sec pairs
-                const PAYABLE_COL = PARTIAL_COL + 1;
-
-                // Set column widths
-                worksheet.getColumn(1).width = 13;  // Loan Date
-                worksheet.getColumn(2).width = 35;  // Client Name
-                worksheet.getColumn(3).width = 12;  // Loan ID
-                worksheet.getColumn(4).width = 13;  // DATE
-                worksheet.getColumn(5).width = 8;   // DUES
-                worksheet.getColumn(6).width = 12;  // AMOUNT
-                worksheet.getColumn(7).width = 13;  // Primary Acr
-                for (let s = 0; s < maxSecAccs; s++) {
-                    worksheet.getColumn(8 + s * 2).width = 13;     // Sec Acr
-                    worksheet.getColumn(8 + s * 2 + 1).width = 10; // TDS
+                // Determine status and remarks
+                const anySecPartial = activeSecList.some(x => x.isPartial);
+                const anyStakeholderPartial = isPriPartial || anySecPartial;
+                const totalSecNetOS = activeSecList.reduce((sum, x) => sum + x.netOS, 0);
+                let remarks = '';
+                let statusWeight = 4;
+                if (priOS > 0.99 && totalSecNetOS <= 0.99) {
+                    remarks = 'Tds';
+                    statusWeight = 4;
+                } else if (anyStakeholderPartial) {
+                    remarks = 'Partial';
+                    statusWeight = 3;
+                } else if (priOS <= 0.99 && totalSecNetOS > 0.99) {
+                    remarks = 'Need To Send';
+                    statusWeight = 1;
+                } else {
+                    remarks = 'Not Received';
+                    statusWeight = 2;
                 }
-                worksheet.getColumn(PARTIAL_COL).width = 10; // PARTIAL
-                worksheet.getColumn(PAYABLE_COL).width = 20; // PAYABLE
 
-
-
-                // --- Second pass: render each loan block ---
-                loans.forEach((loan) => {
-                    const schedule = loan.repayment_schedule || [];
-                    const secAccs = loan.secondary_accounts || [];
-                    const systemSched = schedule.filter(s => s.type !== 'manual');
-                    const interestRowId = systemSched[0]?.id;
-
-                    const osInstallments = schedule.filter(e => {
-                        const dKey = getDateKey(e.date);
-                        return (dKey > 0 && dKey <= cutoffKey) && hasRowBalance(e, loan);
-                    });
-
-                    if (osInstallments.length === 0) return;
-
-                    // --- Loan-wise Header Row ---
-                    const loanAcr = getAcronym(loan.primary_account_name).toUpperCase();
-                    const loanHeaders = ['LOAN DATE', 'CLIENT NAME', 'LOAN ID', 'DATE', 'DUES', 'AMOUNT', loanAcr];
-                    for (let s = 0; s < maxSecAccs; s++) {
-                        const acc = secAccs[s];
-                        loanHeaders.push(acc ? getAcronym(acc.account_name).toUpperCase() : '');
-                        loanHeaders.push(acc ? 'TDS' : '');
+                if (hasPrimaryPermission) {
+                    // Primary sheet rows
+                    if (activeSecList.length === 0) {
+                        rowItems.push({
+                            loanDate: loan.loan_date,
+                            clientName: loan.client_name?.toUpperCase() || '',
+                            loanRefId: loan.loan_ref_id,
+                            installmentDate: e.date,
+                            duesText: `${dueIdx}/${systemSched.length}`,
+                            amount: rawTarget,
+                            primaryOS: priOS,
+                            dueOS: 0,
+                            payable: allSecList.length > 0 ? allSecList[0].name : '',
+                            remarks,
+                            daysOutstanding: remarks === 'Need To Send' ? getDaysDiffFromToday(e.received_date) : (remarks === 'Not Received' ? getDaysDiffFromToday(e.date) : ''),
+                            statusWeight,
+                            isFirstRow: true
+                        });
+                    } else {
+                        activeSecList.forEach((sec, idx) => {
+                            rowItems.push({
+                                loanDate: loan.loan_date,
+                                clientName: loan.client_name?.toUpperCase() || '',
+                                loanRefId: loan.loan_ref_id,
+                                installmentDate: e.date,
+                                duesText: `${dueIdx}/${systemSched.length}`,
+                                amount: idx === 0 ? rawTarget : 0,
+                                primaryOS: idx === 0 ? priOS : 0,
+                                dueOS: sec.netOS,
+                                payable: sec.name,
+                                remarks: idx === 0 ? remarks : '',
+                                daysOutstanding: remarks === 'Need To Send' ? getDaysDiffFromToday(e.received_date) : (remarks === 'Not Received' ? getDaysDiffFromToday(e.date) : ''),
+                                statusWeight,
+                                isFirstRow: idx === 0
+                            });
+                        });
                     }
-                    loanHeaders.push('PARTIAL', 'PAYABLE');
+                }
 
-                    const headerRow = worksheet.getRow(cur);
-                    headerRow.height = 25;
-                    loanHeaders.forEach((val, idx) => {
-                        const cell = headerRow.getCell(idx + 1);
-                        cell.value = val;
-                        cell.fill = darkBlueFill;
-                        cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Trebuchet MS' };
-                        cell.border = thickBorder;
-                        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                // Populate secondary rows map (one entry per secondary with outstanding)
+                activeSecList.forEach(sec => {
+                    if (!secondaryRowsMap.has(sec.name)) secondaryRowsMap.set(sec.name, []);
+                    secondaryRowsMap.get(sec.name).push({
+                        loanDate: loan.loan_date,
+                        clientName: loan.client_name?.toUpperCase() || '',
+                        loanRefId: loan.loan_ref_id,
+                        installmentDate: e.date,
+                        duesText: `${dueIdx}/${systemSched.length}`,
+                        amount: 0,
+                        primaryOS: 0,
+                        dueOS: sec.netOS,
+                        payable: sec.name,
+                        remarks,
+                        daysOutstanding: remarks === 'Need To Send' ? getDaysDiffFromToday(e.received_date) : (remarks === 'Not Received' ? getDaysDiffFromToday(e.date) : ''),
+                        statusWeight,
+                        isFirstRow: true
                     });
-                    cur++;
-
-
-
-                    // --- Amounts setup ---
-                    const priLoanAmount = parseINR(loan.primary_account_amount) || 0;
-                    const priInterestAmount = parseINR(loan.primary_account_interest) || 0;
-                    const priRepayTotal = priLoanAmount + priInterestAmount;
-                    const secPrincipalSum = secAccs.reduce((sum, acc) => sum + (parseINR(acc.share) || 0), 0);
-                    const secInterestSum = secAccs.reduce((sum, acc) => sum + (parseINR(acc.interest_amount) || 0), 0);
-                    const secRepayTotal = secPrincipalSum + secInterestSum;
-                    const grandTotal = priRepayTotal + secRepayTotal;
-                    const effectivePrimaryPercentage = grandTotal > 0 ? (priRepayTotal / grandTotal) * 100 : 0;
-
-                    // --- Installment data rows ---
-                    osInstallments.forEach(e => {
-                        const dataRow = worksheet.getRow(cur);
-                        const dueIdx = systemSched.findIndex(s => s.id === e.id) + 1;
-                        const isIntRow = e.id === interestRowId;
-                        const rawTarget = e.type === 'manual' ? 0 : parseINR(e.amount);
-
-                        // Cols A-C: repeat loan info (no merging as per user request)
-                        dataRow.getCell(1).value = loan.loan_date || '';
-                        dataRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-                        dataRow.getCell(1).border = thickBorder;
-
-                        dataRow.getCell(2).value = loan.client_name?.toUpperCase() || '';
-                        dataRow.getCell(2).alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
-                        dataRow.getCell(2).border = thickBorder;
-
-                        dataRow.getCell(3).value = loan.loan_ref_id || '';
-                        dataRow.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
-                        dataRow.getCell(3).border = thickBorder;
-
-                        // Col D: date, Col E: dues, Col F: amount
-                        dataRow.getCell(4).value = e.date || '';
-                        dataRow.getCell(5).value = `${dueIdx}/${systemSched.length}`;
-                        dataRow.getCell(6).value = parseINR(e.amount);
-
-                        // Col G: primary OS
-                        const priTarget = rawTarget * (effectivePrimaryPercentage / 100);
-                        const priPaid = getRowAccountPaid(e, loan.primary_account_name, priTarget, true, 0);
-                        const priOS = Math.max(0, priTarget - priPaid);
-                        const isPriPartial = priPaid > 0.99 && priOS > 0.99;
-                        dataRow.getCell(7).value = priOS > 0.99 ? priOS : '';
-
-                        let isAnyStakeholderPartial = isPriPartial;
-                        const partialColIndices = isPriPartial ? [7] : [];
-
-                        // Secondary account columns
-                        for (let s = 0; s < maxSecAccs; s++) {
-                            const acc = secAccs[s];
-                            const secCol = 8 + s * 2;
-                            const tdsCol = 8 + s * 2 + 1;
-
-                            if (acc) {
-                                const accTotal = (parseINR(acc.share) || 0) + (parseINR(acc.interest_amount) || 0);
-                                const sPercentage = grandTotal > 0 ? (accTotal / grandTotal) * 100 : 0;
-                                const sTarget = rawTarget * (sPercentage / 100);
-                                const sExpectedTds = isIntRow ? (parseINR(acc.interest_amount) || 0) * 0.10 : 0;
-                                const sPaid = getRowAccountPaid(e, acc.account_name, sTarget, false, sExpectedTds);
-                                const sOS = Math.max(0, sTarget - sPaid);
-                                const sHasDate = e.payment_date && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-' && e.payment_date !== '';
-                                let sTdsOS = 0;
-                                if (!sHasDate) {
-                                    sTdsOS = Math.max(0, sExpectedTds - getSplitTDS(e.splits, acc.account_name));
-                                }
-                                const isSecPartial = sPaid > 0.99 && sOS > 0.99;
-                                if (isSecPartial) {
-                                    isAnyStakeholderPartial = true;
-                                    partialColIndices.push(secCol);
-                                }
-                                dataRow.getCell(secCol).value = (sOS - sTdsOS) > 0.99 ? (sOS - sTdsOS) : '';
-                                dataRow.getCell(tdsCol).value = sTdsOS > 0.99 ? sTdsOS : '';
-                            } else {
-                                dataRow.getCell(secCol).value = '';
-                                dataRow.getCell(tdsCol).value = '';
-                            }
-                        }
-
-                        // PARTIAL col
-                        dataRow.getCell(PARTIAL_COL).value = isAnyStakeholderPartial ? 'Partial' : '';
-                        
-                        const payableStr = secAccs.map(acc => getAcronym(acc.account_name).toUpperCase()).join(', ');
-                        dataRow.getCell(PAYABLE_COL).value = payableStr;
-
-                        // Style all data columns (D to PAYABLE)
-                        for (let col = DATA_START; col <= PAYABLE_COL; col++) {
-                            const cell = dataRow.getCell(col);
-                            cell.border = thickBorder;
-                            if (partialColIndices.includes(col)) {
-                                cell.fill = partialFill;
-                            }
-                            if (typeof cell.value === 'number') {
-                                cell.numFmt = '#,##0';
-                                cell.alignment = { horizontal: 'center' };
-                            } else {
-                                cell.alignment = { horizontal: 'center' };
-                            }
-                        }
-
-                        cur++;
-                    });
-
-                    // Vertical merging removed as per user request
-
-                    cur++; // Spacer row between loans
                 });
             });
+        });
 
+        if (hasPrimaryPermission && worksheet) {
+            // Sort primary rows
+            rowItems.sort((a, b) => {
+                if (a.statusWeight !== b.statusWeight) return a.statusWeight - b.statusWeight;
+                const nameCmp = a.clientName.localeCompare(b.clientName);
+                if (nameCmp !== 0) return nameCmp;
+                const dateA = getDateKey(a.installmentDate);
+                const dateB = getDateKey(b.installmentDate);
+                if (dateA !== dateB) return dateA - dateB;
+                return a.payable.localeCompare(b.payable);
+            });
 
-        } else {
+            // Write primary rows starting at row 3
+            let cur = 3;
+            rowItems.forEach(rowItem => {
+                const dataRow = worksheet.getRow(cur);
+                dataRow.height = 20;
+                // Column 1: LOAN DATE
+                const cell1 = dataRow.getCell(1);
+                cell1.value = formatToDDMMYYYY(rowItem.loanDate);
+                cell1.alignment = { horizontal: 'center', vertical: 'middle' };
+                cell1.font = { name: 'Trebuchet MS', size: 10 };
+                cell1.border = thickBorder;
+                // Column 2: CLIENT NAME
+                const cell2 = dataRow.getCell(2);
+                cell2.value = rowItem.clientName;
+                cell2.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+                cell2.font = { name: 'Trebuchet MS', size: 10 };
+                cell2.border = thickBorder;
+                // Column 3: LOAN ID
+                const cell3 = dataRow.getCell(3);
+                cell3.value = rowItem.loanRefId || '';
+                cell3.alignment = { horizontal: 'center', vertical: 'middle' };
+                cell3.font = { name: 'Trebuchet MS', size: 10 };
+                cell3.border = thickBorder;
+                // Column 4: DATE
+                const cell4 = dataRow.getCell(4);
+                cell4.value = formatToDDMMYYYY(rowItem.installmentDate);
+                cell4.alignment = { horizontal: 'center', vertical: 'middle' };
+                cell4.font = { name: 'Trebuchet MS', size: 10 };
+                cell4.border = thickBorder;
+                // Column 5: DUES
+                const cell5 = dataRow.getCell(5);
+                cell5.value = rowItem.duesText;
+                cell5.alignment = { horizontal: 'center', vertical: 'middle' };
+                cell5.font = { name: 'Trebuchet MS', size: 10 };
+                cell5.border = thickBorder;
+                // Column 6: AMOUNT
+                const cell6 = dataRow.getCell(6);
+                cell6.value = rowItem.amount > 0.99 ? rowItem.amount : '';
+                cell6.alignment = { horizontal: 'right', vertical: 'middle' };
+                cell6.font = { name: 'Trebuchet MS', size: 10 };
+                cell6.border = thickBorder;
+                if (typeof cell6.value === 'number') cell6.numFmt = '#,##0';
+                // Column 7: PRIMARY ACRONYM
+                const cell7 = dataRow.getCell(7);
+                cell7.value = rowItem.primaryOS > 0.99 ? rowItem.primaryOS : '';
+                cell7.alignment = { horizontal: 'right', vertical: 'middle' };
+                cell7.font = { name: 'Trebuchet MS', size: 10 };
+                cell7.border = thickBorder;
+                if (typeof cell7.value === 'number') cell7.numFmt = '#,##0';
+                // Column 8: DUE (secondary OS)
+                const cell8 = dataRow.getCell(8);
+                cell8.value = rowItem.dueOS > 0.99 ? rowItem.dueOS : '';
+                cell8.alignment = { horizontal: 'right', vertical: 'middle' };
+                cell8.font = { name: 'Trebuchet MS', size: 10 };
+                cell8.border = thickBorder;
+                if (typeof cell8.value === 'number') cell8.numFmt = '#,##0';
+                // Column 9: PAYABLE (secondary acronym)
+                const cell9 = dataRow.getCell(9);
+                cell9.value = rowItem.payable;
+                cell9.alignment = { horizontal: 'center', vertical: 'middle' };
+                cell9.font = { name: 'Trebuchet MS', size: 10 };
+                cell9.border = thickBorder;
+                // Column 10: REMARKS (color coded)
+                const cell10 = dataRow.getCell(10);
+                cell10.value = rowItem.remarks;
+                cell10.alignment = { horizontal: 'center', vertical: 'middle' };
+                cell10.border = thickBorder;
+                if (rowItem.remarks) {
+                    if (rowItem.remarks === 'Need To Send') {
+                        cell10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FF00B050' } };
+                    } else if (rowItem.remarks === 'Not Received') {
+                        cell10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FFFF0000' } };
+                    } else if (rowItem.remarks === 'Partial') {
+                        cell10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FFC55A11' } };
+                    } else if (rowItem.remarks === 'Tds') {
+                        cell10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FF000000' } };
+                    } else {
+                        cell10.font = { name: 'Trebuchet MS', size: 10, bold: true };
+                    }
+                }
+                // Column 11: D/O (Days Outstanding)
+                const cell11 = dataRow.getCell(11);
+                cell11.value = rowItem.daysOutstanding;
+                cell11.alignment = { horizontal: 'center', vertical: 'middle' };
+                cell11.font = { name: 'Trebuchet MS', size: 10 };
+                cell11.border = thickBorder;
+                if (typeof cell11.value === 'number') cell11.numFmt = '#,##0';
+                cur++;
+            });
+        }
+    });
+
+    // Generate Secondary Sheets for each secondary account acronym
+    secondaryRowsMap.forEach((rows, secAcr) => {
+        const hasSecondaryPermission = user?.role === 'admin' || userPermissions.length >= 10 || userPermissions.includes(secAcr);
+        if (!hasSecondaryPermission) return;
+
+        const sheetName = `${secAcr}-SECONDARY`.slice(0, 31);
+        const ws = workbook.addWorksheet(sheetName);
+        // Column widths (same as primary)
+        ws.getColumn(1).width = 14; // LOAN DATE
+        ws.getColumn(2).width = 35; // CLIENT NAME
+        ws.getColumn(3).width = 15; // LOAN ID
+        ws.getColumn(4).width = 14; // DATE
+        ws.getColumn(5).width = 10; // DUES
+        ws.getColumn(6).width = 14; // AMOUNT (will be blank)
+        ws.getColumn(7).width = 14; // PRIMARY (blank)
+        ws.getColumn(8).width = 14; // DUE (secondary OS)
+        ws.getColumn(9).width = 20; // PAYABLE (secondary acronym)
+        ws.getColumn(10).width = 16; // REMARKS
+        ws.getColumn(11).width = 8; // D/O
+        // Title Row
+        const titleRow = ws.getRow(1);
+        titleRow.height = 30;
+        ws.mergeCells('A1:K1');
+        const titleCell = titleRow.getCell(1);
+        titleCell.value = `${secAcr}-SECONDARY`;
+        titleCell.fill = darkBlueFill;
+        titleCell.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Trebuchet MS', size: 11 };
+        titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        for (let col = 1; col <= 11; col++) titleRow.getCell(col).border = thickBorder;
+        // Header Row
+        const headerRow = ws.getRow(2);
+        headerRow.height = 25;
+        const headers = [
+            'LOAN DATE', 'CLIENT NAME', 'LOAN ID', 'DATE', 'DUES',
+            'AMOUNT', secAcr, 'DUE', 'PAYABLE', 'REMARKS', 'D/O'
+        ];
+        headers.forEach((val, idx) => {
+            const cell = headerRow.getCell(idx + 1);
+            cell.value = val;
+            cell.fill = darkBlueFill;
+            cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Trebuchet MS', size: 10 };
+            cell.border = thickBorder;
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        });
+        // Sort rows similarly
+        rows.sort((a, b) => {
+            if (a.statusWeight !== b.statusWeight) return a.statusWeight - b.statusWeight;
+            const nameCmp = a.clientName.localeCompare(b.clientName);
+            if (nameCmp !== 0) return nameCmp;
+            const dateA = getDateKey(a.installmentDate);
+            const dateB = getDateKey(b.installmentDate);
+            if (dateA !== dateB) return dateA - dateB;
+            return a.payable.localeCompare(b.payable);
+        });
+        // Write rows starting at row 3
+        let cur = 3;
+        rows.forEach(rowItem => {
+            const dataRow = ws.getRow(cur);
+            dataRow.height = 20;
+            // Column 1: LOAN DATE
+            const c1 = dataRow.getCell(1);
+            c1.value = formatToDDMMYYYY(rowItem.loanDate);
+            c1.alignment = { horizontal: 'center', vertical: 'middle' };
+            c1.font = { name: 'Trebuchet MS', size: 10 };
+            c1.border = thickBorder;
+            // Column 2: CLIENT NAME
+            const c2 = dataRow.getCell(2);
+            c2.value = rowItem.clientName;
+            c2.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+            c2.font = { name: 'Trebuchet MS', size: 10 };
+            c2.border = thickBorder;
+            // Column 3: LOAN ID
+            const c3 = dataRow.getCell(3);
+            c3.value = rowItem.loanRefId || '';
+            c3.alignment = { horizontal: 'center', vertical: 'middle' };
+            c3.font = { name: 'Trebuchet MS', size: 10 };
+            c3.border = thickBorder;
+            // Column 4: DATE
+            const c4 = dataRow.getCell(4);
+            c4.value = formatToDDMMYYYY(rowItem.installmentDate);
+            c4.alignment = { horizontal: 'center', vertical: 'middle' };
+            c4.font = { name: 'Trebuchet MS', size: 10 };
+            c4.border = thickBorder;
+            // Column 5: DUES
+            const c5 = dataRow.getCell(5);
+            c5.value = rowItem.duesText;
+            c5.alignment = { horizontal: 'center', vertical: 'middle' };
+            c5.font = { name: 'Trebuchet MS', size: 10 };
+            c5.border = thickBorder;
+            // Column 6: AMOUNT (blank)
+            const c6 = dataRow.getCell(6);
+            c6.value = '';
+            c6.alignment = { horizontal: 'right', vertical: 'middle' };
+            c6.font = { name: 'Trebuchet MS', size: 10 };
+            c6.border = thickBorder;
+            // Column 7: PRIMARY (blank)
+            const c7 = dataRow.getCell(7);
+            c7.value = '';
+            c7.alignment = { horizontal: 'right', vertical: 'middle' };
+            c7.font = { name: 'Trebuchet MS', size: 10 };
+            c7.border = thickBorder;
+            // Column 8: DUE (secondary OS)
+            const c8 = dataRow.getCell(8);
+            c8.value = rowItem.dueOS > 0.99 ? rowItem.dueOS : '';
+            c8.alignment = { horizontal: 'right', vertical: 'middle' };
+            c8.font = { name: 'Trebuchet MS', size: 10 };
+            c8.border = thickBorder;
+            if (typeof c8.value === 'number') c8.numFmt = '#,##0';
+            // Column 9: PAYABLE (secondary acronym)
+            const c9 = dataRow.getCell(9);
+            c9.value = rowItem.payable;
+            c9.alignment = { horizontal: 'center', vertical: 'middle' };
+            c9.font = { name: 'Trebuchet MS', size: 10 };
+            c9.border = thickBorder;
+            // Column 10: REMARKS (color coded)
+            const c10 = dataRow.getCell(10);
+            c10.value = rowItem.remarks;
+            c10.alignment = { horizontal: 'center', vertical: 'middle' };
+            c10.border = thickBorder;
+            if (rowItem.remarks) {
+                if (rowItem.remarks === 'Need To Send') {
+                    c10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FF00B050' } };
+                } else if (rowItem.remarks === 'Not Received') {
+                    c10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FFFF0000' } };
+                } else if (rowItem.remarks === 'Partial') {
+                    c10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FFC55A11' } };
+                } else if (rowItem.remarks === 'Tds') {
+                    c10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FF000000' } };
+                } else {
+                    c10.font = { name: 'Trebuchet MS', size: 10, bold: true };
+                }
+            }
+            // Column 11: D/O (Days Outstanding)
+            const c11 = dataRow.getCell(11);
+            c11.value = rowItem.daysOutstanding;
+            c11.alignment = { horizontal: 'center', vertical: 'middle' };
+            c11.font = { name: 'Trebuchet MS', size: 10 };
+            c11.border = thickBorder;
+            if (typeof c11.value === 'number') c11.numFmt = '#,##0';
+            cur++;
+        });
+    });
+}
+        else {
             // STANDARD ROW-BASED LAYOUT (For JL Report)
             groups.forEach((loans, primaryAccName) => {
                 const getStatusWeight = (loan) => {
@@ -1245,7 +1559,7 @@ const JlDueReport = ({ user }) => {
                         return schedule.reduce((sum, e) => {
                             if (e.type === 'manual') return sum;
 
-                            const dVal = isPrimary ? e.received_date : e.payment_date;
+                            const dVal = isPrimary ? e.received_date : (e.date_approval_status === 'APPROVED' ? e.payment_date : '');
                             const rKey = getDateKey(dVal);
                             const inWindow = rKey > 0 && rKey <= cutoffKey;
 
@@ -1398,9 +1712,9 @@ const JlDueReport = ({ user }) => {
         const exportDate = endDate || startDate || new Date().toISOString().split('T')[0];
         const dateStr = `_${exportDate}`;
         
-        const activeFilterStr = user?.role === 'admin' && adminAccountFilter.length > 0 
-            ? adminAccountFilter.join('-') 
-            : (accountFilter || 'All Accounts');
+        const activeFilterStr = user?.role === 'admin'
+            ? (adminAccountFilter.length > 0 ? adminAccountFilter.join('-') : 'No Accounts')
+            : (accountFilter.length > 0 ? accountFilter.join('-') : 'All Accounts');
             
         const filenameFilter = activeFilterStr !== 'All Accounts' ? activeFilterStr : (searchTerm || 'All');
         anchor.download = `${reportPrefix}_${filenameFilter}${dateStr}.xlsx`;
@@ -1449,10 +1763,10 @@ const JlDueReport = ({ user }) => {
                             />
                         </div>
 
-                        {(accountFilter || !isAllAccountsSelected || searchTerm || startDate || endDate || statusFilter.length < 5) && (
+                        {(accountFilter.length > 0 || !isAllAccountsSelected || searchTerm || startDate || endDate || statusFilter.length < 5) && (
                             <button
                                 onClick={() => {
-                                    setAccountFilter('');
+                                    setAccountFilter([]);
                                     setAdminAccountFilter(['SCS', 'GC', 'FC', 'AS', 'ASE', 'SCE', 'ASQ', 'SN', 'FE', 'JC', 'RP']);
                                     setSearchTerm('');
                                     setStartDate('');
@@ -1542,21 +1856,85 @@ const JlDueReport = ({ user }) => {
                                 )}
                             </div>
                         ) : (
-                            <div className="relative">
-                                <select
-                                    value={accountFilter}
-                                    onChange={(e) => {
-                                        setAccountFilter(e.target.value);
-                                        setCurrentPage(1);
-                                    }}
-                                    className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-56 appearance-none cursor-pointer pr-10"
+                            <div className="relative" ref={accountDropdownRef}>
+                                <button
+                                    onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
+                                    className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-200 w-56 flex items-center justify-between transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-sm cursor-pointer select-none"
                                 >
-                                    <option value="">All Accounts</option>
-                                    {filteredAccountOptions.map((opt) => (
-                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                    ))}
-                                </select>
-                                <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">expand_more</span>
+                                    <span className="truncate">
+                                        {accountFilter.length === 0
+                                            ? 'All Accounts'
+                                            : accountFilter.length === filteredAccountOptions.length
+                                                ? 'All Accounts'
+                                                : accountFilter.length === 1
+                                                    ? filteredAccountOptions.find(o => o.value === accountFilter[0])?.label || accountFilter[0]
+                                                    : `${accountFilter.length} Accounts Selected`}
+                                    </span>
+                                    <span className="material-symbols-outlined text-slate-400 text-sm leading-none">expand_more</span>
+                                </button>
+                                
+                                {isAccountDropdownOpen && (
+                                    <div className="absolute top-full left-0 mt-2 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150 select-none">
+                                        <div className="max-h-64 overflow-y-auto scrollbar-premium">
+                                            <label className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-800/20">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={accountFilter.length === 0 || accountFilter.length === filteredAccountOptions.length}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setAccountFilter([]);
+                                                        } else {
+                                                            setAccountFilter([]);
+                                                        }
+                                                        setCurrentPage(1);
+                                                    }}
+                                                    className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
+                                                />
+                                                <span className="text-sm text-slate-800 dark:text-slate-100 font-extrabold">All Accounts</span>
+                                            </label>
+                                            {filteredAccountOptions.map((opt) => (
+                                                <label key={opt.value} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={accountFilter.includes(opt.value) || accountFilter.length === 0}
+                                                        onChange={(e) => {
+                                                            let newFilter;
+                                                            if (accountFilter.length === 0) {
+                                                                newFilter = filteredAccountOptions.map(o => o.value).filter(v => v !== opt.value);
+                                                            } else {
+                                                                if (e.target.checked) {
+                                                                    newFilter = [...accountFilter, opt.value];
+                                                                    if (newFilter.length === filteredAccountOptions.length) {
+                                                                        newFilter = [];
+                                                                    }
+                                                                } else {
+                                                                    newFilter = accountFilter.filter(v => v !== opt.value);
+                                                                }
+                                                            }
+                                                            setAccountFilter(newFilter);
+                                                            setCurrentPage(1);
+                                                        }}
+                                                        className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
+                                                    />
+                                                    <span className="text-sm text-slate-700 dark:text-slate-300 font-semibold">{opt.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                        {accountFilter.length > 0 && (
+                                            <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                                                <button
+                                                    onClick={() => {
+                                                        setAccountFilter([]);
+                                                        setCurrentPage(1);
+                                                    }}
+                                                    className="w-full py-1.5 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
+                                                >
+                                                    Clear Selection
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
                         <div className="relative" ref={statusDropdownRef}>
@@ -1577,7 +1955,7 @@ const JlDueReport = ({ user }) => {
                             </button>
 
                             {isStatusDropdownOpen && (
-                                <div className="absolute top-full left-0 mt-2 w-52 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-[110] overflow-hidden py-2 animate-in fade-in slide-in-from-top-2 duration-150 select-none">
+                                <div className="absolute top-full left-0 mt-2 w-52 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-[110] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150 select-none">
                                     <div className="max-h-60 overflow-y-auto scrollbar-premium">
                                         <label className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-800/20">
                                             <input
@@ -1728,66 +2106,68 @@ const JlDueReport = ({ user }) => {
                             )}
                         </div>
 
-                        <div className="relative" ref={importDropdownRef}>
-                            <button
-                                onClick={() => setIsImportDropdownOpen(!isImportDropdownOpen)}
-                                className="h-9 px-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-2 text-sm"
-                            >
-                                <span className="material-symbols-outlined text-sm">upload_file</span>
-                                Import
-                                <span className="material-symbols-outlined text-sm">expand_more</span>
-                            </button>
+                        {user?.role !== 'admin' && (
+                            <div className="relative" ref={importDropdownRef}>
+                                <button
+                                    onClick={() => setIsImportDropdownOpen(!isImportDropdownOpen)}
+                                    className="h-9 px-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-2 text-sm"
+                                >
+                                    <span className="material-symbols-outlined text-sm">upload_file</span>
+                                    Import
+                                    <span className="material-symbols-outlined text-sm">expand_more</span>
+                                </button>
 
-                            {isImportDropdownOpen && (
-                                <div className="absolute right-0 mt-2 w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
-                                    <button
-                                        onClick={() => {
-                                            fileInputRef.current?.click();
-                                            setIsImportDropdownOpen(false);
-                                        }}
-                                        className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2"
-                                    >
-                                        <span className="material-symbols-outlined text-[18px] text-primary">add_circle</span>
-                                        New Loan
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            // Trigger Day Book Import
-                                            dayBookInputRef.current?.click();
-                                            setIsImportDropdownOpen(false);
-                                        }}
-                                        className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2 border-t border-slate-200/50 dark:border-slate-700/50"
-                                    >
-                                        <span className="material-symbols-outlined text-[18px] text-amber-500">book</span>
-                                        Day Book
-                                    </button>
-                                </div>
-                            )}
+                                {isImportDropdownOpen && (
+                                    <div className="absolute right-0 mt-2 w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+                                        <button
+                                            onClick={() => {
+                                                fileInputRef.current?.click();
+                                                setIsImportDropdownOpen(false);
+                                            }}
+                                            className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2"
+                                        >
+                                            <span className="material-symbols-outlined text-[18px] text-primary">add_circle</span>
+                                            New Loan
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                // Trigger Day Book Import
+                                                dayBookInputRef.current?.click();
+                                                setIsImportDropdownOpen(false);
+                                            }}
+                                            className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2 border-t border-slate-200/50 dark:border-slate-700/50"
+                                        >
+                                            <span className="material-symbols-outlined text-[18px] text-amber-500">book</span>
+                                            Day Book
+                                        </button>
+                                    </div>
+                                )}
 
-                            <input
-                                type="file"
-                                ref={fileInputRef}
-                                accept=".docx,.pdf,.xlsx,.xls"
-                                className="hidden"
-                                onChange={handleFileSelect}
-                            />
-                            <input
-                                type="file"
-                                ref={dayBookInputRef}
-                                accept=".xlsx,.xls"
-                                className="hidden"
-                                onChange={handleDayBookFileSelect}
-                            />
-                        </div>
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    accept=".docx,.pdf,.xlsx,.xls"
+                                    className="hidden"
+                                    onChange={handleFileSelect}
+                                />
+                                <input
+                                    type="file"
+                                    ref={dayBookInputRef}
+                                    accept=".xlsx,.xls"
+                                    className="hidden"
+                                    onChange={handleDayBookFileSelect}
+                                />
+                            </div>
+                        )}
                         <div className="relative" ref={exportDropdownRef}>
                             <button
                                 onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
                                 title="Export options"
                                 className="h-9 px-4 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg shadow-sm transition-all flex items-center gap-2 text-sm"
                             >
-                                <span className="material-symbols-outlined text-sm">download</span>
+                                <span className="material-symbols-outlined text-[18px]">download</span>
                                 Export
-                                <span className="material-symbols-outlined text-sm">expand_more</span>
+                                <span className="material-symbols-outlined text-[18px]">expand_more</span>
                             </button>
 
                             {isExportDropdownOpen && (
@@ -1918,7 +2298,7 @@ const JlDueReport = ({ user }) => {
                                                         </div>
                                                         <p className="text-slate-900 dark:text-white text-lg font-bold mb-1">No Results Found</p>
                                                         <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto px-10">
-                                                            {accountFilter || !isAllAccountsSelected || searchTerm || startDate || endDate || statusFilter.length < 5
+                                                            {accountFilter.length > 0 || !isAllAccountsSelected || searchTerm || startDate || endDate || statusFilter.length < 5
                                                                 ? "We couldn't find any loans matching your current search or date filters. Try adjusting your criteria."
                                                                 : "There are no loan records to display based on your access level or account activity."}
                                                         </p>
@@ -1972,16 +2352,28 @@ const JlDueReport = ({ user }) => {
                                                     })()}
                                                 </td>
                                                 <td className="py-2 px-2 text-center text-sm">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDeleteClick(row.id);
-                                                        }}
-                                                        className="p-1.5 text-slate-300 hover:text-rose-500 rounded-2xl transition-all"
-                                                        title="Delete Loan"
-                                                    >
-                                                        <span className="material-symbols-outlined text-[20px]">delete</span>
-                                                    </button>
+                                                    {(() => {
+                                                        const isSecondaryLoan = user?.role !== 'admin' && !userPermissions.includes(getAcronym(row.primary_account_name));
+                                                        return (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (!isSecondaryLoan) {
+                                                                        handleDeleteClick(row.id);
+                                                                    }
+                                                                }}
+                                                                disabled={isSecondaryLoan}
+                                                                className={`p-1.5 rounded-2xl transition-all ${
+                                                                    isSecondaryLoan 
+                                                                        ? 'text-slate-200 dark:text-slate-700 cursor-not-allowed opacity-40' 
+                                                                        : 'text-slate-300 hover:text-rose-500'
+                                                                }`}
+                                                                title={isSecondaryLoan ? "Secondary Account Loan - Delete disabled" : "Delete Loan"}
+                                                            >
+                                                                <span className="material-symbols-outlined text-[20px]">delete</span>
+                                                            </button>
+                                                        );
+                                                    })()}
                                                 </td>
                                             </tr>
                                         ))}
@@ -2000,16 +2392,16 @@ const JlDueReport = ({ user }) => {
                                 <button
                                     onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                                     disabled={currentPage === 1}
-                                    className="h-8 w-8 flex items-center justify-center rounded border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+                                    className="h-9 w-9 flex items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
                                 >
-                                    <span className="material-symbols-outlined text-sm">chevron_left</span>
+                                    <span className="material-symbols-outlined text-[20px]">chevron_left</span>
                                 </button>
                                 <button
                                     onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                                     disabled={currentPage === totalPages}
-                                    className="h-8 w-8 flex items-center justify-center rounded border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+                                    className="h-9 w-9 flex items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
                                 >
-                                    <span className="material-symbols-outlined text-sm">chevron_right</span>
+                                    <span className="material-symbols-outlined text-[20px]">chevron_right</span>
                                 </button>
                             </div>
                         </div>

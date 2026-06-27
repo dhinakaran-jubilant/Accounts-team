@@ -42,3 +42,11 @@ Thumbs.db
 
 # SSL Certificates
 backend/*.pem
+
+# Generated database files/logs
+PyWhatKit_DB.txt
+backend/PyWhatKit_DB.txt
+
+# Generated reports/Excel sheets
+*.xlsx
+backend/temp_folder/*.xlsx

@@ -5,7 +5,7 @@ Author: Dhinakaran Sekar
 Email: dhinakaran.s@jubilantenterprises.in
 Date: 2026-04-08 11:53:28
 """
-from models import db, Loan, RemainingAccount, RepaymentSchedule, User
+from models import db, Loan, RemainingAccount, RepaymentSchedule, User, Notification, ShortLoan
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
 from flask_talisman import Talisman
@@ -26,6 +26,41 @@ import re
 
 app = Flask(__name__, static_folder='../frontend/dist', static_url_path='')
 CORS(app)
+
+CONFIG_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'app_config.json')
+
+def load_system_config():
+    default_config = {
+        'require_secondary_approval': True,
+        'require_admin_approval': True
+    }
+    if not os.path.exists(CONFIG_FILE_PATH):
+        try:
+            with open(CONFIG_FILE_PATH, 'w') as f:
+                json.dump(default_config, f, indent=4)
+        except Exception as e:
+            print(f"Error writing default config: {e}")
+        return default_config
+    try:
+        with open(CONFIG_FILE_PATH, 'r') as f:
+            config = json.load(f)
+            # Ensure all keys exist
+            for k, v in default_config.items():
+                if k not in config:
+                    config[k] = v
+            return config
+    except Exception as e:
+        print(f"Error reading config: {e}")
+        return default_config
+
+def save_system_config(config_data):
+    try:
+        with open(CONFIG_FILE_PATH, 'w') as f:
+            json.dump(config_data, f, indent=4)
+        return True
+    except Exception as e:
+        print(f"Error saving config: {e}")
+        return False
 
 # Security: Enforce HTTPS and add security headers
 Talisman(app, force_https=True, content_security_policy=None)
@@ -235,6 +270,12 @@ def find_secondary_manager(secondary_accounts):
 def serve_frontend(path):
     if path and os.path.exists(os.path.join(app.static_folder, path)):
         return app.send_static_file(path)
+    return app.send_static_file('index.html')
+
+@app.errorhandler(404)
+def page_not_found(e):
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Not Found'}), 404
     return app.send_static_file('index.html')
 
 def process_files(bank_path, cloud_path, output_folder):
@@ -456,6 +497,28 @@ def get_windows_username_from_request(req):
     # For local testing if NTLM isn't fully set up but running on Windows
     return os.getlogin() if hasattr(os, 'getlogin') else 'Unknown'
 
+def get_acronym(name):
+    if not name:
+        return ''
+    n = name.strip().lower()
+    if 'surge capital' in n:
+        return 'SCS'
+    if 'growth capital' in n:
+        return 'GC'
+    if 'finova capital' in n:
+        return 'FC'
+    if 'ascend solutions' in n:
+        return 'AS'
+    if 'as enterprises' in n:
+        return 'ASE'
+    if 'sc enterprises' in n:
+        return 'SCE'
+    if 'square enterprises' in n:
+        return 'ASQ'
+    if 'nirmala' in n:
+        return 'SN'
+    return name
+
 def ensure_db_and_tables():
     try:
         conn = psycopg2.connect(dbname='postgres', user='postgres', password='1234', host='localhost', port='5432')
@@ -475,6 +538,31 @@ def ensure_db_and_tables():
             verify_schema()
         except Exception as e:
             print(f"Table creation error: {e}")
+
+@app.route('/api/system/config', methods=['GET'])
+def get_system_config():
+    try:
+        config = load_system_config()
+        return jsonify({'success': True, 'config': config}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/system/config', methods=['POST'])
+def update_system_config():
+    try:
+        data = request.json or {}
+        config = load_system_config()
+        if 'require_secondary_approval' in data:
+            config['require_secondary_approval'] = bool(data['require_secondary_approval'])
+        if 'require_admin_approval' in data:
+            config['require_admin_approval'] = bool(data['require_admin_approval'])
+            
+        if save_system_config(config):
+            return jsonify({'success': True, 'message': 'Configuration updated successfully', 'config': config}), 200
+        else:
+            return jsonify({'error': 'Failed to save configuration'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/users/list', methods=['GET'])
 def get_users_list():
@@ -574,9 +662,10 @@ def handle_approval_action(loan_id):
             loan.approval_status = 'REJECTED'
             loan.is_deleted = True # Remove from main report but keep for requester/actioner history
         else: # APPROVE
-            # Multi-step approval: Only System Admin can set status to APPROVED
-            # Others set it to VERIFIED and reassign to System Admin
-            if actioner_name == 'System Admin':
+            sys_config = load_system_config()
+            require_adm = sys_config.get('require_admin_approval', True)
+            
+            if actioner_name == 'System Admin' or not require_adm:
                 loan.approval_status = 'APPROVED'
             else:
                 loan.approval_status = 'VERIFIED'
@@ -585,6 +674,10 @@ def handle_approval_action(loan_id):
         loan.actioned_by = actioner_name
         loan.actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
         db.session.commit()
+        
+        if loan.approval_status == 'VERIFIED':
+            threading.Thread(target=notify_admin_loan_verified, args=[loan.id, actioner_name]).start()
+            threading.Timer(86400.0, check_admin_loan_approval_after_24h, args=[loan.id, actioner_name]).start()
         
         return jsonify({'success': True, 'message': f'Loan {action}D successfully', 'new_status': loan.approval_status}), 200
     except Exception as e:
@@ -647,14 +740,32 @@ def handle_docx_upload():
                     }), 403
         # -----------------------------
         
-        # Determine status: if uploader is admin, auto-approve
+        # Determine status and verifier based on configuration
+        sys_config = load_system_config()
+        require_sec = sys_config.get('require_secondary_approval', True)
+        require_adm = sys_config.get('require_admin_approval', True)
+
         loan_status = 'PENDING'
+        target_verifier = 'System Admin'
         actioned_by = None
         actioned_at = None
+
         if user and user.role == 'admin':
             loan_status = 'APPROVED'
             actioned_by = user.name
             actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
+        else:
+            if require_sec:
+                target_verifier = find_secondary_manager(final_output.get('remaining_accounts', []))
+                loan_status = 'PENDING'
+            else:
+                if require_adm:
+                    target_verifier = 'System Admin'
+                    loan_status = 'VERIFIED'
+                else:
+                    loan_status = 'APPROVED'
+                    actioned_by = 'System'
+                    actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
 
         duplicate_loan = Loan.query.filter_by(
             client_account_name=final_output['client_account_name'],
@@ -673,9 +784,6 @@ def handle_docx_upload():
         # ----------------------------
 
         # Commit into Postgres utilizing our models!
-        # Automatically determine verifier based on secondary accounts
-        target_verifier = find_secondary_manager(final_output.get('remaining_accounts', []))
-
         loan = Loan(
             loan_ref_id=loan_ref_id,
             client_account_name=final_output['client_account_name'],
@@ -720,6 +828,9 @@ def handle_docx_upload():
             db.session.add(schedule)
             
         db.session.commit()
+        if loan.approval_status != 'APPROVED':
+            threading.Thread(target=notify_loan_created, args=[loan.id]).start()
+            threading.Timer(86400.0, check_loan_approval_after_24h, args=[loan.id]).start()
         return jsonify({'success': True, 'loan_id': loan.id, 'message': 'Data inserted correctly into PostgreSQL!'}), 200
         
     except Exception as e:
@@ -784,14 +895,32 @@ def handle_pdf_upload():
                     }), 403
         # -----------------------------
         
-        # Determine status: if uploader is admin, auto-approve
+        # Determine status and verifier based on configuration
+        sys_config = load_system_config()
+        require_sec = sys_config.get('require_secondary_approval', True)
+        require_adm = sys_config.get('require_admin_approval', True)
+
         loan_status = 'PENDING'
+        target_verifier = 'System Admin'
         actioned_by = None
         actioned_at = None
+
         if user and user.role == 'admin':
             loan_status = 'APPROVED'
             actioned_by = user.name
             actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
+        else:
+            if require_sec:
+                target_verifier = find_secondary_manager(final_output.get('remaining_accounts', []))
+                loan_status = 'PENDING'
+            else:
+                if require_adm:
+                    target_verifier = 'System Admin'
+                    loan_status = 'VERIFIED'
+                else:
+                    loan_status = 'APPROVED'
+                    actioned_by = 'System'
+                    actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
 
         # --- DUPLICATE LOAN CHECK ---
         duplicate_loan = Loan.query.filter_by(
@@ -809,9 +938,6 @@ def handle_pdf_upload():
                 'error': "The file already exists"
             }), 400
         # ----------------------------
-
-        # Automatically determine verifier based on secondary accounts
-        target_verifier = find_secondary_manager(final_output.get('remaining_accounts', []))
 
         loan = Loan(
             loan_ref_id=final_loan_ref_id,
@@ -858,6 +984,9 @@ def handle_pdf_upload():
             db.session.add(schedule)
             
         db.session.commit()
+        if loan.approval_status != 'APPROVED':
+            threading.Thread(target=notify_loan_created, args=[loan.id]).start()
+            threading.Timer(86400.0, check_loan_approval_after_24h, args=[loan.id]).start()
         return jsonify({'success': True, 'loan_id': loan.id, 'message': 'PDF data processed correctly!'}), 200
         
     except Exception as e:
@@ -881,7 +1010,9 @@ def get_loans():
                 'cheque_no': s.cheque_no,
                 'remarks': s.remarks,
                 'type': s.type,
-                'splits': s.splits
+                'splits': s.splits,
+                'date_approval_status': s.date_approval_status or 'APPROVED',
+                'date_editor_role': s.date_editor_role
             } for s in loan.repayment_schedule]
             
             loans_data.append({
@@ -944,7 +1075,9 @@ def get_loan_detail(loan_id):
                 'payment_date': s.payment_date,
                 'remarks': s.remarks,
                 'type': s.type,
-                'splits': s.splits
+                'splits': s.splits,
+                'date_approval_status': s.date_approval_status or 'APPROVED',
+                'date_editor_role': s.date_editor_role
             }
             for s in loan.repayment_schedule
         ]
@@ -963,6 +1096,7 @@ def get_loan_detail(loan_id):
             'total_interest': loan.total_interest,
             'verified_by': loan.verified_by,
             'approval_status': loan.approval_status,
+            'edited_by': loan.edited_by,
             'remaining_accounts': remaining,
             'repayment_schedule': schedule,
         }
@@ -1181,12 +1315,35 @@ def upload_day_book():
                         skipped_details.append(f"{loan_ref_id} EMI {emi_no}: Early payment ({received_date} < {target_installment.date})")
                         continue
 
-                    target_installment.received_date = received_date
-                    updated_count += 1
-                    updated_details.append(f"{loan.client_account_name} - EMI {emi_no}")
                 except Exception as e:
                     skipped_details.append(f"{loan_ref_id} EMI {emi_no}: Date Error ({str(e)})")
                     continue
+
+                # Compare Credit with primary amount - checked only after EMI number and Date checks pass
+                primary_total = (loan.primary_account_amount or 0) + (loan.primary_account_interest or 0)
+                secondary_total = sum((acc.share or 0) + (acc.interest_amount or 0) for acc in loan.remaining_accounts)
+                grand_total = primary_total + secondary_total
+                
+                primary_repay_percent = (primary_total / grand_total) * 100 if grand_total > 0 else 0
+                primary_amount = target_installment.amount * (primary_repay_percent / 100)
+                
+                credit_val = row.get("Credit")
+                try:
+                    # Clean and parse Credit amount
+                    credit_str = str(credit_val).replace(',', '').strip() if pd.notna(credit_val) else "0"
+                    credit_amount = float(credit_str)
+                except ValueError:
+                    credit_amount = 0.0
+                
+                if round(abs(primary_amount - credit_amount), 2) > 0.05:
+                    return jsonify({
+                        'success': False,
+                        'error': f"Amount mismatch in Day Book Excel at Row {index+1} ({loan_ref_id} EMI {emi_no}): Installment primary amount is {primary_amount:.2f}, but Credit column has {credit_amount:.2f}."
+                    }), 400
+
+                target_installment.received_date = received_date
+                updated_count += 1
+                updated_details.append(f"{loan.client_account_name} - EMI {emi_no}")
                 
             except Exception:
                 continue
@@ -1296,6 +1453,9 @@ def update_loan_accounts(loan_id):
         if 'loan_ref_id' in data:
             loan.loan_ref_id = format_loan_ref_id(data['loan_ref_id'])
 
+        if 'edited_by' in data:
+            loan.edited_by = data['edited_by']
+
         if 'primary' in data:
             loan.primary_account_amount = float(data['primary'].get('amount', loan.primary_account_amount))
             loan.primary_account_interest = float(data['primary'].get('interest', loan.primary_account_interest))
@@ -1357,26 +1517,152 @@ def delete_loan(loan_id):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+def send_due_date_notification(loan, new_date, schedule_item=None, editor_name=None):
+    if not loan or not new_date:
+        return
+    import json
+    from datetime import datetime
+    now_str = datetime.now().strftime("%d-%m-%Y %I:%M %p")
+    
+    # Determine acronyms
+    pri_acronym = get_acronym(loan.primary_account_name)
+    sec_acronyms = [get_acronym(acc.account_name) for acc in loan.remaining_accounts]
+    
+    all_users = User.query.filter(User.role != 'admin').all()
+    
+    # Find primary managers and secondary managers
+    primary_managers = []
+    secondary_managers = []
+    
+    for u in all_users:
+        try:
+            u_perms = json.loads(u.permissions) if u.permissions else []
+        except Exception:
+            u_perms = []
+            
+        if pri_acronym in u_perms:
+            primary_managers.append(u)
+        elif any(acr in u_perms for acr in sec_acronyms):
+            secondary_managers.append(u)
+            
+    # Check if editor is a secondary manager
+    is_editor_sec_manager = False
+    if editor_name:
+        is_editor_sec_manager = any(u.name == editor_name for u in secondary_managers)
+        
+    if is_editor_sec_manager:
+        # If edited by a secondary manager, send notification to primary manager(s)
+        notified_users = primary_managers
+    else:
+        # Otherwise (edited by primary manager or admin), send to secondary manager(s)
+        notified_users = secondary_managers
+        
+    # Get all PENDING schedule items for this loan
+    pending_items = [s for s in loan.repayment_schedule if s.date_approval_status == 'PENDING']
+    if schedule_item and schedule_item not in pending_items:
+        pending_items.append(schedule_item)
+        
+    system_schedule = [s for s in loan.repayment_schedule if s.type != 'manual']
+    
+    # Calculate EMI numbers for all pending items
+    changed_emis = []
+    for item in pending_items:
+        try:
+            e_no = system_schedule.index(item) + 1
+            changed_emis.append((e_no, f"EMI {e_no}"))
+        except ValueError:
+            try:
+                e_no = loan.repayment_schedule.index(item) + 1
+                changed_emis.append((1000 + e_no, f"Row {e_no}"))
+            except ValueError:
+                pass
+                
+    # Sort by numeric order and keep unique values
+    changed_emis = sorted(list(set(changed_emis)), key=lambda x: x[0])
+    emis_str = ", ".join([x[1] for x in changed_emis])
+    
+    if emis_str:
+        msg = f"Due date changes pending for {loan.client_account_name} ({emis_str})."
+    else:
+        msg = f"Due date changes pending for {loan.client_account_name}."
+        
+    # Create or update notification for each manager
+    for u in notified_users:
+        existing_notif = Notification.query.filter_by(
+            user_name=u.name,
+            link=f"/jl-due-report/{loan.id}",
+            is_read=False
+        ).first()
+        
+        if existing_notif:
+            existing_notif.message = msg
+            existing_notif.created_at = now_str
+        else:
+            notif = Notification(
+                user_name=u.name,
+                title="New Due Date Set",
+                message=msg,
+                link=f"/jl-due-report/{loan.id}",
+                created_at=now_str,
+                is_read=False
+            )
+            db.session.add(notif)
+
 @app.route('/api/loans/<int:loan_id>/repayment-schedule', methods=['POST'])
 def add_repayment_schedule(loan_id):
     try:
         ensure_db_and_tables()
         data = request.json
         
+        loan = db.session.get(Loan, loan_id)
+        if not loan:
+            return jsonify({'error': 'Loan not found'}), 404
+            
+        due_date = data.get('date', '')
+        payment_date = data.get('payment_date', '')
+        
         new_entry = RepaymentSchedule(
             loan_id=loan_id,
             amount=float(data.get('amount', 0)),
             interest_amount=float(data.get('interest_amount', 0)),
-            date=data.get('date', ''),
+            date=due_date,
             cheque_no=data.get('cheque_no', ''),
             remarks=data.get('remarks', ''),
             type=data.get('type', 'others'),
             received_date=data.get('received_date'),
-            payment_date=data.get('payment_date'),
-            splits=data.get('splits')
+            payment_date=payment_date,
+            splits=data.get('splits'),
+            date_approval_status='PENDING' if (due_date or payment_date) else 'APPROVED'
         )
         
+        editor_name = data.get('editor_name')
+        if due_date or payment_date:
+            editor_role = 'PRIMARY'
+            if editor_name:
+                import json
+                pri_acronym = get_acronym(loan.primary_account_name)
+                sec_acronyms = [get_acronym(acc.account_name) for acc in loan.remaining_accounts]
+                all_users = User.query.filter(User.role != 'admin').all()
+                secondary_managers = []
+                for u in all_users:
+                    try:
+                        u_perms = json.loads(u.permissions) if u.permissions else []
+                    except Exception:
+                        u_perms = []
+                    if not pri_acronym in u_perms and any(acr in u_perms for acr in sec_acronyms):
+                        secondary_managers.append(u)
+                is_editor_sec_manager = any(u.name == editor_name for u in secondary_managers)
+                if is_editor_sec_manager:
+                    editor_role = 'SECONDARY'
+            new_entry.date_editor_role = editor_role
+            
         db.session.add(new_entry)
+        
+        if due_date:
+            send_due_date_notification(loan, due_date, new_entry, editor_name)
+        elif payment_date:
+            send_due_date_notification(loan, payment_date, new_entry, editor_name)
+            
         db.session.commit()
         return jsonify({'success': True, 'message': 'Entry added successfully'}), 200
     except Exception as e:
@@ -1392,10 +1678,40 @@ def patch_repayment_schedule(schedule_id):
             return jsonify({'error': 'Schedule item not found'}), 404
             
         data = request.json
+        editor_name = data.get('editor_name')
         if 'received_date' in data:
             schedule_item.received_date = data['received_date']
         if 'payment_date' in data:
-            schedule_item.payment_date = data['payment_date']
+            old_payment_date = schedule_item.payment_date
+            new_payment_date = data['payment_date']
+            schedule_item.payment_date = new_payment_date
+            
+            # Send notification if new_payment_date is filled and is different
+            if new_payment_date and new_payment_date != old_payment_date:
+                loan = schedule_item.loan
+                schedule_item.date_approval_status = 'PENDING'
+                
+                # Determine editor role
+                editor_role = 'PRIMARY'
+                if editor_name:
+                    import json
+                    pri_acronym = get_acronym(loan.primary_account_name)
+                    sec_acronyms = [get_acronym(acc.account_name) for acc in loan.remaining_accounts]
+                    all_users = User.query.filter(User.role != 'admin').all()
+                    secondary_managers = []
+                    for u in all_users:
+                        try:
+                            u_perms = json.loads(u.permissions) if u.permissions else []
+                        except Exception:
+                            u_perms = []
+                        if not pri_acronym in u_perms and any(acr in u_perms for acr in sec_acronyms):
+                            secondary_managers.append(u)
+                    is_editor_sec_manager = any(u.name == editor_name for u in secondary_managers)
+                    if is_editor_sec_manager:
+                        editor_role = 'SECONDARY'
+                schedule_item.date_editor_role = editor_role
+                
+                send_due_date_notification(loan, new_payment_date, schedule_item, editor_name)
         if 'remarks' in data:
             schedule_item.remarks = data['remarks']
         if 'amount' in data:
@@ -1403,7 +1719,36 @@ def patch_repayment_schedule(schedule_id):
         if 'interest_amount' in data:
             schedule_item.interest_amount = float(data['interest_amount'])
         if 'date' in data:
-            schedule_item.date = data['date']
+            old_date = schedule_item.date
+            new_date = data['date']
+            schedule_item.date = new_date
+            
+            # Send notification if new_date is filled and is different
+            if new_date and new_date != old_date:
+                loan = schedule_item.loan
+                schedule_item.date_approval_status = 'PENDING'
+                
+                # Determine editor role
+                editor_role = 'PRIMARY'
+                if editor_name:
+                    import json
+                    pri_acronym = get_acronym(loan.primary_account_name)
+                    sec_acronyms = [get_acronym(acc.account_name) for acc in loan.remaining_accounts]
+                    all_users = User.query.filter(User.role != 'admin').all()
+                    secondary_managers = []
+                    for u in all_users:
+                        try:
+                            u_perms = json.loads(u.permissions) if u.permissions else []
+                        except Exception:
+                            u_perms = []
+                        if not pri_acronym in u_perms and any(acr in u_perms for acr in sec_acronyms):
+                            secondary_managers.append(u)
+                    is_editor_sec_manager = any(u.name == editor_name for u in secondary_managers)
+                    if is_editor_sec_manager:
+                        editor_role = 'SECONDARY'
+                schedule_item.date_editor_role = editor_role
+                
+                send_due_date_notification(loan, new_date, schedule_item, editor_name)
         if 'cheque_no' in data:
             schedule_item.cheque_no = data['cheque_no']
         if 'splits' in data:
@@ -1414,6 +1759,37 @@ def patch_repayment_schedule(schedule_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/repayment-schedule/<int:schedule_id>/approve-date', methods=['POST'])
+def approve_schedule_date(schedule_id):
+    try:
+        ensure_db_and_tables()
+        schedule_item = db.session.get(RepaymentSchedule, schedule_id)
+        if not schedule_item:
+            return jsonify({'success': False, 'error': 'Schedule item not found'}), 404
+            
+        schedule_item.date_approval_status = 'APPROVED'
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Date approved successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/repayment-schedule/<int:schedule_id>/reject-date', methods=['POST'])
+def reject_schedule_date(schedule_id):
+    try:
+        ensure_db_and_tables()
+        schedule_item = db.session.get(RepaymentSchedule, schedule_id)
+        if not schedule_item:
+            return jsonify({'success': False, 'error': 'Schedule item not found'}), 404
+            
+        schedule_item.date_approval_status = 'REJECTED'
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Date rejected successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/repayment-schedule/<int:schedule_id>', methods=['DELETE'])
 def delete_repayment_schedule(schedule_id):
@@ -1445,7 +1821,9 @@ def get_users():
                 'name': u.name,
                 'role': u.role,
                 'email': u.email,
+                'mobile': u.mobile,
                 'permissions': json.loads(u.permissions) if u.permissions else [],
+                'allowed_menus': json.loads(u.allowed_menus) if u.allowed_menus else [],
                 'is_initial_password': u.is_initial_password
             } for u in users]
         })
@@ -1571,9 +1949,14 @@ def add_user():
         emp_code = str(data.get('employee_code')).upper()
         name = data.get('name')
         email = data.get('email')
+        mobile = data.get('mobile')
         password = data.get('password') or 'Admin@123'
         permissions = data.get('permissions', [])
+        allowed_menus = data.get('allowed_menus', [])
         role = data.get('role', 'user') # Default to user as requested
+
+        if not mobile or not str(mobile).strip():
+            return jsonify({'success': False, 'message': 'Mobile number is required'}), 400
 
         # Check if already exists
         if User.query.filter_by(employee_code=emp_code).first():
@@ -1585,7 +1968,9 @@ def add_user():
             password=generate_password_hash(password),
             name=name,
             email=email,
+            mobile=mobile,
             permissions=json.dumps(permissions),
+            allowed_menus=json.dumps(allowed_menus),
             role=role,
             is_initial_password=True # Forces setup on first login
         )
@@ -1614,8 +1999,14 @@ def update_user(user_id):
             user.role = data['role']
         if 'email' in data:
             user.email = data['email']
+        if 'mobile' in data:
+            if not data['mobile'] or not str(data['mobile']).strip():
+                return jsonify({'success': False, 'message': 'Mobile number is required'}), 400
+            user.mobile = data['mobile']
         if 'permissions' in data:
             user.permissions = json.dumps(data['permissions'])
+        if 'allowed_menus' in data:
+            user.allowed_menus = json.dumps(data['allowed_menus'])
         if 'password' in data and data['password'].strip():
             user.password = generate_password_hash(data['password'].strip())
             user.is_initial_password = True # Force re-setup if admin resets password
@@ -1646,11 +2037,15 @@ def delete_user(user_id):
 
 # --- Authentication & Security Flow ---
 
+def normalize_emp_code(val):
+    code = (val or '').strip()
+    return 'admin' if code.lower() == 'admin' else code.upper()
+
 @app.route('/api/login/', methods=['POST'])
 def login():
     try:
         data = request.json
-        emp_code = data.get('employee_code', '').strip().upper()
+        emp_code = normalize_emp_code(data.get('employee_code'))
         password = data.get('password')
         
         user = User.query.filter_by(employee_code=emp_code).first()
@@ -1662,7 +2057,8 @@ def login():
                     'name': user.name,
                     'role': user.role,
                     'is_initial_password': user.is_initial_password,
-                    'permissions': json.loads(user.permissions) if user.permissions else []
+                    'permissions': json.loads(user.permissions) if user.permissions else [],
+                    'allowed_menus': json.loads(user.allowed_menus) if user.allowed_menus else []
                 }
             })
         return jsonify({'success': False, 'message': 'Invalid employee code or password'}), 401
@@ -1673,7 +2069,7 @@ def login():
 def initial_setup():
     try:
         data = request.json
-        emp_code = data.get('employee_code', '').strip().upper()
+        emp_code = normalize_emp_code(data.get('employee_code'))
         new_password = data.get('new_password')
         question = data.get('q1')
         answer = data.get('a1')
@@ -1697,7 +2093,7 @@ def initial_setup():
 def forgot_password_request():
     try:
         data = request.json
-        emp_code = data.get('employee_code', '').strip().upper()
+        emp_code = normalize_emp_code(data.get('employee_code'))
         
         user = User.query.filter_by(employee_code=emp_code).first()
         if user and user.security_question:
@@ -1710,7 +2106,7 @@ def forgot_password_request():
 def forgot_password_reset():
     try:
         data = request.json
-        emp_code = data.get('employee_code', '').strip().upper()
+        emp_code = normalize_emp_code(data.get('employee_code'))
         answer = data.get('answer', '').lower().strip()
         new_password = data.get('new_password')
         
@@ -1723,6 +2119,288 @@ def forgot_password_reset():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/notifications', methods=['GET'])
+def get_notifications():
+    try:
+        ensure_db_and_tables()
+        user_name = request.args.get('user_name')
+        if not user_name:
+            return jsonify({'success': False, 'error': 'user_name is required'}), 400
+            
+        # 1. Fetch pending approvals (as before)
+        user = User.query.filter_by(name=user_name).first()
+        approvals_data = []
+        if user:
+            if user.role == 'admin':
+                loans = Loan.query.filter_by(approval_status='PENDING', is_deleted=False).all()
+            else:
+                loans = Loan.query.filter_by(verified_by=user_name, approval_status='PENDING', is_deleted=False).all()
+                
+            for l in loans:
+                approvals_data.append({
+                    'id': f"approval_{l.id}",
+                    'type': 'approval',
+                    'title': 'Pending Approval',
+                    'message': f"Clearance request for {l.client_account_name} (₹{int(l.loan_amount):,}) requires your approval.",
+                    'time': l.requested_at,
+                    'link': '/approvals'
+                })
+        
+        # 2. Fetch notifications from Notification table for this user
+        notifs = Notification.query.filter_by(user_name=user_name, is_read=False).order_by(Notification.id.desc()).all()
+        db_notifications = []
+        for n in notifs:
+            link = n.link
+            if link.startswith('/loans/'):
+                link = link.replace('/loans/', '/jl-due-report/')
+            db_notifications.append({
+                'id': f"db_{n.id}",
+                'db_id': n.id,
+                'type': 'general',
+                'title': n.title,
+                'message': n.message,
+                'time': n.created_at,
+                'link': link
+            })
+            
+        # Combine them
+        combined = db_notifications + approvals_data
+        
+        return jsonify({
+            'success': True,
+            'notifications': combined,
+            'count': len(combined)
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/notifications/<int:notif_id>/read', methods=['POST'])
+def mark_notification_read(notif_id):
+    try:
+        ensure_db_and_tables()
+        notif = db.session.get(Notification, notif_id)
+        if notif:
+            notif.is_read = True
+            db.session.commit()
+            return jsonify({'success': True}), 200
+        return jsonify({'success': False, 'error': 'Notification not found'}), 404
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+def send_whatsapp_group_msg(group_id, message):
+    import pywhatkit
+    try:
+        pywhatkit.sendwhatmsg_to_group_instantly(
+            group_id=group_id,
+            message=message,
+            wait_time=15,
+            tab_close=True
+        )
+        print("Group message sent successfully!")
+    except Exception as e:
+        print(f"Error sending WhatsApp group message: {e}")
+
+def notify_loan_created(loan_id):
+    with app.app_context():
+        try:
+            loan = db.session.get(Loan, loan_id)
+            if loan:
+                approver = loan.verified_by or "Approver"
+                client = loan.client_account_name or "N/A"
+                loan_id_val = loan.loan_ref_id or "N/A"
+                requester = loan.requester_name or "N/A"
+                
+                message = (
+                    f"Dear {approver},\n\n"
+                    f"A Joint Loan request for {client} ({loan_id_val}) has been created by {requester}.\n\n"
+                    f"Kindly review the details and approve the Joint Loan request.\n\n"
+                    f"Thank you."
+                )
+                send_whatsapp_group_msg("KgiAguRqlkj6BFc35kyZfC", message)
+        except Exception as e:
+            print(f"Error in notify_loan_created: {e}")
+
+def check_loan_approval_after_24h(loan_id):
+    with app.app_context():
+        try:
+            loan = db.session.get(Loan, loan_id)
+            if loan and loan.approval_status != 'APPROVED' and not loan.is_deleted:
+                approver = loan.verified_by or "Approver"
+                client = loan.client_account_name or "N/A"
+                loan_id_val = loan.loan_ref_id or "N/A"
+                requester = loan.requester_name or "N/A"
+                
+                message = (
+                    f"Dear {approver},\n\n"
+                    f"A Joint Loan request for {client} ({loan_id_val}) has been created by {requester}.\n\n"
+                    f"Kindly review the details and approve the Joint Loan request.\n\n"
+                    f"Thank you.\n\n"
+                    f"```Please note that if this loan request is not reviewed or approved within 24 hours, the notification will be automatically forwarded to the management team for further action.```"
+                )
+                send_whatsapp_group_msg("KgiAguRqlkj6BFc35kyZfC", message)
+        except Exception as e:
+            print(f"Error in check_loan_approval_after_24h: {e}")
+
+def notify_admin_loan_verified(loan_id, manager_name):
+    with app.app_context():
+        try:
+            loan = db.session.get(Loan, loan_id)
+            if loan:
+                client = loan.client_account_name or "N/A"
+                loan_id_val = loan.loan_ref_id or "N/A"
+                
+                message = (
+                    f"Dear Admin,\n\n"
+                    f"A Joint Loan request for {client} ({loan_id_val}) has been verified by {manager_name} and is now pending your final approval.\n\n"
+                    f"Kindly review the details and approve the Joint Loan request.\n\n"
+                    f"Thank you."
+                )
+                send_whatsapp_group_msg("KgiAguRqlkj6BFc35kyZfC", message)
+        except Exception as e:
+            print(f"Error in notify_admin_loan_verified: {e}")
+
+def check_admin_loan_approval_after_24h(loan_id, manager_name):
+    with app.app_context():
+        try:
+            loan = db.session.get(Loan, loan_id)
+            if loan and loan.approval_status != 'APPROVED' and not loan.is_deleted:
+                client = loan.client_account_name or "N/A"
+                loan_id_val = loan.loan_ref_id or "N/A"
+                
+                message = (
+                    f"Dear Admin,\n\n"
+                    f"A Joint Loan request for {client} ({loan_id_val}) has been verified by {manager_name} and is now pending your final approval.\n\n"
+                    f"Kindly review the details and approve the Joint Loan request.\n\n"
+                    f"Thank you.\n\n"
+                    f"```Please note that if this loan request is not reviewed or approved within 24 hours, the notification will be automatically forwarded to the management team for further action.```"
+                )
+                send_whatsapp_group_msg("KgiAguRqlkj6BFc35kyZfC", message)
+        except Exception as e:
+            print(f"Error in check_admin_loan_approval_after_24h: {e}")
+
+@app.route('/api/short-loans', methods=['GET'])
+def get_short_loans():
+    try:
+        loans = ShortLoan.query.order_by(ShortLoan.id.desc()).all()
+        result = []
+        for l in loans:
+            status = l.status
+            if status != 'CLOSED' and l.loan_date:
+                try:
+                    loan_date_obj = datetime.datetime.strptime(l.loan_date, '%Y-%m-%d').date()
+                    today_obj = datetime.date.today()
+                    days_recd = max(0, (today_obj - loan_date_obj).days)
+                    os_days = days_recd - (l.days or 0)
+                    if os_days > 0:
+                        status = 'OVERDUE'
+                except Exception:
+                    pass
+
+            result.append({
+                'id': l.id,
+                'client_name': l.client_name,
+                'loan_amount': l.loan_amount,
+                'int_per_day': l.int_per_day,
+                'loan_date': l.loan_date,
+                'days': l.days,
+                'days_received': l.days_received,
+                'remarks': l.remarks,
+                'status': status,
+                'created_by': l.created_by,
+                'created_at': l.created_at,
+                'follower': l.follower,
+                'account': l.account,
+                'close_date': l.close_date,
+                'renew_history': l.renew_history
+            })
+        return jsonify({"success": True, "loans": result}), 200
+    except Exception as e:
+        print(f"Error fetching short loans: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/short-loans', methods=['POST'])
+def create_short_loan():
+    try:
+        data = request.json
+        new_loan = ShortLoan(
+            client_name=data.get('client_name'),
+            loan_amount=float(data.get('loan_amount', 0)),
+            int_per_day=float(data.get('int_per_day', 0)),
+            loan_date=data.get('loan_date'),
+            days=int(data.get('days', 0)),
+            days_received=int(data.get('days_received', 0) if data.get('days_received') else 0),
+            remarks=data.get('remarks'),
+            created_by=data.get('created_by'),
+            created_at=datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            follower=data.get('follower'),
+            account=data.get('account'),
+            close_date=data.get('close_date'),
+            renew_history=data.get('renew_history')
+        )
+        db.session.add(new_loan)
+        db.session.commit()
+        return jsonify({"success": True, "message": "Short loan created"}), 201
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error creating short loan: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/short-loans/<int:loan_id>', methods=['PUT'])
+def update_short_loan(loan_id):
+    try:
+        loan = db.session.get(ShortLoan, loan_id)
+        if not loan:
+            return jsonify({"success": False, "message": "Loan not found"}), 404
+            
+        data = request.json
+        if 'client_name' in data:
+            loan.client_name = data['client_name']
+        if 'loan_amount' in data:
+            loan.loan_amount = float(data['loan_amount'] or 0)
+        if 'int_per_day' in data:
+            loan.int_per_day = float(data['int_per_day'] or 0)
+        if 'loan_date' in data:
+            loan.loan_date = data['loan_date']
+        if 'days' in data:
+            loan.days = int(data['days'] or 0)
+        if 'days_received' in data:
+            loan.days_received = int(data['days_received'] if data.get('days_received') else 0)
+        if 'remarks' in data:
+            loan.remarks = data['remarks']
+        if 'status' in data:
+            loan.status = data['status']
+        if 'follower' in data:
+            loan.follower = data['follower']
+        if 'account' in data:
+            loan.account = data['account']
+        if 'close_date' in data:
+            loan.close_date = data['close_date']
+        if 'renew_history' in data:
+            loan.renew_history = data['renew_history']
+            
+        db.session.commit()
+        return jsonify({"success": True, "message": "Short loan updated successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error updating short loan: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/short-loans/<int:loan_id>', methods=['DELETE'])
+def delete_short_loan(loan_id):
+    try:
+        loan = db.session.get(ShortLoan, loan_id)
+        if not loan:
+            return jsonify({"success": False, "message": "Loan not found"}), 404
+            
+        db.session.delete(loan)
+        db.session.commit()
+        return jsonify({"success": True, "message": "Short loan deleted successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error deleting short loan: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 if __name__ == '__main__':
     # Use self-signed certs for local development

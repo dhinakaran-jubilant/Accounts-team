@@ -183,6 +183,7 @@ const RepaymentTable = ({
     data,
     title,
     icon,
+    user,
     canEdit,
     showAddButton = false,
     isManual = false,
@@ -200,8 +201,18 @@ const RepaymentTable = ({
     toYYYYMMDD,
     toDDMMYYYY,
     onEditAccountSplit,
-    onClearRow
+    onClearRow,
+    onApproveDate,
+    onRejectDate
 }) => {
+    const isSecondaryManager = useMemo(() => {
+        if (!user || !loan) return false;
+        if (user.role === 'admin') return false;
+        const priAcronym = getAcronym(loan.primary_account_name);
+        if (user.permissions?.includes(priAcronym)) return false;
+        const secAcronyms = (loan.remaining_accounts || []).map(acc => getAcronym(acc.account_name));
+        return (user.permissions || []).some(perm => secAcronyms.includes(perm));
+    }, [user, loan]);
     const hasPrimaryTDS = !isManual && data.some(entry => {
         return getSplitTDS(entry.splits, loan?.primary_account_name) > 0;
     });
@@ -269,6 +280,7 @@ const RepaymentTable = ({
                                     </React.Fragment>
                                 ))}
                                 {isManual && <th className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-center w-20">Actions</th>}
+                                <th className="sticky right-0 bg-slate-100 dark:bg-slate-900 border-l border-slate-200 dark:border-slate-700 py-3 px-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-center w-24 z-20">Approval</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -332,6 +344,10 @@ const RepaymentTable = ({
                                     const isReceivedDateInvalid = Boolean(entry.received_date && entry.date && entry.received_date.length >= 10 && toYYYYMMDD(entry.received_date) < toYYYYMMDD(entry.date));
                                     const isPaymentDateInvalid = Boolean(entry.payment_date && entry.received_date && entry.payment_date.length >= 10 && toYYYYMMDD(entry.payment_date) < toYYYYMMDD(entry.received_date));
                                     const isFutureRow = Boolean(entry.date && toYYYYMMDD(entry.date) > todayYYYYMMDD);
+                                    const hasBothDatesFilled = Boolean(
+                                        entry.received_date && entry.received_date.trim() !== '' && entry.received_date !== '—' && entry.received_date !== 'dd-mm-yyyy' &&
+                                        entry.payment_date && entry.payment_date.trim() !== '' && entry.payment_date !== '—' && entry.payment_date !== 'dd-mm-yyyy'
+                                    );
 
                                     return (
                                         <React.Fragment key={entry.id}>
@@ -346,20 +362,20 @@ const RepaymentTable = ({
                                                 }}
                                             >
                                                 <td className="py-3 px-5 text-sm font-medium text-slate-700 dark:text-slate-300">
-                                                    <div className="flex items-center gap-1.5">
+                                                    <div className="flex items-center gap-2">
                                                         {hasSubRows ? (
                                                             <span className={`material-symbols-outlined text-[16px] text-indigo-500 transition-transform ${expandedRows[entry.id] ? 'rotate-90' : ''}`}>chevron_right</span>
                                                         ) : (
                                                             <span className="w-4"></span>
                                                         )}
                                                         {idx + 1}
-                                                        {canEdit && loan.approval_status === 'APPROVED' && (
+                                                        {canEdit && loan.approval_status === 'APPROVED' && hasBothDatesFilled && (
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     onClearRow && onClearRow(entry.id);
                                                                 }}
-                                                                className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 font-bold hover:text-red-500 p-0.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center justify-center mr-1"
+                                                                className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 font-bold hover:text-red-500 p-0.5 rounded flex items-center justify-center mr-1"
                                                                 title="Clear all fields in this row"
                                                             >
                                                                 <span className="material-symbols-outlined text-[16px]">backspace</span>
@@ -571,7 +587,7 @@ const RepaymentTable = ({
                                                     <div className="flex items-center justify-start gap-1">
                                                         {(() => {
                                                             const hasReceivedDateError = isReceivedDateInvalid || (blurredFields.has(`${entry.id}-received_date`) && isDateFormatInvalid(entry.received_date));
-                                                            const isDueDateDisabled = !entry.received_date || hasReceivedDateError || !canEdit || loan.approval_status !== 'APPROVED';
+                                                            const isDueDateDisabled = !entry.received_date || hasReceivedDateError || (!canEdit && !isSecondaryManager) || loan.approval_status !== 'APPROVED';
                                                             
                                                             return (
                                                                 <>
@@ -597,10 +613,10 @@ const RepaymentTable = ({
                                                                             }
                                                                         }}
                                                                         readOnly={isDueDateDisabled}
-                                                                        className={`bg-transparent text-left text-sm font-bold w-24 focus:outline-none focus:ring-1 rounded transition-all ${(isPaymentDateInvalid || (blurredFields.has(`${entry.id}-payment_date`) && isDateFormatInvalid(entry.payment_date))) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30' : 'border-none focus:ring-primary/30'} ${isDueDateDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                                        className={`bg-transparent text-left text-sm w-24 focus:outline-none focus:ring-1 rounded transition-all ${(isPaymentDateInvalid || (blurredFields.has(`${entry.id}-payment_date`) && isDateFormatInvalid(entry.payment_date))) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30 font-bold' : `border-none focus:ring-primary/30 ${entry.date_approval_status === 'PENDING' ? 'text-amber-600 dark:text-amber-400 font-bold' : entry.date_approval_status === 'REJECTED' ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-900 dark:text-slate-100 font-bold'}`} ${isDueDateDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                                         placeholder="dd-mm-yyyy"
                                                                     />
-                                                                    {canEdit && loan.approval_status === 'APPROVED' && (
+                                                                    {(canEdit || isSecondaryManager) && loan.approval_status === 'APPROVED' && (
                                                                         <div className="relative h-5 w-5 flex justify-center items-center">
                                                                             <span className={`material-symbols-outlined text-[18px] text-slate-400 opacity-0 group-hover:opacity-100 transition-colors ${isDueDateDisabled ? 'cursor-not-allowed' : 'cursor-pointer hover:text-primary'}`}>edit_calendar</span>
                                                                             <input
@@ -691,6 +707,68 @@ const RepaymentTable = ({
                                                         )}
                                                     </td>
                                                 )}
+                                                <td className="sticky right-0 bg-slate-50/95 dark:bg-slate-950/95 group-hover:bg-slate-100 dark:group-hover:bg-slate-900 border-l border-slate-200 dark:border-slate-700 py-3 px-3 text-center z-10 transition-colors">
+                                                    {(!entry.payment_date || entry.payment_date === 'dd-mm-yyyy' || entry.payment_date.trim() === '') ? null : (
+                                                        (() => {
+                                                            const viewerRole = isSecondaryManager ? 'SECONDARY' : 'PRIMARY';
+                                                            const editorRole = entry.date_editor_role || 'SECONDARY';
+                                                            const isEditor = viewerRole === editorRole;
+                                                            const canApproveOrReject = (isSecondaryManager || canEdit) && !isEditor;
+
+                                                            if (entry.date_approval_status === 'PENDING') {
+                                                                if (canApproveOrReject) {
+                                                                    return (
+                                                                        <div className="flex items-center justify-center gap-1">
+                                                                            <button 
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    onApproveDate && onApproveDate(entry.id);
+                                                                                }}
+                                                                                className="w-9 h-9 flex items-center justify-center text-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 p-1 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 rounded-lg transition-all"
+                                                                                title="Approve Date"
+                                                                            >
+                                                                                <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                                                                            </button>
+                                                                            <button 
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    onRejectDate && onRejectDate(entry.id);
+                                                                                }}
+                                                                                className="w-9 h-9 flex items-center justify-center text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 p-1 hover:bg-rose-100 dark:hover:bg-rose-950/50 rounded-lg transition-all"
+                                                                                title="Reject Date"
+                                                                            >
+                                                                                <span className="material-symbols-outlined text-[20px]">cancel</span>
+                                                                            </button>
+                                                                        </div>
+                                                                    );
+                                                                } else {
+                                                                    return (
+                                                                        <div className="flex items-center justify-center">
+                                                                            <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400 font-bold text-xs animate-pulse" title="Pending Approval">
+                                                                                <span className="material-symbols-outlined text-[16px]">hourglass_empty</span>
+                                                                            </span>
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                            }
+
+                                                            return (
+                                                                <div className="flex items-center justify-center">
+                                                                    {entry.date_approval_status === 'APPROVED' && (
+                                                                        <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
+                                                                            <span className="material-symbols-outlined text-[16px]">check</span>                                                
+                                                                        </span>
+                                                                    )}
+                                                                    {entry.date_approval_status === 'REJECTED' && (
+                                                                        <span className="inline-flex items-center gap-0.5 text-rose-600 dark:text-rose-400 font-bold text-xs">
+                                                                            <span className="material-symbols-outlined text-[16px]">close</span>
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })()
+                                                    )}
+                                                </td>
                                             </tr>
 
                                             {hasSubRows && expandedRows[entry.id] && (
@@ -699,7 +777,7 @@ const RepaymentTable = ({
                                                     const primaryPartial = overridenDataArray && overridenDataArray[actualIndex];
                                                     // Ensure we only render a row if at least one account has a split at this index
                                                     if (!primaryPartial && !secondarySplits.some(s => s.splits && s.splits[actualIndex])) return null;
-
+ 
                                                     return (
                                                         <tr key={`partial-${actualIndex}`} className="bg-indigo-50/20 dark:bg-indigo-900/10 border-indigo-100/50 dark:border-indigo-900/20 border-b last:border-b-0">
                                                             <td colSpan={isManual ? 7 : 6} className={`p-0 border-l-[3px] transition-colors duration-300 rounded-bl-sm border-indigo-300/50 dark:border-indigo-700/50`}>
@@ -797,6 +875,7 @@ const RepaymentTable = ({
                                                                 );
                                                             })}
                                                             {isManual && <td className="p-0"></td>}
+                                                            <td className="p-0 sticky right-0 bg-slate-50/95 dark:bg-slate-950/95 border-l border-slate-200 dark:border-slate-700"></td>
                                                         </tr>
                                                     );
                                                 })
@@ -804,7 +883,7 @@ const RepaymentTable = ({
 
                                             {hasSubRows && expandedRows[entry.id] && (
                                                 <tr className="bg-indigo-50/40 dark:bg-indigo-900/20">
-                                                    <td colSpan={isManual ? 7 : 6} className="p-0 border-l-[3px] border-indigo-400 dark:border-indigo-500 rounded-bl-sm">
+                                                    <td colSpan={isManual ? 8 : 7} className="p-0 border-l-[3px] border-indigo-400 dark:border-indigo-500 rounded-bl-sm">
                                                         <div className="transition-all duration-300 ease-in-out overflow-hidden flex justify-end items-center gap-5 max-h-12 py-2.5 px-5 opacity-100">
                                                             <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 shrink-0">↳ Balance Remaining:</span>
                                                         </div>
@@ -893,40 +972,68 @@ const RepaymentTable = ({
                             const totalInt = (loan.primary_account_interest || 0) + (loan.remaining_accounts || []).reduce((s, a) => s + (a.interest_amount || 0), 0);
                             const primaryIntRatio = totalInt > 0 ? loan.primary_account_interest / totalInt : 0;
 
+                            // Helper functions for matching logic
+                            const isReceived = (e) => e.received_date && e.received_date.trim() !== '' && e.received_date !== '—' && e.received_date !== 'dd-mm-yyyy';
+                            const hasApprovedDueDate = (e) => e.payment_date && e.date_approval_status === 'APPROVED' && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
+
+                            // 1. Expected totals (Total row)
+                            const amtTotal = data.reduce((s, e) => s + parseINR(e.amount), 0);
+                            const intTotal = data.reduce((s, e) => s + parseINR(e.interest_amount), 0);
+                            const priAmtTotal = data.reduce((s, e) => {
+                                const pShareAmount = getSplitAmount(e.splits, loan.primary_account_name) ?? (e.type === 'manual' ? 0 : (parseINR(e.amount) * primaryRatio));
+                                const pTdsAmount = getSplitTDS(e.splits, loan.primary_account_name);
+                                return s + pShareAmount + pTdsAmount;
+                            }, 0);
+                            const priIntTotal = data.reduce((s, e) => s + (e.type === 'manual' ? 0 : parseINR(e.interest_amount) * primaryIntRatio), 0);
+                            const priTdsTotal = data.reduce((s, e) => s + getSplitTDS(e.splits, loan.primary_account_name), 0);
+
+                            // 2. Received totals (Total Received row)
+                            const amtReceived = data.reduce((s, e) => s + (isReceived(e) ? parseINR(e.amount) : 0), 0);
+                            const intReceived = data.reduce((s, e) => s + (isReceived(e) ? parseINR(e.interest_amount) : 0), 0);
+                            const priAmtReceived = data.reduce((s, e) => {
+                                if (!isReceived(e)) return s;
+                                const pShareAmount = getSplitAmount(e.splits, loan.primary_account_name) ?? (e.type === 'manual' ? 0 : (parseINR(e.amount) * primaryRatio));
+                                const pTdsAmount = getSplitTDS(e.splits, loan.primary_account_name);
+                                return s + pShareAmount + pTdsAmount;
+                            }, 0);
+                            const priIntReceived = data.reduce((s, e) => {
+                                if (!isReceived(e)) return s;
+                                return s + (e.type === 'manual' ? 0 : parseINR(e.interest_amount) * primaryIntRatio);
+                            }, 0);
+                            const priTdsReceived = data.reduce((s, e) => {
+                                if (!isReceived(e)) return s;
+                                return s + getSplitTDS(e.splits, loan.primary_account_name);
+                            }, 0);
+
+                            // 3. Balance totals (Total Balance row)
+                            const amtBalance = amtTotal - amtReceived;
+                            const intBalance = intTotal - intReceived;
+                            const priAmtBalance = priAmtTotal - priAmtReceived;
+                            const priIntBalance = priIntTotal - priIntReceived;
+                            const priTdsBalance = priTdsTotal - priTdsReceived;
+
                             return (
                                 <tfoot>
+                                    {/* 1. Total Row */}
                                     <tr className="bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-200 dark:border-slate-700">
                                         <td colSpan="3" className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Total</td>
                                         <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-right">
-                                            {fmtINR(data.reduce((s, e) => s + parseINR(e.amount), 0), false)}
+                                            {fmtINR(amtTotal, false)}
                                         </td>
                                         <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-right">
-                                            {fmtINR(data.reduce((s, e) => s + parseINR(e.interest_amount), 0), false, 2)}
+                                            {fmtINR(intTotal, false, 2)}
                                         </td>
                                         {isManual && <td className="py-3 px-5"></td>}
                                         <td className="py-3 px-5"></td>
                                         <td className="py-3 px-6 text-sm font-bold text-slate-900 dark:text-slate-100 text-right min-w-[150px]">
-                                            {fmtINR(data.reduce((s, e) => {
-                                                const pShareAmount = getSplitAmount(e.splits, loan.primary_account_name) ?? (e.type === 'manual' ? 0 : (parseINR(e.amount) * primaryRatio));
-                                                const pTdsAmount = e.received_date ? getSplitTDS(e.splits, loan.primary_account_name) : 0;
-                                                return s + pShareAmount + pTdsAmount;
-                                            }, 0), false)}
+                                            {fmtINR(priAmtTotal, false)}
                                         </td>
                                         <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-right min-w-[150px]">
-                                            {fmtINR(data.reduce((s, e) => {
-                                                const pIntShareAmount = e.type === 'manual' ? 0 : parseINR(e.interest_amount) * primaryIntRatio;
-                                                return s + pIntShareAmount;
-                                            }, 0), false, 2)}
+                                            {fmtINR(priIntTotal, false, 2)}
                                         </td>
                                         {!isManual && hasPrimaryTDS && (
                                             <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-right w-20">
-                                                {fmtINR(data.reduce((s, e) => {
-                                                    const isInterest = schedule && e.id === (data.filter(s => s.type !== 'manual')[0]?.id);
-                                                    const primaryIntRatio = (loan.primary_account_interest || 0) / ((loan.primary_account_interest || 0) + (loan.remaining_accounts || []).reduce((sum, a) => sum + (a.interest_amount || 0), 0) || 1);
-                                                    const pIntShareAmount = e.type === 'manual' ? 0 : parseINR(e.interest_amount) * primaryIntRatio;
-                                                    const autoTds = 0; // Primary has no default TDS
-                                                    return s + autoTds + getSplitTDS(e.splits, loan.primary_account_name);
-                                                }, 0), false)}
+                                                {fmtINR(priTdsTotal, false)}
                                             </td>
                                         )}
                                         <td className="py-3 px-5 pr-12 text-right font-bold text-slate-400 dark:text-slate-500">—</td>
@@ -935,34 +1042,179 @@ const RepaymentTable = ({
                                             const accRatio = grandTotal > 0 ? accTotal / grandTotal : 0;
                                             const accIntRatio = totalInt > 0 ? (acc.interest_amount || 0) / totalInt : 0;
 
+                                            const secAmtTotal = data.reduce((s, e) => {
+                                                const overridenAmount = getSplitAmount(e.splits, acc.account_name);
+                                                const defaultNet = (parseINR(e.amount) * accRatio) - (schedule && e.id === schedule[0]?.id ? (acc.interest_amount || 0) * 0.10 : 0);
+                                                return s + (overridenAmount !== null ? overridenAmount : (e.type === 'manual' ? 0 : defaultNet));
+                                            }, 0);
+                                            const secIntTotal = data.reduce((s, e) => s + (e.type === 'manual' ? 0 : parseINR(e.interest_amount) * accIntRatio), 0);
+                                            const secTdsTotal = data.reduce((s, e) => {
+                                                const isInterest = schedule && e.id === (data.filter(s => s.type !== 'manual')[0]?.id);
+                                                const autoTds = isInterest ? (acc.interest_amount || 0) * 0.10 : 0;
+                                                return s + autoTds + getSplitTDS(e.splits, acc.account_name);
+                                            }, 0);
+
                                             return (
                                                 <React.Fragment key={i}>
                                                     <td className="py-3 px-6 text-sm font-bold text-slate-900 dark:text-slate-100 text-right">
-                                                        {fmtINR(data.reduce((s, e) => {
-                                                            const overridenAmount = getSplitAmount(e.splits, acc.account_name);
-                                                            const defaultNet = (parseINR(e.amount) * accRatio) - (schedule && e.id === schedule[0]?.id ? (acc.interest_amount || 0) * 0.10 : 0);
-                                                            return s + (overridenAmount !== null ? overridenAmount : (e.type === 'manual' ? 0 : defaultNet));
-                                                        }, 0), false)}
+                                                        {fmtINR(secAmtTotal, false)}
                                                     </td>
                                                     <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-right">
-                                                        {fmtINR(data.reduce((s, e) => {
-                                                            const sIntShareAmount = e.type === 'manual' ? 0 : parseINR(e.interest_amount) * accIntRatio;
-                                                            return s + sIntShareAmount;
-                                                        }, 0), false, 2)}
+                                                        {fmtINR(secIntTotal, false, 2)}
                                                     </td>
                                                     {!isManual && (
                                                         <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-right">
-                                                            {fmtINR(data.reduce((s, e) => {
-                                                                const isInterest = schedule && e.id === (data.filter(s => s.type !== 'manual')[0]?.id);
-                                                                const autoTds = isInterest ? (acc.interest_amount || 0) * 0.10 : 0;
-                                                                return s + autoTds + getSplitTDS(e.splits, acc.account_name);
-                                                            }, 0), false)}
+                                                            {fmtINR(secTdsTotal, false)}
                                                         </td>
                                                     )}
                                                 </React.Fragment>
                                             );
                                         })}
                                         {isManual && <td className="py-3 px-5"></td>}
+                                        <td className="sticky right-0 bg-slate-50/95 dark:bg-slate-950/95 border-l border-slate-200 dark:border-slate-700 py-3 px-3 text-center"></td>
+                                    </tr>
+
+                                    {/* 2. Total Received Row */}
+                                    <tr className="bg-emerald-50/30 dark:bg-emerald-950/15 border-t border-slate-200 dark:border-slate-700">
+                                        <td colSpan="3" className="py-3 px-5 text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider text-center">Total Received</td>
+                                        <td className="py-3 px-5 text-sm font-bold text-emerald-600 dark:text-emerald-400 text-right">
+                                            {fmtINR(amtReceived, false)}
+                                        </td>
+                                        <td className="py-3 px-5 text-sm font-bold text-emerald-600 dark:text-emerald-400 text-right">
+                                            {fmtINR(intReceived, false, 2)}
+                                        </td>
+                                        {isManual && <td className="py-3 px-5"></td>}
+                                        <td className="py-3 px-5"></td>
+                                        <td className="py-3 px-6 text-sm font-bold text-emerald-600 dark:text-emerald-400 text-right min-w-[150px]">
+                                            {fmtINR(priAmtReceived, false)}
+                                        </td>
+                                        <td className="py-3 px-5 text-sm font-bold text-emerald-600 dark:text-emerald-400 text-right min-w-[150px]">
+                                            {fmtINR(priIntReceived, false, 2)}
+                                        </td>
+                                        {!isManual && hasPrimaryTDS && (
+                                            <td className="py-3 px-5 text-sm font-bold text-emerald-600 dark:text-emerald-400 text-right w-20">
+                                                {fmtINR(priTdsReceived, false)}
+                                            </td>
+                                        )}
+                                        <td className="py-3 px-5 pr-12 text-right font-bold text-slate-400 dark:text-slate-500">—</td>
+                                        {(loan.remaining_accounts || []).map((acc, i) => {
+                                            const accTotal = (acc.share || 0) + (acc.interest_amount || 0);
+                                            const accRatio = grandTotal > 0 ? accTotal / grandTotal : 0;
+                                            const accIntRatio = totalInt > 0 ? (acc.interest_amount || 0) / totalInt : 0;
+
+                                            const secAmtReceived = data.reduce((s, e) => {
+                                                if (!hasApprovedDueDate(e)) return s;
+                                                const overridenAmount = getSplitAmount(e.splits, acc.account_name);
+                                                const defaultNet = (parseINR(e.amount) * accRatio) - (schedule && e.id === schedule[0]?.id ? (acc.interest_amount || 0) * 0.10 : 0);
+                                                return s + (overridenAmount !== null ? overridenAmount : (e.type === 'manual' ? 0 : defaultNet));
+                                            }, 0);
+                                            const secIntReceived = data.reduce((s, e) => {
+                                                if (!hasApprovedDueDate(e)) return s;
+                                                return s + (e.type === 'manual' ? 0 : parseINR(e.interest_amount) * accIntRatio);
+                                            }, 0);
+                                            const secTdsReceived = data.reduce((s, e) => {
+                                                if (!hasApprovedDueDate(e)) return s;
+                                                const isInterest = schedule && e.id === (data.filter(s => s.type !== 'manual')[0]?.id);
+                                                const autoTds = isInterest ? (acc.interest_amount || 0) * 0.10 : 0;
+                                                return s + autoTds + getSplitTDS(e.splits, acc.account_name);
+                                            }, 0);
+
+                                            return (
+                                                <React.Fragment key={i}>
+                                                    <td className="py-3 px-6 text-sm font-bold text-emerald-600 dark:text-emerald-400 text-right">
+                                                        {fmtINR(secAmtReceived, false)}
+                                                    </td>
+                                                    <td className="py-3 px-5 text-sm font-bold text-emerald-600 dark:text-emerald-400 text-right">
+                                                        {fmtINR(secIntReceived, false, 2)}
+                                                    </td>
+                                                    {!isManual && (
+                                                        <td className="py-3 px-5 text-sm font-bold text-emerald-600 dark:text-emerald-400 text-right">
+                                                            {fmtINR(secTdsReceived, false)}
+                                                        </td>
+                                                    )}
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                        {isManual && <td className="py-3 px-5"></td>}
+                                        <td className="sticky right-0 bg-emerald-50/30 dark:bg-emerald-950/15 border-l border-slate-200 dark:border-slate-700 py-3 px-3 text-center"></td>
+                                    </tr>
+
+                                    {/* 3. Total Balance Row */}
+                                    <tr className="bg-indigo-50/30 dark:bg-indigo-950/15 border-t border-slate-200 dark:border-slate-700">
+                                        <td colSpan="3" className="py-3 px-5 text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider text-center">Total Balance</td>
+                                        <td className="py-3 px-5 text-sm font-bold text-indigo-600 dark:text-indigo-400 text-right">
+                                            {fmtINR(amtBalance, false)}
+                                        </td>
+                                        <td className="py-3 px-5 text-sm font-bold text-indigo-600 dark:text-indigo-400 text-right">
+                                            {fmtINR(intBalance, false, 2)}
+                                        </td>
+                                        {isManual && <td className="py-3 px-5"></td>}
+                                        <td className="py-3 px-5"></td>
+                                        <td className="py-3 px-6 text-sm font-bold text-indigo-600 dark:text-indigo-400 text-right min-w-[150px]">
+                                            {fmtINR(priAmtBalance, false)}
+                                        </td>
+                                        <td className="py-3 px-5 text-sm font-bold text-indigo-600 dark:text-indigo-400 text-right min-w-[150px]">
+                                            {fmtINR(priIntBalance, false, 2)}
+                                        </td>
+                                        {!isManual && hasPrimaryTDS && (
+                                            <td className="py-3 px-5 text-sm font-bold text-indigo-600 dark:text-indigo-400 text-right w-20">
+                                                {fmtINR(priTdsBalance, false)}
+                                            </td>
+                                        )}
+                                        <td className="py-3 px-5 pr-12 text-right font-bold text-slate-400 dark:text-slate-500">—</td>
+                                        {(loan.remaining_accounts || []).map((acc, i) => {
+                                            const accTotal = (acc.share || 0) + (acc.interest_amount || 0);
+                                            const accRatio = grandTotal > 0 ? accTotal / grandTotal : 0;
+                                            const accIntRatio = totalInt > 0 ? (acc.interest_amount || 0) / totalInt : 0;
+
+                                            const secAmtTotal = data.reduce((s, e) => {
+                                                const overridenAmount = getSplitAmount(e.splits, acc.account_name);
+                                                const defaultNet = (parseINR(e.amount) * accRatio) - (schedule && e.id === schedule[0]?.id ? (acc.interest_amount || 0) * 0.10 : 0);
+                                                return s + (overridenAmount !== null ? overridenAmount : (e.type === 'manual' ? 0 : defaultNet));
+                                            }, 0);
+                                            const secAmtReceived = data.reduce((s, e) => {
+                                                if (!hasApprovedDueDate(e)) return s;
+                                                const overridenAmount = getSplitAmount(e.splits, acc.account_name);
+                                                const defaultNet = (parseINR(e.amount) * accRatio) - (schedule && e.id === schedule[0]?.id ? (acc.interest_amount || 0) * 0.10 : 0);
+                                                return s + (overridenAmount !== null ? overridenAmount : (e.type === 'manual' ? 0 : defaultNet));
+                                            }, 0);
+
+                                            const secIntTotal = data.reduce((s, e) => s + (e.type === 'manual' ? 0 : parseINR(e.interest_amount) * accIntRatio), 0);
+                                            const secIntReceived = data.reduce((s, e) => {
+                                                if (!hasApprovedDueDate(e)) return s;
+                                                return s + (e.type === 'manual' ? 0 : parseINR(e.interest_amount) * accIntRatio);
+                                            }, 0);
+
+                                            const secTdsTotal = data.reduce((s, e) => {
+                                                const isInterest = schedule && e.id === (data.filter(s => s.type !== 'manual')[0]?.id);
+                                                const autoTds = isInterest ? (acc.interest_amount || 0) * 0.10 : 0;
+                                                return s + autoTds + getSplitTDS(e.splits, acc.account_name);
+                                            }, 0);
+                                            const secTdsReceived = data.reduce((s, e) => {
+                                                if (!hasApprovedDueDate(e)) return s;
+                                                const isInterest = schedule && e.id === (data.filter(s => s.type !== 'manual')[0]?.id);
+                                                const autoTds = isInterest ? (acc.interest_amount || 0) * 0.10 : 0;
+                                                return s + autoTds + getSplitTDS(e.splits, acc.account_name);
+                                            }, 0);
+
+                                            return (
+                                                <React.Fragment key={i}>
+                                                    <td className="py-3 px-6 text-sm font-bold text-indigo-600 dark:text-indigo-400 text-right">
+                                                        {fmtINR(secAmtTotal - secAmtReceived, false)}
+                                                    </td>
+                                                    <td className="py-3 px-5 text-sm font-bold text-indigo-600 dark:text-indigo-400 text-right">
+                                                        {fmtINR(secIntTotal - secIntReceived, false, 2)}
+                                                    </td>
+                                                    {!isManual && (
+                                                        <td className="py-3 px-5 text-sm font-bold text-indigo-600 dark:text-indigo-400 text-right">
+                                                            {fmtINR(secTdsTotal - secTdsReceived, false)}
+                                                        </td>
+                                                    )}
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                        {isManual && <td className="py-3 px-5"></td>}
+                                        <td className="sticky right-0 bg-indigo-50/30 dark:bg-indigo-950/15 border-l border-slate-200 dark:border-slate-700 py-3 px-3 text-center"></td>
                                     </tr>
                                 </tfoot>
                             );
@@ -1613,6 +1865,57 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
         return user.permissions?.includes(priAcronym);
     }, [user, loan]);
 
+    const isSecondaryManager = useMemo(() => {
+        if (!user || !loan) return false;
+        if (user.role === 'admin') return false;
+        const priAcronym = getAcronym(loan.primary_account_name);
+        if (user.permissions?.includes(priAcronym)) return false;
+        const secAcronyms = (loan.remaining_accounts || []).map(acc => getAcronym(acc.account_name));
+        return (user.permissions || []).some(perm => secAcronyms.includes(perm));
+    }, [user, loan]);
+
+    const handleApproveDate = async (scheduleId) => {
+        try {
+            const res = await fetch(`/api/repayment-schedule/${scheduleId}/approve-date`, {
+                method: 'POST'
+            });
+            const result = await res.json();
+            if (res.ok && result.success) {
+                // Refresh data
+                const refreshRes = await fetch(`/api/loans/${id}`);
+                const refreshResult = await refreshRes.json();
+                if (refreshRes.ok && refreshResult.success) {
+                    setLoan(refreshResult.loan);
+                }
+            } else {
+                alert(result.error || 'Failed to approve date');
+            }
+        } catch (e) {
+            console.error('Error approving date:', e);
+        }
+    };
+
+    const handleRejectDate = async (scheduleId) => {
+        try {
+            const res = await fetch(`/api/repayment-schedule/${scheduleId}/reject-date`, {
+                method: 'POST'
+            });
+            const result = await res.json();
+            if (res.ok && result.success) {
+                // Refresh data
+                const refreshRes = await fetch(`/api/loans/${id}`);
+                const refreshResult = await refreshRes.json();
+                if (refreshRes.ok && refreshResult.success) {
+                    setLoan(refreshResult.loan);
+                }
+            } else {
+                alert(result.error || 'Failed to reject date');
+            }
+        } catch (e) {
+            console.error('Error rejecting date:', e);
+        }
+    };
+
     useEffect(() => {
         const el = scrollContainerRef.current;
         if (!el) return;
@@ -1656,11 +1959,27 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
             const res = await fetch(`/api/repayment-schedule/${scheduleId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ [field]: val })
+                body: JSON.stringify({ [field]: val, editor_name: user?.name })
             });
             const result = await res.json();
             if (res.ok && result.success) {
                 // local state is already updated optimistically in the inputs
+                if (field === 'payment_date') {
+                    setLoan(prev => ({
+                        ...prev,
+                        repayment_schedule: prev.repayment_schedule.map(s => {
+                            if (s.id === scheduleId) {
+                                const viewerRole = isSecondaryManager ? 'SECONDARY' : 'PRIMARY';
+                                return {
+                                    ...s,
+                                    date_approval_status: (val && val.trim() !== '' && val !== '—' && val !== 'dd-mm-yyyy') ? 'PENDING' : 'APPROVED',
+                                    date_editor_role: viewerRole
+                                };
+                            }
+                            return s;
+                        })
+                    }));
+                }
             } else {
                 console.error(result.error || 'Failed to update field');
             }
@@ -1790,9 +2109,22 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
     const handleScheduleUpdate = (scheduleId, field, value) => {
         setLoan(prev => ({
             ...prev,
-            repayment_schedule: prev.repayment_schedule.map(s =>
-                s.id === scheduleId ? { ...s, [field]: value } : s
-            )
+            repayment_schedule: prev.repayment_schedule.map(s => {
+                if (s.id === scheduleId) {
+                    const updated = { ...s, [field]: value };
+                    if (field === 'payment_date') {
+                        if (value && value.trim() !== '' && value !== '—' && value !== 'dd-mm-yyyy') {
+                            updated.date_approval_status = 'PENDING';
+                            const viewerRole = isSecondaryManager ? 'SECONDARY' : 'PRIMARY';
+                            updated.date_editor_role = viewerRole;
+                        } else {
+                            updated.date_approval_status = 'APPROVED';
+                        }
+                    }
+                    return updated;
+                }
+                return s;
+            })
         }));
     };
 
@@ -2095,7 +2427,7 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                 const pBalance = hasPrimaryOverride ? (primaryGross - pAutoTds) - (pVal + getSplitTDS(entry.splits, loan.primary_account_name)) : 0;
                 rowData.push(pBalance > 0 ? pBalance : 0);
             }
-            rowData.push(entry.payment_date || '—');
+            rowData.push((entry.date_approval_status === 'APPROVED' ? entry.payment_date : '') || '—');
 
             (loan.remaining_accounts || []).forEach(acc => {
                 const accTotal = (acc.share || 0) + (acc.interest_amount || 0);
@@ -2141,6 +2473,8 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
 
         // Primary Share Total
         sysTotalRow.push(systemData.reduce((s, e) => {
+            const hasReceivedDate = e.received_date && e.received_date.trim() !== '' && e.received_date !== '—' && e.received_date !== 'dd-mm-yyyy';
+            if (!hasReceivedDate) return s;
             const pGross = parseINR(e.amount) * (primaryRepayPercent / 100);
             const pOverrideAmt = getSplitAmount(e.splits, loan.primary_account_name);
             if (pOverrideAmt !== null) return s + pOverrideAmt;
@@ -2149,11 +2483,15 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
 
         // Primary Interest Share Total
         sysTotalRow.push(systemData.reduce((s, e) => {
+            const hasReceivedDate = e.received_date && e.received_date.trim() !== '' && e.received_date !== '—' && e.received_date !== 'dd-mm-yyyy';
+            if (!hasReceivedDate) return s;
             return s + (parseINR(e.interest_amount) * (excelPIntPercent / 100));
         }, 0));
 
         if (hasPrimaryTdsCol) {
             sysTotalRow.push(systemData.reduce((s, e) => {
+                const hasReceivedDate = e.received_date && e.received_date.trim() !== '' && e.received_date !== '—' && e.received_date !== 'dd-mm-yyyy';
+                if (!hasReceivedDate) return s;
                 const autoTds = 0; // Primary has no default TDS
                 return s + autoTds + getSplitTDS(e.splits, loan.primary_account_name);
             }, 0));
@@ -2182,6 +2520,8 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
 
             // Acc Share Total
             sysTotalRow.push(systemData.reduce((s, e) => {
+                const hasDueDate = e.payment_date && e.date_approval_status === 'APPROVED' && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
+                if (!hasDueDate) return s;
                 const isInterestRow = e.id === systemData[0]?.id;
                 const sGross = parseINR(e.amount) * (accRepayPercent / 100);
                 const sOverrideAmt = getSplitAmount(e.splits, acc.account_name);
@@ -2191,12 +2531,16 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
 
             // Acc Interest Share Total
             sysTotalRow.push(systemData.reduce((s, e) => {
+                const hasDueDate = e.payment_date && e.date_approval_status === 'APPROVED' && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
+                if (!hasDueDate) return s;
                 return s + (parseINR(e.interest_amount) * (excelSIntPercent / 100));
             }, 0));
 
             // TDS Total
             if (hasSecondaryTdsCols[acc.account_name]) {
                 sysTotalRow.push(systemData.reduce((s, e) => {
+                    const hasDueDate = e.payment_date && e.date_approval_status === 'APPROVED' && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
+                    if (!hasDueDate) return s;
                     const isInterestRow = e.id === systemData[0]?.id;
                     const autoTds = isInterestRow ? (acc.interest_amount || 0) * 0.10 : 0;
                     return s + autoTds + getSplitTDS(e.splits, acc.account_name);
@@ -2253,7 +2597,7 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                     entry.remarks || '—',
                     entry.received_date || '—',
                     getSplitAmount(entry.splits, loan.primary_account_name) || 0,
-                    entry.payment_date || '—'
+                    (entry.date_approval_status === 'APPROVED' ? entry.payment_date : '') || '—'
                 ];
                 (loan.remaining_accounts || []).forEach(acc => {
                     rowData.push(getSplitAmount(entry.splits, acc.account_name) || 0);
@@ -2269,11 +2613,19 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
             // Add Total Row for Manual Table
             const manTotalRow = ['TOTAL', '', '', manualData.reduce((s, e) => s + parseINR(e.amount), 0), '', ''];
             // Primary Total
-            manTotalRow.push(manualData.reduce((s, e) => s + (getSplitAmount(e.splits, loan.primary_account_name) || 0), 0));
+            manTotalRow.push(manualData.reduce((s, e) => {
+                const hasReceivedDate = e.received_date && e.received_date.trim() !== '' && e.received_date !== '—' && e.received_date !== 'dd-mm-yyyy';
+                if (!hasReceivedDate) return s;
+                return s + (getSplitAmount(e.splits, loan.primary_account_name) || 0);
+            }, 0));
             manTotalRow.push(''); // Due Date gap
             // Secondary Totals
             (loan.remaining_accounts || []).forEach(acc => {
-                manTotalRow.push(manualData.reduce((s, e) => s + (getSplitAmount(e.splits, acc.account_name) || 0), 0));
+                manTotalRow.push(manualData.reduce((s, e) => {
+                    const hasDueDate = e.payment_date && e.date_approval_status === 'APPROVED' && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
+                    if (!hasDueDate) return s;
+                    return s + (getSplitAmount(e.splits, acc.account_name) || 0);
+                }, 0));
             });
 
             const mr = worksheet.addRow(manTotalRow);
@@ -2431,10 +2783,17 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                             {loan.loan_date}
                         </span>
                         {loan.verified_by && (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800/50">
-                                <span className="material-symbols-outlined text-[13px]">verified_user</span>
-                                {loan.verified_by}
-                            </span>
+                            loan.approval_status === 'APPROVED' ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800/50">
+                                    <span className="material-symbols-outlined text-[13px]">verified_user</span>
+                                    {loan.verified_by}
+                                </span>
+                            ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50">
+                                    <span className="material-symbols-outlined text-[13px] animate-pulse">pending</span>
+                                    {loan.verified_by}
+                                </span>
+                            )
                         )}
                     </div>
                 </div>
@@ -2605,6 +2964,7 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                     data={displayedSystemSchedule}
                     title="Repayment Schedule"
                     icon="calendar_month"
+                    user={user}
                     canEdit={canEdit}
                     isManual={false}
                     loan={loan}
@@ -2622,12 +2982,15 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                     toYYYYMMDD={toYYYYMMDD}
                     toDDMMYYYY={toDDMMYYYY}
                     onEditAccountSplit={(entry, accountName, currentShare, isEditingBalance, editIndex, defaultTds) => setSplitModalData({ entry, accountName, currentShare, isEditingBalance, editIndex, defaultTds })}
+                    onApproveDate={handleApproveDate}
+                    onRejectDate={handleRejectDate}
                 />
 
                 <RepaymentTable
                     data={manualSchedule}
                     title="Manual Payments"
                     icon="payments"
+                    user={user}
                     canEdit={canEdit}
                     showAddButton={true}
                     isManual={true}
@@ -2646,6 +3009,8 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                     toYYYYMMDD={toYYYYMMDD}
                     toDDMMYYYY={toDDMMYYYY}
                     onEditAccountSplit={(entry, accountName, currentShare, isEditingBalance, editIndex, defaultTds) => setSplitModalData({ entry, accountName, currentShare, isEditingBalance, editIndex, defaultTds })}
+                    onApproveDate={handleApproveDate}
+                    onRejectDate={handleRejectDate}
                 />
 
                 <EditAccountsModal

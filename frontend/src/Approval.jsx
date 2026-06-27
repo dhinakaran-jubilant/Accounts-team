@@ -120,6 +120,7 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
         try {
             setIsSaving(true);
             const body = {
+                edited_by: user?.name,
                 primary: {
                     interest: modalData.primary_account_interest
                 },
@@ -226,13 +227,24 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
     const formatTimestamp = (ts) => {
         if (!ts || !ts.includes(' ')) return ts;
         try {
-            const [date, time] = ts.split(' ');
+            const parts = ts.trim().split(/\s+/);
+            const date = parts[0];
+            const time = parts[1];
             const [hours, minutes] = time.split(':');
             let h = parseInt(hours);
-            const ampm = h >= 12 ? 'PM' : 'AM';
-            h = h % 12 || 12;
-            const hh = h < 10 ? `0${h}` : h;
-            return `${date} ${hh}:${minutes} ${ampm}`;
+            
+            if (parts.length === 3) {
+                // If it already contains AM/PM (e.g. "05-06-2026 03:22 PM")
+                const ampm = parts[2].toUpperCase();
+                const hh = h < 10 ? `0${h}` : h;
+                return `${date} ${hh}:${minutes} ${ampm}`;
+            } else {
+                // If it is in 24-hour format (e.g. "05-06-2026 15:22")
+                const ampm = h >= 12 ? 'PM' : 'AM';
+                h = h % 12 || 12;
+                const hh = h < 10 ? `0${h}` : h;
+                return `${date} ${hh}:${minutes} ${ampm}`;
+            }
         } catch (e) {
             return ts;
         }
@@ -281,7 +293,13 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
             <div className="mb-8 flex flex-col md:flex-row md:items-center gap-6 shrink-0">
                 <div>
                     <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
-                        {(user.role === 'admin' && !isMyRequestsPage) ? 'Approval Queue' : 'My Requests'}
+                        {(user.role === 'admin' && !isMyRequestsPage) ? (
+                            activeTab === 'pending' ? 'Approval Queue' : 'Action History'
+                        ) : (
+                            activeTab === 'pending' ? 'Pending' :
+                            activeTab === 'my-requests' ? 'My Requests' :
+                            'Approved'
+                        )}
                     </h1>
                 </div>
 
@@ -310,7 +328,7 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                     )}
                 </div>
 
-                {user.role === 'admin' && !isMyRequestsPage && (
+                {(user.role === 'admin' && !isMyRequestsPage) ? (
                     <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl w-fit">
                         <button
                             onClick={() => handleTabChange('pending')}
@@ -323,6 +341,27 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                             className={`px-6 py-2 text-xs font-black tracking-widest uppercase rounded-lg transition-all ${activeTab === 'history' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                         >
                             Action History
+                        </button>
+                    </div>
+                ) : (
+                    <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl w-fit">
+                        <button
+                            onClick={() => handleTabChange('pending')}
+                            className={`px-6 py-2 text-xs font-black tracking-widest uppercase rounded-lg transition-all ${activeTab === 'pending' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                        >
+                            Pending
+                        </button>
+                        <button
+                            onClick={() => handleTabChange('my-requests')}
+                            className={`px-6 py-2 text-xs font-black tracking-widest uppercase rounded-lg transition-all ${activeTab === 'my-requests' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                        >
+                            My Requests
+                        </button>
+                        <button
+                            onClick={() => handleTabChange('history')}
+                            className={`px-6 py-2 text-xs font-black tracking-widest uppercase rounded-lg transition-all ${activeTab === 'history' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                        >
+                            Approved
                         </button>
                     </div>
                 )}
@@ -339,20 +378,23 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-20 text-center shadow-sm shrink-0">
                     <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800/50 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-300 dark:text-slate-600">
                         <span className="material-symbols-outlined text-[32px]">
-                            {activeTab === 'history' ? (searchTerm || statusFilter !== 'ALL' ? 'search_off' : 'history') : 'check_circle'}
+                            {activeTab === 'history' ? (searchTerm || statusFilter !== 'ALL' ? 'search_off' : 'history') : 
+                             activeTab === 'my-requests' ? 'assignment' : 'check_circle'}
                         </span>
                     </div>
                     <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
                         {activeTab === 'history' 
-                            ? (searchTerm || statusFilter !== 'ALL' ? 'No results found' : 'No History Found') 
-                            : 'No Clearances Needed'}
+                            ? (searchTerm || statusFilter !== 'ALL' ? 'No results found' : 'No History Found') : 
+                             activeTab === 'my-requests' ? 'No Requests Found' : 'No Clearances Needed'}
                     </h3>
                     <p className="text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
                         {activeTab === 'history' 
                             ? (searchTerm || statusFilter !== 'ALL' 
                                 ? "We couldn't find any data matching your current filters. Try adjusting your search."
-                                : "You haven't processed any approval requests yet in this system.")
-                            : "Your approval queue is completely empty. Great job staying on top of things!"}
+                                : "You haven't processed any approval requests yet in this system.") : 
+                             activeTab === 'my-requests' 
+                                ? "You haven't submitted any approval requests yet."
+                                : "Your approval queue is completely empty. Great job staying on top of things!"}
                     </p>
                 </div>
             ) : (
@@ -381,7 +423,11 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                 {filteredApprovals.map((approval) => (
-                                    <tr key={approval.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors group">
+                                    <tr
+                                        key={approval.id}
+                                        onClick={() => activeTab === 'pending' && !approval.localAction && fetchLoanDetails(approval.id)}
+                                        className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors group ${activeTab === 'pending' && !approval.localAction ? 'cursor-pointer' : ''}`}
+                                    >
                                         <td className="py-4 px-6">
                                             <div className="flex flex-col">
                                                 {activeTab !== 'my-requests' && (
@@ -444,15 +490,7 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                                                     ) : (
                                                         <>
                                                             <button
-                                                                onClick={(e) => { e.stopPropagation(); fetchLoanDetails(approval.id); }}
-                                                                disabled={isFetching && actioningId === approval.id}
-                                                                title="View Details & Edit Interest"
-                                                                className="w-9 h-9 flex items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-500 hover:bg-blue-500 hover:text-white transition-all active:scale-90 disabled:opacity-50"
-                                                            >
-                                                                <span className="material-symbols-outlined text-[20px]">visibility</span>
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleAction(approval.id, 'REJECT')}
+                                                                onClick={(e) => { e.stopPropagation(); handleAction(approval.id, 'REJECT'); }}
                                                                 disabled={actioningId === approval.id}
                                                                 title="Decline"
                                                                 className="w-9 h-9 flex items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 hover:bg-rose-500 hover:text-white transition-all active:scale-90 disabled:opacity-50"
@@ -460,7 +498,7 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                                                                 <span className="material-symbols-outlined text-[20px]">close</span>
                                                             </button>
                                                             <button
-                                                                onClick={() => handleAction(approval.id, 'APPROVE')}
+                                                                onClick={(e) => { e.stopPropagation(); handleAction(approval.id, 'APPROVE'); }}
                                                                 disabled={actioningId === approval.id}
                                                                 title="Approve"
                                                                 className="w-9 h-9 flex items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 hover:bg-emerald-500 hover:text-white transition-all active:scale-90 disabled:opacity-50"
@@ -514,34 +552,45 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
 
             {isModalOpen && modalData && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-900 w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+                    <div className="bg-white dark:bg-slate-900 w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
                         {/* Modal Header */}
-                        <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
+                        <div className="px-8 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
                             <div className="flex flex-col">
-                                <div className="flex items-center gap-3">
-                                    <h2 className="text-xl font-black text-slate-900 dark:text-white">Account Details</h2>
-                                    {modalData.loan_ref_id && (
-                                        <span className="px-2.5 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 text-[10px] font-black uppercase tracking-widest rounded-lg border border-blue-200 dark:border-blue-800">
-                                            {modalData.loan_ref_id}
-                                        </span>
-                                    )}
-                                </div>
-                                <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">{modalData.client_name}</p>
+                                <h2 className="text-xl font-black text-slate-900 dark:text-white">Account Details</h2>
+                                {modalData.edited_by && (
+                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1">
+                                        Last Edited By: <span className="text-blue-600 dark:text-blue-400">{modalData.edited_by}</span>
+                                    </p>
+                                )}
                             </div>
                             <button 
                                 onClick={() => setIsModalOpen(false)}
-                                className="p-2 w-10 h-10 rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 transition-colors"
+                                className="p-2 w-10 h-10 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 transition-colors"
                             >
                                 <span className="material-symbols-outlined">close</span>
                             </button>
                         </div>
 
                         {/* Modal Content */}
-                        <div className="p-8 max-h-[70vh] overflow-y-auto scrollbar-premium">
+                        <div className="p-8 overflow-y-auto flex-1 scrollbar-premium">
                             {(() => {
                                 const totalI = modalData.primary_account_interest + modalData.remaining_accounts.reduce((s, a) => s + a.interest_amount, 0);
                                 return (
                                     <>
+                                        {/* Client Name & Loan Ref ID (Text format above cards) */}
+                                        <div className="mb-6 flex flex-col gap-1">
+                                            <div className="flex items-center gap-3">
+                                                <h3 className="text-2xl font-black text-slate-900 dark:text-white leading-tight">
+                                                    {modalData.client_name}
+                                                </h3>
+                                                {modalData.loan_ref_id && (
+                                                    <span className="px-2.5 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 text-[10px] font-black uppercase tracking-widest rounded-lg border border-blue-200 dark:border-blue-800">
+                                                        {modalData.loan_ref_id}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
                                             <DetailCard label="Loan Amount" value={`₹${fmtINR(modalData.loan_amount)}`} icon="payments" color="blue" />
                                             <DetailCard label="Loan Date" value={modalData.loan_date} icon="calendar_today" color="indigo" />
@@ -586,14 +635,15 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                                                                         handleDistributionChange(-1, 'amount', numVal);
                                                                     }}
                                                                     className="w-32 text-right bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                                    disabled={lockedAccountIds.includes('primary')}
                                                                 />
                                                             </td>
-                                                            <td className="px-4 py-4 text-right text-sm font-black text-slate-500">
+                                                            <td className="px-4 py-4 text-right">
                                                                 <PercentageInput 
                                                                     value={modalData.total_interest > 0 ? (modalData.primary_account_interest / modalData.total_interest) * 100 : 0}
                                                                     onChange={(newPct) => handleDistributionChange(-1, 'percentage', newPct)}
-                                                                    className="w-16 text-right bg-transparent border-none text-sm font-black text-slate-500 focus:outline-none focus:text-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                                />%
+                                                                    disabled={lockedAccountIds.includes('primary')}
+                                                                />
                                                             </td>
                                                             <td className="px-4 py-4 text-center">
                                                                 <button 
@@ -630,14 +680,15 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                                                                             handleDistributionChange(idx, 'amount', numVal);
                                                                         }}
                                                                         className="w-32 text-right bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                                        disabled={lockedAccountIds.includes(acc.id)}
                                                                     />
                                                                 </td>
-                                                                <td className="px-4 py-4 text-right text-sm font-black text-slate-500">
+                                                                <td className="px-4 py-4 text-right">
                                                                     <PercentageInput 
                                                                         value={modalData.total_interest > 0 ? (acc.interest_amount / modalData.total_interest) * 100 : 0}
                                                                         onChange={(newPct) => handleDistributionChange(idx, 'percentage', newPct)}
-                                                                        className="w-16 text-right bg-transparent border-none text-sm font-black text-slate-500 focus:outline-none focus:text-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                                    />%
+                                                                        disabled={lockedAccountIds.includes(acc.id)}
+                                                                    />
                                                                 </td>
                                                                 <td className="px-4 py-4 text-center">
                                                                     <button 
@@ -677,7 +728,7 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                         </div>
 
                         {/* Modal Footer */}
-                        <div className="px-8 py-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3">
+                        <div className="px-8 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3">
                             <button 
                                 onClick={() => setIsModalOpen(false)}
                                 className="px-6 py-2 text-xs font-black uppercase tracking-widest text-slate-500 hover:text-slate-700 transition-colors"
@@ -687,7 +738,7 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                             <button 
                                 onClick={handleSaveInterest}
                                 disabled={isSaving}
-                                className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                                className="p-4 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
                             >
                                 {isSaving ? <span className="material-symbols-outlined animate-spin text-[18px]">sync</span> : 'Save Changes'}
                             </button>
@@ -699,7 +750,7 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
     );
 };
 
-const DetailCard = ({ label, value, icon, color }) => {
+const DetailCard = ({ label, value, icon, color, className }) => {
     const colors = {
         blue: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20',
         indigo: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20',
@@ -707,7 +758,7 @@ const DetailCard = ({ label, value, icon, color }) => {
         slate: 'text-slate-600 bg-slate-50 dark:bg-slate-900/20',
     };
     return (
-        <div className="p-5 border border-slate-100 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900">
+        <div className={`p-5 border border-slate-100 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 ${className || ''}`}>
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 ${colors[color]}`}>
                 <span className="material-symbols-outlined text-[20px]">{icon}</span>
             </div>
@@ -718,7 +769,7 @@ const DetailCard = ({ label, value, icon, color }) => {
 };
 
 // Formatted Input Helper Component
-const FormattedInput = ({ value, onChange, className }) => {
+const FormattedInput = ({ value, onChange, className, disabled }) => {
     const [local, setLocal] = useState("");
 
     useEffect(() => {
@@ -730,6 +781,7 @@ const FormattedInput = ({ value, onChange, className }) => {
         <input 
             type="text"
             value={local}
+            disabled={disabled}
             onChange={(e) => {
                 const val = e.target.value.replace(/[^0-9.]/g, '');
                 setLocal(e.target.value.replace(/[^0-9.,]/g, ''));
@@ -739,22 +791,21 @@ const FormattedInput = ({ value, onChange, className }) => {
                 const num = Number(local.replace(/,/g, '')) || 0;
                 setLocal(num.toLocaleString('en-IN', { maximumFractionDigits: 2 }));
             }}
-            className={className}
+            className={`${className} ${disabled ? 'opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-950/40 border-slate-200/55 dark:border-slate-800/55' : ''}`}
         />
     );
 };
 
 // Percentage Input Helper Component
-const PercentageInput = ({ value, onChange, className }) => {
-    const [isEditing, setIsEditing] = useState(false);
+const PercentageInput = ({ value, onChange, disabled }) => {
     const [local, setLocal] = useState("");
+    const [isFocused, setIsFocused] = useState(false);
 
-    // Sync from props only when NOT editing (e.g. initial load or external amount changes)
     useEffect(() => {
-        if (!isEditing) {
-            setLocal(value === 0 ? "" : value.toFixed(2));
+        if (!isFocused) {
+            setLocal(value === 0 ? "0.00" : value.toFixed(2));
         }
-    }, [value, isEditing]);
+    }, [value, isFocused]);
 
     const handleChange = (e) => {
         const val = e.target.value;
@@ -770,32 +821,33 @@ const PercentageInput = ({ value, onChange, className }) => {
     };
 
     const handleBlur = () => {
-        setIsEditing(false);
-        setLocal(value === 0 ? "" : value.toFixed(2));
+        setIsFocused(false);
+        const num = parseFloat(local);
+        if (!isNaN(num)) {
+            setLocal(num.toFixed(2));
+        } else {
+            setLocal("0.00");
+        }
     };
 
-    if (!isEditing) {
-        return (
-            <span 
-                onClick={() => setIsEditing(true)}
-                className={`${className} cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 px-2 py-1 rounded-md transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-600`}
-            >
-                {value === 0 ? "0.00" : value.toFixed(2)}
-            </span>
-        );
-    }
-
     return (
-        <input 
-            autoFocus
-            type="text"
-            value={local}
-            onChange={handleChange}
-            onBlur={handleBlur}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleBlur(); }}
-            className={`${className} bg-white dark:bg-slate-900 ring-2 ring-blue-500/20 rounded-md px-2 py-1`}
-        />
+        <div className={`inline-flex items-center justify-end w-28 border rounded-lg px-3 py-1.5 transition-all ${
+            disabled 
+                ? 'opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-950/40 border-slate-200/55 dark:border-slate-800/55' 
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 focus-within:ring-2 focus-within:ring-blue-500/20'
+        }`}>
+            <input 
+                type="text"
+                value={local}
+                disabled={disabled}
+                onChange={handleChange}
+                onFocus={() => setIsFocused(true)}
+                onBlur={handleBlur}
+                className="w-full text-right bg-transparent border-none text-sm font-black text-slate-900 dark:text-white focus:outline-none p-0 pr-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:cursor-not-allowed"
+            />
+            <span className="text-sm font-black text-slate-500 dark:text-slate-400 select-none">%</span>
+        </div>
     );
-}
+};
 
 export default Approval;
