@@ -579,11 +579,10 @@ const UsersManager = () => {
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">
-                                            Mobile Number <span className="text-rose-500">*</span>
+                                            Mobile Number
                                         </label>
                                         <input
                                             type="text"
-                                            required
                                             className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white"
                                             placeholder="+91 98765 43210"
                                             value={formData.mobile}

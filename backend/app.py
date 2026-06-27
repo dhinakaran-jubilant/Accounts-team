@@ -1950,13 +1950,14 @@ def add_user():
         name = data.get('name')
         email = data.get('email')
         mobile = data.get('mobile')
+        if mobile:
+            mobile = str(mobile).strip()
+        else:
+            mobile = None
         password = data.get('password') or 'Admin@123'
         permissions = data.get('permissions', [])
         allowed_menus = data.get('allowed_menus', [])
         role = data.get('role', 'user') # Default to user as requested
-
-        if not mobile or not str(mobile).strip():
-            return jsonify({'success': False, 'message': 'Mobile number is required'}), 400
 
         # Check if already exists
         if User.query.filter_by(employee_code=emp_code).first():
@@ -2000,9 +2001,7 @@ def update_user(user_id):
         if 'email' in data:
             user.email = data['email']
         if 'mobile' in data:
-            if not data['mobile'] or not str(data['mobile']).strip():
-                return jsonify({'success': False, 'message': 'Mobile number is required'}), 400
-            user.mobile = data['mobile']
+            user.mobile = str(data['mobile']).strip() if data['mobile'] else None
         if 'permissions' in data:
             user.permissions = json.dumps(data['permissions'])
         if 'allowed_menus' in data:
