@@ -204,7 +204,8 @@ const UsersManager = () => {
     const currentData = users.slice(startIndex, endIndex);
 
     return (
-        <div className="flex flex-col h-full p-8 gap-6">
+        <div className="h-[calc(100vh-64px)] w-full flex flex-col overflow-hidden">
+            <div className="p-8 flex-1 flex flex-col w-full min-h-0 gap-6">
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
@@ -786,6 +787,7 @@ const UsersManager = () => {
                 </div>,
                 document.body
             )}
+            </div>
         </div>
     );
 };
