@@ -22,6 +22,7 @@ const Dashboard = ({ user }) => {
     const [processingLogs, setProcessingLogs] = useState([]);
     const [batchSummary, setBatchSummary] = useState([]);
     const [skippedSummary, setSkippedSummary] = useState([]);
+    const [mismatchSummary, setMismatchSummary] = useState([]);
     const [isFinished, setIsFinished] = useState(false);
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
@@ -154,6 +155,8 @@ const Dashboard = ({ user }) => {
         const text = [
             "--- UPDATED INSTALLMENTS ---",
             ...batchSummary.slice().sort((a, b) => a.localeCompare(b)),
+            "\n--- MISMATCHED ENTRIES ---",
+            ...mismatchSummary.slice().sort((a, b) => a.localeCompare(b)),
             "\n--- SKIPPED / NOTIFICATIONS ---",
             ...skippedSummary.slice().sort((a, b) => a.localeCompare(b))
         ].join('\n');
@@ -201,9 +204,11 @@ const Dashboard = ({ user }) => {
         setProcessingLogs([]);
         setBatchSummary([]);
         setSkippedSummary([]);
+        setMismatchSummary([]);
         
         const allUpdates = [];
         const allSkips = [];
+        const allMismatches = [];
         
         for (const accountValue of uploadedFolders) {
             setProcessingLogs(prev => [...prev, { 
@@ -229,6 +234,10 @@ const Dashboard = ({ user }) => {
                     if (result.skipped_details) {
                         const accountSkips = result.skipped_details.map(s => `[${accountValue}] ${s}`);
                         allSkips.push(...accountSkips);
+                    }
+                    if (result.mismatch_details) {
+                        const accountMismatches = result.mismatch_details.map(s => `[${accountValue}] ${s}`);
+                        allMismatches.push(...accountMismatches);
                     }
                     
                     const wasUpdated = result.updated_count > 0;
@@ -265,6 +274,7 @@ const Dashboard = ({ user }) => {
         
         setBatchSummary(allUpdates);
         setSkippedSummary(allSkips);
+        setMismatchSummary(allMismatches);
         setIsFinished(true);
 
         // Cleanup temp folder on backend after successful batch processing
@@ -565,9 +575,9 @@ const Dashboard = ({ user }) => {
                                 <div className="flex gap-3">
                                     <button 
                                         onClick={handleCopyReport}
-                                        disabled={batchSummary.length === 0 && skippedSummary.length === 0}
+                                        disabled={batchSummary.length === 0 && skippedSummary.length === 0 && mismatchSummary.length === 0}
                                         className={`h-12 px-6 rounded-2xl transition-all text-sm font-bold flex items-center gap-2 ${
-                                            (batchSummary.length === 0 && skippedSummary.length === 0)
+                                            (batchSummary.length === 0 && skippedSummary.length === 0 && mismatchSummary.length === 0)
                                             ? 'bg-slate-50 dark:bg-slate-900 text-slate-300 dark:text-slate-600 cursor-not-allowed border border-slate-100 dark:border-slate-800'
                                             : isCopied 
                                                 ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
@@ -616,6 +626,26 @@ const Dashboard = ({ user }) => {
                                         <div className="py-10 flex flex-col items-center justify-center opacity-30">
                                             <span className="material-symbols-outlined text-6xl mb-4">info</span>
                                             <p className="text-xl font-black">No updates made</p>
+                                        </div>
+                                    )}
+
+                                    {mismatchSummary.length > 0 && (
+                                        <div className="pt-8 border-t border-slate-200 dark:border-slate-800">
+                                            <div className="flex items-center justify-between mb-6">
+                                                <h4 className="text-sm font-black uppercase tracking-widest text-rose-600 dark:text-rose-400 flex items-center gap-3">
+                                                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                                                    Mismatched Entries
+                                                </h4>
+                                                <span className="px-3 py-1 bg-rose-500/10 text-rose-600 rounded-full text-[10px] font-black">{mismatchSummary.length} Records</span>
+                                            </div>
+                                            <div className="grid grid-cols-1 gap-2 opacity-95">
+                                                {mismatchSummary.slice().sort((a, b) => a.localeCompare(b)).map((detail, idx) => (
+                                                    <div key={idx} className="flex gap-3 text-xs font-semibold text-rose-600 dark:text-rose-400 leading-relaxed pl-5 relative">
+                                                        <span className="absolute left-0 top-1.5 w-1.5 h-1.5 rounded-full bg-rose-500/40" />
+                                                        {detail}
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     )}
 

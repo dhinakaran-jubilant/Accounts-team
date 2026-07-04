@@ -1503,6 +1503,7 @@ def upload_day_book():
         updated_count = 0
         updated_details = []
         skipped_details = []
+        mismatch_details = []
 
         for index, row in receipt_df.iterrows():
             try:
@@ -1603,10 +1604,10 @@ def upload_day_book():
                     credit_amount = 0.0
                 
                 if round(abs(expected_amount - credit_amount), 2) > 0.05:
-                    return jsonify({
-                        'success': False,
-                        'error': f"Amount mismatch in Day Book Excel at Row {index+1} ({loan_ref_id} EMI {emi_no}): Installment amount is {expected_amount:.2f}, but Credit column has {credit_amount:.2f}."
-                    }), 400
+                    mismatch_details.append(
+                        f"Row {index+1} ({loan_ref_id} EMI {emi_no}): Installment amount is {expected_amount:.2f}, but Credit column has {credit_amount:.2f}."
+                    )
+                    continue
 
                 target_installment.received_date = received_date
                 updated_count += 1
@@ -1622,7 +1623,8 @@ def upload_day_book():
             'message': message,
             'updated_count': updated_count,
             'updated_details': updated_details,
-            'skipped_details': skipped_details
+            'skipped_details': skipped_details,
+            'mismatch_details': mismatch_details
         }), 200
     except Exception as e:
         db.session.rollback()

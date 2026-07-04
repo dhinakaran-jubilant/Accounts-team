@@ -244,6 +244,7 @@ const JlDueReport = ({ user }) => {
     const [successMessage, setSuccessMessage] = useState('');
     const [updatedDetails, setUpdatedDetails] = useState([]);
     const [skippedDetails, setSkippedDetails] = useState([]);
+    const [mismatchDetails, setMismatchDetails] = useState([]);
     const [showSuccessPopup, setShowSuccessPopup] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
     const [accounts, setAccounts] = useState([{ name: '', share: '' }]);
@@ -493,6 +494,7 @@ const JlDueReport = ({ user }) => {
                             setSuccessMessage(result.message);
                             setUpdatedDetails(result.updated_details || []);
                             setSkippedDetails(result.skipped_details || []);
+                            setMismatchDetails(result.mismatch_details || []);
                             setShowSuccessPopup(true);
                             fetchLoans();
                         } else {
@@ -2579,11 +2581,28 @@ if (isDetailed) {
                             </div>
                         )}
 
+                        {mismatchDetails && mismatchDetails.length > 0 && (
+                            <div className="w-full text-left mb-6">
+                                <p className="text-[10px] font-bold text-rose-500 dark:text-rose-400 uppercase tracking-wider mb-2 px-1">Mismatched Records:</p>
+                                <div className="max-h-32 overflow-y-auto pr-2 scrollbar-premium bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-805 p-3">
+                                    <ul className="space-y-1.5">
+                                        {[...mismatchDetails].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map((detail, i) => (
+                                            <li key={i} className="text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-start gap-2 leading-relaxed">
+                                                <span className="material-symbols-outlined text-[14px] text-rose-500 mt-0.5">error</span>
+                                                {detail}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+                        )}
+
                         <button
                             onClick={() => {
                                 setShowSuccessPopup(false);
                                 setUpdatedDetails([]);
                                 setSkippedDetails([]);
+                                setMismatchDetails([]);
                             }}
                             className="w-full py-3 px-4 text-sm font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800/50 dark:text-emerald-400 dark:hover:bg-emerald-900/60 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
                         >
