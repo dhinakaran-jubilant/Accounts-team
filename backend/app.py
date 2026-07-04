@@ -1591,13 +1591,8 @@ def upload_day_book():
                     skipped_details.append(f"{loan_ref_id} EMI {emi_no}: Date Error ({str(e)})")
                     continue
 
-                # Compare Credit with primary amount - checked only after EMI number and Date checks pass
-                primary_total = (loan.primary_account_amount or 0) + (loan.primary_account_interest or 0)
-                secondary_total = sum((acc.share or 0) + (acc.interest_amount or 0) for acc in loan.remaining_accounts)
-                grand_total = primary_total + secondary_total
-                
-                primary_repay_percent = (primary_total / grand_total) * 100 if grand_total > 0 else 0
-                primary_amount = target_installment.amount * (primary_repay_percent / 100)
+                # Compare Credit with total installment amount - checked only after EMI number and Date checks pass
+                expected_amount = target_installment.amount
                 
                 credit_val = row.get("Credit")
                 try:
@@ -1607,10 +1602,10 @@ def upload_day_book():
                 except ValueError:
                     credit_amount = 0.0
                 
-                if round(abs(primary_amount - credit_amount), 2) > 0.05:
+                if round(abs(expected_amount - credit_amount), 2) > 0.05:
                     return jsonify({
                         'success': False,
-                        'error': f"Amount mismatch in Day Book Excel at Row {index+1} ({loan_ref_id} EMI {emi_no}): Installment primary amount is {primary_amount:.2f}, but Credit column has {credit_amount:.2f}."
+                        'error': f"Amount mismatch in Day Book Excel at Row {index+1} ({loan_ref_id} EMI {emi_no}): Installment amount is {expected_amount:.2f}, but Credit column has {credit_amount:.2f}."
                     }), 400
 
                 target_installment.received_date = received_date
