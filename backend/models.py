@@ -184,6 +184,7 @@ class Notification(db.Model):
 class ShortLoan(db.Model):
     __tablename__ = 'short_loans'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    loan_id = db.Column(db.String(100), nullable=True)
     client_name = db.Column(db.String(255), nullable=False)
     loan_amount = db.Column(db.Float, nullable=False)
     int_per_day = db.Column(db.Float, nullable=False)
@@ -198,3 +199,13 @@ class ShortLoan(db.Model):
     account = db.Column(db.String(100), nullable=True)
     close_date = db.Column(db.String(100), nullable=True)
     renew_history = db.Column(db.Text, nullable=True)
+
+class AccountName(db.Model):
+    __tablename__ = 'accounts_name'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255), nullable=False)
+    acronym = db.Column(db.String(50), nullable=False, unique=True)
+    color = db.Column(db.String(50), default='blue')
+    type = db.Column(db.String(50), default='jl_report', nullable=True) # 'jl_report' or 'short_loan'
+    is_need_approval = db.Column(db.Boolean, default=True, nullable=True)
+

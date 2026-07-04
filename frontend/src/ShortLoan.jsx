@@ -10,7 +10,7 @@ import { createPortal } from 'react-dom';
 import ExcelJS from 'exceljs';
 
 const FOLLOWERS = ['ANAND', 'CHANDRU', 'GOWTHAM', 'JAYASEELAN', 'KOUSHIK', 'MANIKANDAN', 'SUDHAKAR', 'VEERAPPAN'];
-const ACCOUNTS = ['AS', 'ASQ', 'NEXUS', 'RE', 'SCS', 'SENTHIL VADIVEL', 'SN'];
+const ACCOUNTS = ['AS', 'ASQ', 'JC', 'NEXUS', 'RE', 'SCS', 'SENTHIL VADIVEL', 'SN'];
 
 const calculateDaysRecd = (dateStr, closeDateStr) => {
     if (!dateStr) return 0;
@@ -359,6 +359,23 @@ const calculateTotalRepayable = (loanAmount, intPerDay, loanDate, closeDateStr, 
 
 const ShortLoan = ({ user }) => {
     const [loans, setLoans] = useState([]);
+    const userPermissions = useMemo(() => {
+        if (!user) return [];
+        let perms = user.permissions;
+        if (typeof perms === 'string') {
+            try {
+                perms = JSON.parse(perms);
+            } catch (e) {
+                perms = [];
+            }
+        }
+        return Array.isArray(perms) ? perms : [];
+    }, [user]);
+
+    const allowedAccounts = useMemo(() => {
+        if (user?.role === 'admin') return ACCOUNTS;
+        return ACCOUNTS.filter(acc => userPermissions.some(p => p.toUpperCase().trim() === acc.toUpperCase().trim()));
+    }, [user, userPermissions]);
     const [loading, setLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -669,6 +686,7 @@ const ShortLoan = ({ user }) => {
             const worksheetColumns = [
                 { key: 'sno', width: 8 },
                 { key: 'date', width: 15 },
+                { key: 'loan_id', width: 18 },
                 { key: 'client', width: 35 },
                 { key: 'follower', width: 20 }
             ];
@@ -697,7 +715,7 @@ const ShortLoan = ({ user }) => {
 
             const headerRow = worksheet.getRow(3);
             headerRow.height = 24;
-            const headers = ['S.No', 'DATE', 'CLIENT', 'FOLLOWER', ...sortedAccounts];
+            const headers = ['S.No', 'DATE', 'LOAN ID', 'CLIENT', 'FOLLOWER', ...sortedAccounts];
             headers.forEach((h, idx) => {
                 const cell = headerRow.getCell(idx + 1);
                 cell.value = h;
@@ -715,6 +733,7 @@ const ShortLoan = ({ user }) => {
                 if (!groups[key]) {
                     groups[key] = {
                         date: dateStr,
+                        loan_ids: [],
                         client: client,
                         follower: (loan.follower || '').toUpperCase().trim(),
                         amounts: {}
@@ -722,6 +741,9 @@ const ShortLoan = ({ user }) => {
                     sortedAccounts.forEach(acc => {
                         groups[key].amounts[acc] = 0;
                     });
+                }
+                if (loan.loan_id && !groups[key].loan_ids.includes(loan.loan_id)) {
+                    groups[key].loan_ids.push(loan.loan_id);
                 }
                 let acc = (loan.account || '').toUpperCase().trim();
                 if (acc === 'ASQ' || acc === 'RE') {
@@ -773,6 +795,7 @@ const ShortLoan = ({ user }) => {
                 const rowValues = [
                     listCount,
                     g.date,
+                    g.loan_ids.join(', ') || '—',
                     g.client,
                     g.follower
                 ];
@@ -785,11 +808,11 @@ const ShortLoan = ({ user }) => {
                     cell.value = val;
                     cell.border = thinBorder;
                     cell.font = { name: 'Trebuchet MS', size: 10 };
-                    if (idx === 0 || idx === 1) {
+                    if (idx === 0 || idx === 1 || idx === 2) {
                         cell.alignment = { horizontal: 'center', vertical: 'middle' };
-                    } else if (idx === 2 || idx === 3) {
+                    } else if (idx === 3 || idx === 4) {
                         cell.alignment = { horizontal: 'left', vertical: 'middle' };
-                    } else if (idx >= 4) {
+                    } else if (idx >= 5) {
                         cell.alignment = { horizontal: 'right', vertical: 'middle' };
                         if (val !== null) {
                             cell.numFmt = '#,##0';
@@ -803,7 +826,7 @@ const ShortLoan = ({ user }) => {
             const totalRow = worksheet.getRow(currentExcelRow);
             totalRow.height = 22;
 
-            worksheet.mergeCells(`A${currentExcelRow}:D${currentExcelRow}`);
+            worksheet.mergeCells(`A${currentExcelRow}:E${currentExcelRow}`);
             const totalLabelCell = worksheet.getCell(`A${currentExcelRow}`);
             totalLabelCell.value = 'TOTAL';
             totalLabelCell.font = { bold: true, name: 'Trebuchet MS', size: 10 };
@@ -813,6 +836,7 @@ const ShortLoan = ({ user }) => {
             worksheet.getCell(`B${currentExcelRow}`).border = thinBorder;
             worksheet.getCell(`C${currentExcelRow}`).border = thinBorder;
             worksheet.getCell(`D${currentExcelRow}`).border = thinBorder;
+            worksheet.getCell(`E${currentExcelRow}`).border = thinBorder;
 
             const getColLetter = (colIdx) => {
                 let temp = colIdx;
@@ -827,7 +851,7 @@ const ShortLoan = ({ user }) => {
 
             const lastDataRow = currentExcelRow > 4 ? currentExcelRow - 1 : 4;
             for (let i = 0; i < sortedAccounts.length; i++) {
-                const colIdx = 5 + i;
+                const colIdx = 6 + i;
                 const colLetter = getColLetter(colIdx);
                 const cell = totalRow.getCell(colIdx);
                 cell.value = { formula: `=SUM(${colLetter}4:${colLetter}${lastDataRow})` };
@@ -861,6 +885,11 @@ const ShortLoan = ({ user }) => {
             const worksheet = workbook.addWorksheet('Pending List');
             
             let exportLoans = loans.filter(loan => {
+                if (user?.role !== 'admin') {
+                    const loanAcc = (loan.account || '').toUpperCase().trim();
+                    const hasPerm = userPermissions.some(p => p.toUpperCase().trim() === loanAcc);
+                    if (!hasPerm) return false;
+                }
                 let matchesSearch = true;
                 if (searchTerm) {
                     const term = searchTerm.toLowerCase();
@@ -899,6 +928,7 @@ const ShortLoan = ({ user }) => {
             const worksheetColumns = [
                 { key: 'sno', width: 8 },
                 { key: 'date', width: 15 },
+                { key: 'loan_id', width: 18 },
                 { key: 'client', width: 35 },
                 { key: 'follower', width: 20 },
                 { key: 'loan_amount', width: 15 },
@@ -926,7 +956,7 @@ const ShortLoan = ({ user }) => {
             worksheet.getRow(2).height = 15;
             const headerRow = worksheet.getRow(3);
             headerRow.height = 24;
-            const headers = ['S.No', 'DATE', 'CLIENT', 'FOLLOWER', 'LOAN AMOUNT', 'TENURE DAYS', 'ACTUAL DAYS', 'DELAY DAYS', ...sortedAccounts];
+            const headers = ['S.No', 'DATE', 'LOAN ID', 'CLIENT', 'FOLLOWER', 'LOAN AMOUNT', 'TENURE DAYS', 'ACTUAL DAYS', 'DELAY DAYS', ...sortedAccounts];
             headers.forEach((h, idx) => {
                 const cell = headerRow.getCell(idx + 1);
                 cell.value = h;
@@ -943,6 +973,7 @@ const ShortLoan = ({ user }) => {
                 if (!groups[key]) {
                     groups[key] = {
                         date: dateStr,
+                        loan_id: loan.loan_id || '—',
                         client: (loan.client_name || '').toUpperCase().trim(),
                         follower: (loan.follower || '').toUpperCase().trim(),
                         loanAmount: Number(loan.loan_amount || 0),
@@ -969,14 +1000,14 @@ const ShortLoan = ({ user }) => {
                 listCount++;
                 const row = worksheet.getRow(currentExcelRow);
                 row.height = 20;
-                const rowValues = [listCount, g.date, g.client, g.follower, g.loanAmount, g.tenureDays, g.actualDays, g.delayDays, ...sortedAccounts.map(acc => g.amounts[acc] || null)];
+                const rowValues = [listCount, g.date, g.loan_id, g.client, g.follower, g.loanAmount, g.tenureDays, g.actualDays, g.delayDays, ...sortedAccounts.map(acc => g.amounts[acc] || null)];
                 rowValues.forEach((val, idx) => {
                     const cell = row.getCell(idx + 1);
                     cell.value = val;
                     cell.border = thinBorder;
                     cell.font = { name: 'Trebuchet MS', size: 10 };
-                    if ([0, 1, 5, 6, 7].includes(idx)) cell.alignment = { horizontal: 'center', vertical: 'middle' };
-                    else if ([2, 3].includes(idx)) cell.alignment = { horizontal: 'left', vertical: 'middle' };
+                    if ([0, 1, 2, 6, 7, 8].includes(idx)) cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                    else if ([3, 4].includes(idx)) cell.alignment = { horizontal: 'left', vertical: 'middle' };
                     else {
                         cell.alignment = { horizontal: 'right', vertical: 'middle' };
                         if (val !== null) cell.numFmt = '#,##0';
@@ -987,12 +1018,12 @@ const ShortLoan = ({ user }) => {
 
             const totalRow = worksheet.getRow(currentExcelRow);
             totalRow.height = 22;
-            worksheet.mergeCells(`A${currentExcelRow}:D${currentExcelRow}`);
+            worksheet.mergeCells(`A${currentExcelRow}:E${currentExcelRow}`);
             const totalLabelCell = worksheet.getCell(`A${currentExcelRow}`);
             totalLabelCell.value = 'TOTAL';
             totalLabelCell.font = { bold: true, name: 'Trebuchet MS', size: 10 };
             totalLabelCell.alignment = { horizontal: 'right', vertical: 'middle' };
-            ['A', 'B', 'C', 'D'].forEach(col => worksheet.getCell(`${col}${currentExcelRow}`).border = thinBorder);
+            ['A', 'B', 'C', 'D', 'E'].forEach(col => worksheet.getCell(`${col}${currentExcelRow}`).border = thinBorder);
             
             const getColLetter = (colIdx) => {
                 let temp = colIdx, letter = '';
@@ -1005,22 +1036,22 @@ const ShortLoan = ({ user }) => {
             };
 
             const lastDataRow = currentExcelRow - 1;
-            // Total for LOAN AMOUNT (col 5)
-            const loanAmtTotalCell = totalRow.getCell(5);
-            loanAmtTotalCell.value = { formula: `=SUM(E4:E${lastDataRow})` };
+            // Total for LOAN AMOUNT (col 6)
+            const loanAmtTotalCell = totalRow.getCell(6);
+            loanAmtTotalCell.value = { formula: `=SUM(F4:F${lastDataRow})` };
             loanAmtTotalCell.font = { bold: true, name: 'Trebuchet MS', size: 10 };
             loanAmtTotalCell.alignment = { horizontal: 'right', vertical: 'middle' };
             loanAmtTotalCell.numFmt = '#,##0';
             loanAmtTotalCell.border = thinBorder;
 
             // Empty cells for tenure, actual and delay days with borders
-            totalRow.getCell(6).border = thinBorder;
             totalRow.getCell(7).border = thinBorder;
             totalRow.getCell(8).border = thinBorder;
+            totalRow.getCell(9).border = thinBorder;
 
-            // Total for each account column (starting at col 9)
+            // Total for each account column (starting at col 10)
             for (let i = 0; i < sortedAccounts.length; i++) {
-                const colIdx = 9 + i;
+                const colIdx = 10 + i;
                 const colLetter = getColLetter(colIdx);
                 const cell = totalRow.getCell(colIdx);
                 cell.value = { formula: `=SUM(${colLetter}4:${colLetter}${lastDataRow})` };
@@ -1078,6 +1109,7 @@ const ShortLoan = ({ user }) => {
             worksheet.columns = [
                 { key: 'sno', width: 8 },
                 { key: 'date', width: 15 },
+                { key: 'loan_id', width: 18 },
                 { key: 'client', width: 30 },
                 { key: 'follower', width: 20 },
                 { key: 'acc', width: 10 },
@@ -1108,7 +1140,7 @@ const ShortLoan = ({ user }) => {
 
             const headerRow = worksheet.getRow(3);
             headerRow.height = 24;
-            const headers = ['S.No', 'DATE', 'CLIENT', 'FOLLOWER', 'ACC', 'PRINCIPAL', 'INTEREST', 'REPAYMENT', 'RECEIVED', 'TDS'];
+            const headers = ['S.No', 'DATE', 'LOAN ID', 'CLIENT', 'FOLLOWER', 'ACC', 'PRINCIPAL', 'INTEREST', 'REPAYMENT', 'RECEIVED', 'TDS'];
             headers.forEach((h, idx) => {
                 const cell = headerRow.getCell(idx + 1);
                 cell.value = h;
@@ -1137,35 +1169,36 @@ const ShortLoan = ({ user }) => {
                 const received = repayment - tdsAmount;
 
                 const rowValues = [
-                    listCount,
-                    closeDateStr,
-                    (loan.client_name || '').toUpperCase().trim(),
-                    (loan.follower || '').toUpperCase().trim(),
-                    (loan.account || '').toUpperCase().trim(),
-                    principal,
-                    interest,
-                    repayment,
-                    received,
-                    tdsAmount
-                ];
-
-                rowValues.forEach((val, idx) => {
-                    const cell = row.getCell(idx + 1);
-                    cell.value = val;
-                    cell.border = thinBorder;
-                    cell.font = { name: 'Trebuchet MS', size: 10 };
-                    if (idx >= 0 && idx <= 1) {
-                        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-                    } else if (idx >= 2 && idx <= 3) {
-                        cell.alignment = { horizontal: 'left', vertical: 'middle' };
-                    } else if (idx === 4) {
-                        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-                    } else if (idx >= 5) {
-                        cell.alignment = { horizontal: 'right', vertical: 'middle' };
-                        cell.numFmt = '#,##0';
-                    }
-                });
-
+                     listCount,
+                     closeDateStr,
+                     loan.loan_id || '—',
+                     (loan.client_name || '').toUpperCase().trim(),
+                     (loan.follower || '').toUpperCase().trim(),
+                     (loan.account || '').toUpperCase().trim(),
+                     principal,
+                     interest,
+                     repayment,
+                     received,
+                     tdsAmount
+                 ];
+ 
+                 rowValues.forEach((val, idx) => {
+                     const cell = row.getCell(idx + 1);
+                     cell.value = val;
+                     cell.border = thinBorder;
+                     cell.font = { name: 'Trebuchet MS', size: 10 };
+                     if (idx >= 0 && idx <= 2) {
+                         cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                     } else if (idx >= 3 && idx <= 4) {
+                         cell.alignment = { horizontal: 'left', vertical: 'middle' };
+                     } else if (idx === 5) {
+                         cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                     } else if (idx >= 6) {
+                         cell.alignment = { horizontal: 'right', vertical: 'middle' };
+                         cell.numFmt = '#,##0';
+                     }
+                 });
+ 
                 currentExcelRow++;
             });
 
@@ -1173,13 +1206,13 @@ const ShortLoan = ({ user }) => {
             const totalRow = worksheet.getRow(currentExcelRow);
             totalRow.height = 22;
 
-            worksheet.mergeCells(`A${currentExcelRow}:E${currentExcelRow}`);
+            worksheet.mergeCells(`A${currentExcelRow}:F${currentExcelRow}`);
             const totalLabelCell = worksheet.getCell(`A${currentExcelRow}`);
             totalLabelCell.value = 'TOTAL';
             totalLabelCell.font = { bold: true, name: 'Trebuchet MS', size: 10 };
             totalLabelCell.alignment = { horizontal: 'right', vertical: 'middle' };
 
-            for (let c = 1; c <= 5; c++) {
+            for (let c = 1; c <= 6; c++) {
                 totalRow.getCell(c).border = thinBorder;
             }
 
@@ -1194,8 +1227,8 @@ const ShortLoan = ({ user }) => {
                 return letter;
             };
 
-            // Formulas for numeric columns F, G, H, I, J
-            for (let c = 6; c <= 10; c++) {
+            // Formulas for numeric columns G, H, I, J, K (7 to 11)
+            for (let c = 7; c <= 11; c++) {
                 const colLetter = getColLetter(c);
                 const cell = totalRow.getCell(c);
                 cell.value = { formula: `=SUM(${colLetter}4:${colLetter}${currentExcelRow - 1})` };
@@ -1229,6 +1262,11 @@ const ShortLoan = ({ user }) => {
             const worksheet = workbook.addWorksheet('Interest Pending List');
             
             let exportLoans = loans.filter(loan => {
+                if (user?.role !== 'admin') {
+                    const loanAcc = (loan.account || '').toUpperCase().trim();
+                    const hasPerm = userPermissions.some(p => p.toUpperCase().trim() === loanAcc);
+                    if (!hasPerm) return false;
+                }
                 let matchesSearch = true;
                 if (searchTerm) {
                     const term = searchTerm.toLowerCase();
@@ -1289,6 +1327,7 @@ const ShortLoan = ({ user }) => {
             const worksheetColumns = [
                 { key: 'sno', width: 8 },
                 { key: 'date', width: 15 },
+                { key: 'loan_id', width: 18 },
                 { key: 'client', width: 35 },
                 { key: 'follower', width: 20 },
                 { key: 'loan_amount', width: 15 },
@@ -1320,7 +1359,7 @@ const ShortLoan = ({ user }) => {
 
             const headerRow = worksheet.getRow(3);
             headerRow.height = 24;
-            const headers = ['S.No', 'DATE', 'CLIENT', 'FOLLOWER', 'LOAN AMOUNT', 'TENURE DAYS', 'ACTUAL DAYS', 'DELAY DAYS', ...sortedAccounts];
+            const headers = ['S.No', 'DATE', 'LOAN ID', 'CLIENT', 'FOLLOWER', 'LOAN AMOUNT', 'TENURE DAYS', 'ACTUAL DAYS', 'DELAY DAYS', ...sortedAccounts];
             headers.forEach((h, idx) => {
                 const cell = headerRow.getCell(idx + 1);
                 cell.value = h;
@@ -1338,6 +1377,7 @@ const ShortLoan = ({ user }) => {
                 if (!groups[key]) {
                     groups[key] = {
                         date: dateStr,
+                        loan_id: loan.loan_id || '—',
                         client: client,
                         follower: (loan.follower || '').toUpperCase().trim(),
                         loanAmount: Number(loan.loan_amount || 0),
@@ -1401,6 +1441,7 @@ const ShortLoan = ({ user }) => {
                 const rowValues = [
                     listCount,
                     g.date,
+                    g.loan_id,
                     g.client,
                     g.follower,
                     g.loanAmount,
@@ -1417,11 +1458,11 @@ const ShortLoan = ({ user }) => {
                     cell.value = val;
                     cell.border = thinBorder;
                     cell.font = { name: 'Trebuchet MS', size: 10 };
-                    if (idx === 0 || idx === 1 || idx === 5 || idx === 6 || idx === 7) {
+                    if (idx === 0 || idx === 1 || idx === 2 || idx === 6 || idx === 7 || idx === 8) {
                         cell.alignment = { horizontal: 'center', vertical: 'middle' };
-                    } else if (idx === 2 || idx === 3) {
+                    } else if (idx === 3 || idx === 4) {
                         cell.alignment = { horizontal: 'left', vertical: 'middle' };
-                    } else if (idx === 4 || idx >= 8) {
+                    } else if (idx === 5 || idx >= 9) {
                         cell.alignment = { horizontal: 'right', vertical: 'middle' };
                         if (val !== null) {
                             cell.numFmt = '#,##0';
@@ -1435,13 +1476,13 @@ const ShortLoan = ({ user }) => {
             const totalRow = worksheet.getRow(currentExcelRow);
             totalRow.height = 22;
 
-            worksheet.mergeCells(`A${currentExcelRow}:D${currentExcelRow}`);
+            worksheet.mergeCells(`A${currentExcelRow}:E${currentExcelRow}`);
             const totalLabelCell = worksheet.getCell(`A${currentExcelRow}`);
             totalLabelCell.value = 'TOTAL';
             totalLabelCell.font = { bold: true, name: 'Trebuchet MS', size: 10 };
             totalLabelCell.alignment = { horizontal: 'right', vertical: 'middle' };
 
-            for (let c = 1; c <= 4; c++) {
+            for (let c = 1; c <= 5; c++) {
                 totalRow.getCell(c).border = thinBorder;
             }
 
@@ -1457,22 +1498,22 @@ const ShortLoan = ({ user }) => {
             };
 
             const lastDataRow = currentExcelRow > 4 ? currentExcelRow - 1 : 4;
-            // Total for LOAN AMOUNT (col 5)
-            const loanAmtTotalCell = totalRow.getCell(5);
-            loanAmtTotalCell.value = { formula: `=SUM(E4:E${lastDataRow})` };
+            // Total for LOAN AMOUNT (col 6)
+            const loanAmtTotalCell = totalRow.getCell(6);
+            loanAmtTotalCell.value = { formula: `=SUM(F4:F${lastDataRow})` };
             loanAmtTotalCell.font = { bold: true, name: 'Trebuchet MS', size: 10 };
             loanAmtTotalCell.alignment = { horizontal: 'right', vertical: 'middle' };
             loanAmtTotalCell.numFmt = '#,##0';
             loanAmtTotalCell.border = thinBorder;
 
             // Empty cells for tenure, actual and delay days with borders
-            totalRow.getCell(6).border = thinBorder;
             totalRow.getCell(7).border = thinBorder;
             totalRow.getCell(8).border = thinBorder;
+            totalRow.getCell(9).border = thinBorder;
 
-            // Total for each account column (starting at col 9)
+            // Total for each account column (starting at col 10)
             for (let i = 0; i < sortedAccounts.length; i++) {
-                const colIdx = 9 + i;
+                const colIdx = 10 + i;
                 const colLetter = getColLetter(colIdx);
                 const cell = totalRow.getCell(colIdx);
                 cell.value = { formula: `=SUM(${colLetter}4:${colLetter}${lastDataRow})` };
@@ -1892,6 +1933,11 @@ const ShortLoan = ({ user }) => {
 
     // Filter loans based on search, status, and date range
     const filteredLoans = loans.filter(loan => {
+        if (user?.role !== 'admin') {
+            const loanAcc = (loan.account || '').toUpperCase().trim();
+            const hasPerm = userPermissions.some(p => p.toUpperCase().trim() === loanAcc);
+            if (!hasPerm) return false;
+        }
         let matchesSearch = true;
         if (searchTerm) {
             const term = searchTerm.toLowerCase();
@@ -1950,6 +1996,10 @@ const ShortLoan = ({ user }) => {
                     valA = a.id || 0;
                     valB = b.id || 0;
                     break;
+                case 'loan_id':
+                    valA = (a.loan_id || '').toLowerCase();
+                    valB = (b.loan_id || '').toLowerCase();
+                    return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
                 case 'loan_date':
                     valA = a.loan_date ? new Date(a.loan_date).getTime() : 0;
                     valB = b.loan_date ? new Date(b.loan_date).getTime() : 0;
@@ -2231,7 +2281,7 @@ const ShortLoan = ({ user }) => {
                             <div className="absolute top-[calc(100%+6px)] left-0 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 p-1.5 space-y-1 max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-2 duration-150">
                                 {[
                                     { value: 'ALL', label: 'All Accounts' },
-                                    ...ACCOUNTS.map(a => ({ value: a, label: a }))
+                                    ...allowedAccounts.map(a => ({ value: a, label: a }))
                                 ].map((option) => (
                                     <button
                                         key={option.value}
@@ -2501,6 +2551,20 @@ const ShortLoan = ({ user }) => {
                                     </div>
                                 </th>
                                 <th 
+                                    style={{minWidth:'140px'}} 
+                                    className="px-4 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
+                                    onClick={() => setSortConfig(prev => ({ key: 'loan_id', direction: prev.key === 'loan_id' && prev.direction === 'asc' ? 'desc' : 'asc' }))}
+                                >
+                                    <div className="flex items-left justify-start gap-1">
+                                        Loan ID
+                                        {sortConfig.key === 'loan_id' && (
+                                            <span className="material-symbols-outlined text-[14px]">
+                                                {sortConfig.direction === 'asc' ? 'arrow_upward' : 'arrow_downward'}
+                                            </span>
+                                        )}
+                                    </div>
+                                </th>
+                                <th 
                                     style={{minWidth:'220px'}} 
                                     className="px-4 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
                                     onClick={() => setSortConfig(prev => ({ key: 'client_name', direction: prev.key === 'client_name' && prev.direction === 'asc' ? 'desc' : 'asc' }))}
@@ -2692,6 +2756,11 @@ const ShortLoan = ({ user }) => {
                                         <td className="px-4 py-2 text-center">
                                             <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
                                                 {(currentPage - 1) * itemsPerPage + index + 1}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-2 text-left">
+                                            <span className="text-sm font-mono font-bold text-slate-700 dark:text-slate-300">
+                                                {loan.loan_id || '—'}
                                             </span>
                                         </td>
                                         <td className="px-4 py-2">
@@ -3104,7 +3173,7 @@ const ShortLoan = ({ user }) => {
                                                     >
                                                         Select Account
                                                     </div>
-                                                    {ACCOUNTS.map((a) => (
+                                                    {allowedAccounts.map((a) => (
                                                         <div 
                                                             key={a}
                                                             onClick={() => {
@@ -3200,7 +3269,7 @@ const ShortLoan = ({ user }) => {
                         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/20">
                             <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
                                 <span className="material-symbols-outlined text-primary">description</span>
-                                Loan Details
+                                Loan Details {selectedLoan.loan_id ? ` - ${selectedLoan.loan_id}` : ''}
                             </h3>
                             <div className="flex items-center gap-2">
                                 {!isEditMode && selectedLoan.status !== 'CLOSED' && (
@@ -3396,7 +3465,7 @@ const ShortLoan = ({ user }) => {
                                                     >
                                                         Select Account
                                                     </div>
-                                                    {ACCOUNTS.map((a) => (
+                                                    {allowedAccounts.map((a) => (
                                                         <div 
                                                             key={a}
                                                             onClick={() => {

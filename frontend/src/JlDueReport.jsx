@@ -1802,7 +1802,7 @@ if (isDetailed) {
                                 </button>
                                 
                                 {isAccountDropdownOpen && (
-                                    <div className="absolute top-full left-0 mt-2 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[100] overflow-hidden py-2 animate-in fade-in slide-in-from-top-2 duration-150">
+                                    <div className="absolute top-full left-0 mt-2 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
                                         <div className="max-h-64 overflow-y-auto scrollbar-premium">
                                             <label className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-800/20">
                                                 <input
@@ -1840,13 +1840,13 @@ if (isDetailed) {
                                             ))}
                                         </div>
                                         {adminAccountFilter.length > 0 && (
-                                            <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                                            <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
                                                 <button
                                                     onClick={() => {
                                                         setAdminAccountFilter([]);
                                                         setCurrentPage(1);
                                                     }}
-                                                    className="w-full py-1.5 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
+                                                    className="w-full p-3 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
                                                 >
                                                     Clear Selection
                                                 </button>
@@ -1921,13 +1921,13 @@ if (isDetailed) {
                                             ))}
                                         </div>
                                         {accountFilter.length > 0 && (
-                                            <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                                            <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
                                                 <button
                                                     onClick={() => {
                                                         setAccountFilter([]);
                                                         setCurrentPage(1);
                                                     }}
-                                                    className="w-full py-1.5 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
+                                                    className="w-full p-3 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
                                                 >
                                                     Clear Selection
                                                 </button>
@@ -1999,13 +1999,13 @@ if (isDetailed) {
                                         ))}
                                     </div>
                                     {statusFilter.length > 0 && (
-                                        <div className="p-2.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                                        <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
                                             <button
                                                 onClick={() => {
                                                     setStatusFilter([]);
                                                     setCurrentPage(1);
                                                 }}
-                                                className="w-full py-1.5 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
+                                                className="w-full p-3 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
                                             >
                                                 Clear Selection
                                             </button>

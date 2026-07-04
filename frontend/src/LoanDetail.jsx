@@ -210,7 +210,9 @@ const RepaymentTable = ({
         if (user.role === 'admin') return false;
         const priAcronym = getAcronym(loan.primary_account_name);
         if (user.permissions?.includes(priAcronym)) return false;
-        const secAcronyms = (loan.remaining_accounts || []).map(acc => getAcronym(acc.account_name));
+        const secAcronyms = (loan.remaining_accounts || [])
+            .filter(acc => acc.is_need_approval !== false)
+            .map(acc => getAcronym(acc.account_name));
         return (user.permissions || []).some(perm => secAcronyms.includes(perm));
     }, [user, loan]);
     const hasPrimaryTDS = !isManual && data.some(entry => {
@@ -713,7 +715,7 @@ const RepaymentTable = ({
                                                             const viewerRole = isSecondaryManager ? 'SECONDARY' : 'PRIMARY';
                                                             const editorRole = entry.date_editor_role || 'SECONDARY';
                                                             const isEditor = viewerRole === editorRole;
-                                                            const canApproveOrReject = (isSecondaryManager || canEdit) && !isEditor;
+                                                            const canApproveOrReject = (user?.role === 'admin') || ((isSecondaryManager || canEdit) && !isEditor);
 
                                                             if (entry.date_approval_status === 'PENDING') {
                                                                 if (canApproveOrReject) {
@@ -1870,7 +1872,9 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
         if (user.role === 'admin') return false;
         const priAcronym = getAcronym(loan.primary_account_name);
         if (user.permissions?.includes(priAcronym)) return false;
-        const secAcronyms = (loan.remaining_accounts || []).map(acc => getAcronym(acc.account_name));
+        const secAcronyms = (loan.remaining_accounts || [])
+            .filter(acc => acc.is_need_approval !== false)
+            .map(acc => getAcronym(acc.account_name));
         return (user.permissions || []).some(perm => secAcronyms.includes(perm));
     }, [user, loan]);
 

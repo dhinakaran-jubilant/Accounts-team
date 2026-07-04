@@ -5,7 +5,7 @@ Author: Dhinakaran Sekar
 Email: dhinakaran.s@jubilantenterprises.in
 Date: 2026-04-08 11:53:28
 """
-from models import db, Loan, RemainingAccount, RepaymentSchedule, User, Notification, ShortLoan
+from models import db, Loan, RemainingAccount, RepaymentSchedule, User, Notification, ShortLoan, AccountName
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
 from flask_talisman import Talisman
@@ -23,6 +23,8 @@ import gspread
 import json
 import os
 import re
+import logging
+logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
 app = Flask(__name__, static_folder='../frontend/dist', static_url_path='')
 CORS(app)
@@ -128,10 +130,114 @@ def verify_schema():
     except Exception as e:
         print(f"Schema verification failed: {e}")
 
+def migrate_existing_short_loans():
+    try:
+        acronyms = {
+            'AS': 'AS',
+            'ASQ': 'ASQ',
+            'JC': 'JC',
+            'NEXUS': 'NXS',
+            'RE': 'RE',
+            'SCS': 'SCS',
+            'SENTHIL VADIVEL': 'SV',
+            'SN': 'SN'
+        }
+        # Fetch all ShortLoan where loan_id is NULL or empty
+        loans_to_migrate = ShortLoan.query.filter((ShortLoan.loan_id == None) | (ShortLoan.loan_id == '')).order_by(ShortLoan.id.asc()).all()
+        if not loans_to_migrate:
+            return
+            
+        print(f"Migrating {len(loans_to_migrate)} existing short loans to generate loan_id...")
+        for l in loans_to_migrate:
+            acc_name = l.account
+            prefix = 'SL'
+            if acc_name:
+                acc_name_clean = str(acc_name).upper().strip()
+                if acc_name_clean in acronyms:
+                    prefix = acronyms[acc_name_clean]
+                else:
+                    clean_chars = re.sub(r'[^A-Z]', '', acc_name_clean)
+                    prefix = clean_chars[:4] if clean_chars else 'SL'
+
+            loan_date = l.loan_date
+            year_val = ""
+            if loan_date:
+                if '-' in loan_date:
+                    parts = loan_date.split('-')
+                    if len(parts[0]) == 4:
+                        year_val = parts[0][-2:]
+                    elif len(parts[-1]) == 4:
+                        year_val = parts[-1][-2:]
+            if not year_val:
+                year_val = str(datetime.datetime.now().year)[-2:]
+
+            # Calculate next sequence number for this prefix and year
+            pattern = f"SL{prefix}{year_val}%"
+            last_loan = ShortLoan.query.filter(
+                ShortLoan.loan_id.like(pattern),
+                ShortLoan.id < l.id
+            ).order_by(ShortLoan.loan_id.desc()).first()
+            
+            if last_loan and last_loan.loan_id:
+                try:
+                    seq = int(last_loan.loan_id[-4:])
+                    next_seq = seq + 1
+                except Exception:
+                    next_seq = 1
+            else:
+                next_seq = 1
+                
+            l.loan_id = f"SL{prefix}{year_val}{next_seq:04d}"
+            
+        db.session.commit()
+        print("Existing short loans migration completed successfully!")
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error migrating existing short loans: {e}")
+
+def seed_default_accounts():
+    try:
+        if AccountName.query.first() is None:
+            defaults = [
+                { 'acronym': 'SCS', 'name': 'Surge Capital Solutions', 'color': 'blue' },
+                { 'acronym': 'GC', 'name': 'Growth Capital', 'color': 'indigo' },
+                { 'acronym': 'FC', 'name': 'Finova Capital', 'color': 'emerald' },
+                { 'acronym': 'AS', 'name': 'Ascend Solutions', 'color': 'amber' },
+                { 'acronym': 'ASE', 'name': 'AS Enterprises', 'color': 'rose' },
+                { 'acronym': 'SCE', 'name': 'SC Enterprises', 'color': 'violet' },
+                { 'acronym': 'ASQ', 'name': 'A Square Enterprises', 'color': 'cyan' },
+                { 'acronym': 'SN', 'name': 'S Nirmala', 'color': 'teal' },
+                { 'acronym': 'FE', 'name': 'Fortune Enterprises', 'color': 'orange' },
+                { 'acronym': 'JC', 'name': 'Jubilant Capital', 'color': 'sky' },
+                { 'acronym': 'RP', 'name': 'Raja Priya', 'color': 'pink' }
+            ]
+            for item in defaults:
+                acc = AccountName(name=item['name'], acronym=item['acronym'], color=item['color'])
+                db.session.add(acc)
+            db.session.commit()
+            print("Default accounts seeded successfully.")
+        else:
+            # Clean up existing database accounts suffix if present
+            all_accounts = AccountName.query.all()
+            updated = False
+            for acc in all_accounts:
+                suffix = f" - {acc.acronym}"
+                if acc.name.endswith(suffix):
+                    acc.name = acc.name[:-len(suffix)]
+                    updated = True
+            if updated:
+                db.session.commit()
+                print("Cleaned up acronym suffixes from existing database account names.")
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error seeding default accounts: {e}")
+
 with app.app_context():
     try:
         db.create_all()
         verify_schema()
+        migrate_existing_short_loans()
+        seed_default_accounts()
         print("Connected to PostgreSQL and verified tables.")
         
         # Robust Seed Logic: Check for each user individually
@@ -243,6 +349,7 @@ def find_secondary_manager(secondary_accounts):
     """
     Finds a user who manages one of the secondary accounts as their primary.
     Returns the first matching user's name, or 'System Admin' if no match.
+    Only considers accounts where is_need_approval is enabled.
     """
     if not secondary_accounts:
         return 'System Admin'
@@ -250,10 +357,20 @@ def find_secondary_manager(secondary_accounts):
     # Get acronyms for all secondary accounts
     sec_acronyms = [get_acronym(acc.get('name') or acc.get('account_name')).strip().upper() for acc in secondary_accounts]
     
+    # Filter sec_acronyms to keep only those where is_need_approval is True
+    approval_acronyms = []
+    for acr in sec_acronyms:
+        acc_name_obj = AccountName.query.filter_by(acronym=acr).first()
+        if acc_name_obj is None or acc_name_obj.is_need_approval:
+            approval_acronyms.append(acr)
+            
+    if not approval_acronyms:
+        return 'System Admin'
+    
     # Fetch all users who are not System Admin
     users = User.query.filter(User.name != 'System Admin').all()
     
-    for acronym in sec_acronyms:
+    for acronym in approval_acronyms:
         for u in users:
             try:
                 perms = json.loads(u.permissions) if u.permissions else []
@@ -564,6 +681,137 @@ def update_system_config():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/accounts-name', methods=['GET'])
+def get_accounts_name():
+    try:
+        accounts = AccountName.query.order_by(AccountName.id.asc()).all()
+        result = []
+        for acc in accounts:
+            result.append({
+                'id': acc.id,
+                'name': acc.name,
+                'acronym': acc.acronym,
+                'color': acc.color,
+                'type': acc.type or 'jl_report',
+                'is_need_approval': acc.is_need_approval if acc.is_need_approval is not None else True
+            })
+        return jsonify({"success": True, "accounts": result}), 200
+    except Exception as e:
+        print(f"Error fetching accounts name: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/accounts-name', methods=['POST'])
+def add_account_name():
+    try:
+        data = request.json or {}
+        name = data.get('name')
+        acronym = data.get('acronym')
+        type_val = data.get('type', 'jl_report')
+        is_need_approval = bool(data.get('is_need_approval', True))
+        
+        if not name or not acronym:
+            return jsonify({"success": False, "message": "Name and acronym are required"}), 400
+            
+        # Clean inputs
+        name = name.strip()
+        acronym = acronym.strip().upper()
+        
+        # Select color based on count
+        colors = ['blue', 'indigo', 'emerald', 'amber', 'rose', 'violet', 'cyan', 'teal', 'orange', 'sky', 'pink']
+        existing_count = AccountName.query.count()
+        color = colors[existing_count % len(colors)]
+        
+        # Check if acronym already exists
+        existing = AccountName.query.filter_by(acronym=acronym).first()
+        if existing:
+            return jsonify({"success": False, "message": f"Account with acronym '{acronym}' already exists"}), 400
+            
+        new_acc = AccountName(
+            name=name,
+            acronym=acronym,
+            color=color,
+            type=type_val,
+            is_need_approval=is_need_approval
+        )
+        db.session.add(new_acc)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True, 
+            "message": "Account name added successfully", 
+            "account": {
+                'id': new_acc.id,
+                'name': new_acc.name,
+                'acronym': new_acc.acronym,
+                'color': new_acc.color,
+                'type': new_acc.type,
+                'is_need_approval': new_acc.is_need_approval
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error adding account name: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/accounts-name/<int:account_id>', methods=['PUT'])
+def update_account_name(account_id):
+    try:
+        acc = AccountName.query.get(account_id)
+        if not acc:
+            return jsonify({"success": False, "message": "Account not found"}), 404
+            
+        data = request.json or {}
+        name = data.get('name')
+        acronym = data.get('acronym')
+        type_val = data.get('type')
+        is_need_approval = data.get('is_need_approval')
+        
+        if name:
+            acc.name = name.strip()
+        if acronym:
+            acronym_clean = acronym.strip().upper()
+            existing = AccountName.query.filter(AccountName.acronym == acronym_clean, AccountName.id != account_id).first()
+            if existing:
+                return jsonify({"success": False, "message": f"Account with acronym '{acronym_clean}' already exists"}), 400
+            acc.acronym = acronym_clean
+        if type_val:
+            acc.type = type_val.strip()
+        if is_need_approval is not None:
+            acc.is_need_approval = bool(is_need_approval)
+            
+        db.session.commit()
+        return jsonify({
+            "success": True, 
+            "message": "Account name updated successfully",
+            "account": {
+                'id': acc.id,
+                'name': acc.name,
+                'acronym': acc.acronym,
+                'color': acc.color,
+                'type': acc.type,
+                'is_need_approval': acc.is_need_approval
+            }
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error updating account name: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/accounts-name/<int:account_id>', methods=['DELETE'])
+def delete_account_name(account_id):
+    try:
+        acc = AccountName.query.get(account_id)
+        if not acc:
+            return jsonify({"success": False, "message": "Account not found"}), 404
+            
+        db.session.delete(acc)
+        db.session.commit()
+        return jsonify({"success": True, "message": "Account name deleted successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error deleting account name: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
 @app.route('/api/users/list', methods=['GET'])
 def get_users_list():
     try:
@@ -613,8 +861,8 @@ def get_approvals():
                 ).order_by(Loan.id.desc()).all()
         else:
             if is_admin:
-                # Admins see loans that are PENDING or VERIFIED
-                loans = Loan.query.filter(Loan.approval_status.in_(['PENDING', 'VERIFIED']), Loan.is_deleted == False).order_by(Loan.id.desc()).all()
+                # Admins only see loans that are VERIFIED (approved by secondary manager first)
+                loans = Loan.query.filter(Loan.approval_status == 'VERIFIED', Loan.is_deleted == False).order_by(Loan.id.desc()).all()
             else:
                 # Regular verifiers see PENDING loans assigned to them
                 loans = Loan.query.filter_by(verified_by=user_name, approval_status='PENDING', is_deleted=False).all()
@@ -665,7 +913,7 @@ def handle_approval_action(loan_id):
             sys_config = load_system_config()
             require_adm = sys_config.get('require_admin_approval', True)
             
-            if actioner_name == 'System Admin' or not require_adm:
+            if (user and user.role == 'admin') or not require_adm:
                 loan.approval_status = 'APPROVED'
             else:
                 loan.approval_status = 'VERIFIED'
@@ -755,8 +1003,12 @@ def handle_docx_upload():
             actioned_by = user.name
             actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
         else:
+            sec_mgr = None
             if require_sec:
-                target_verifier = find_secondary_manager(final_output.get('remaining_accounts', []))
+                sec_mgr = find_secondary_manager(final_output.get('remaining_accounts', []))
+            
+            if sec_mgr and sec_mgr != 'System Admin':
+                target_verifier = sec_mgr
                 loan_status = 'PENDING'
             else:
                 if require_adm:
@@ -910,8 +1162,12 @@ def handle_pdf_upload():
             actioned_by = user.name
             actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
         else:
+            sec_mgr = None
             if require_sec:
-                target_verifier = find_secondary_manager(final_output.get('remaining_accounts', []))
+                sec_mgr = find_secondary_manager(final_output.get('remaining_accounts', []))
+            
+            if sec_mgr and sec_mgr != 'System Admin':
+                target_verifier = sec_mgr
                 loan_status = 'PENDING'
             else:
                 if require_adm:
@@ -1051,8 +1307,13 @@ def get_loan_detail(loan_id):
             return jsonify({'error': 'Loan not found'}), 404
 
         total_i = loan.primary_account_interest + sum(a.interest_amount for a in loan.remaining_accounts)
-        remaining = [
-            {
+        remaining = []
+        for acc in loan.remaining_accounts:
+            acr = get_acronym(acc.account_name).strip().upper()
+            acc_name_obj = AccountName.query.filter_by(acronym=acr).first()
+            is_need_app = acc_name_obj.is_need_approval if acc_name_obj is not None else True
+            
+            remaining.append({
                 'id': acc.id,
                 'account_name': acc.account_name,
                 'share': acc.share,
@@ -1060,9 +1321,8 @@ def get_loan_detail(loan_id):
                 'percentage': acc.percentage,
                 'interest_percentage': (acc.interest_amount / total_i * 100) if total_i > 0 else 0,
                 'tds': acc.tds,
-            }
-            for acc in loan.remaining_accounts
-        ]
+                'is_need_approval': is_need_app
+            })
 
         schedule = [
             {
@@ -1144,6 +1404,24 @@ def upload_files():
             return jsonify({'error': str(e)}), 500
 
     return jsonify({'error': 'Unknown error'}), 500
+
+def parse_date_robustly(date_val):
+    if pd.isna(date_val):
+        return None
+    if isinstance(date_val, (datetime.datetime, datetime.date)):
+        return date_val
+    s = str(date_val).strip()
+    if not s:
+        return None
+    if ' ' in s:
+        s = s.split(' ')[0]
+    s = s.replace('/', '-')
+    for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%d-%m-%y", "%y-%m-%d"):
+        try:
+            return datetime.datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
 
 @app.route('/api/upload-day-book', methods=['POST'])
 def upload_day_book():
@@ -1271,20 +1549,11 @@ def upload_day_book():
                     skipped_details.append(f"Row {index+1} ({loan_ref_id}): EMI '{emi_parts[-1]}' not a number")
                     continue
 
-                received_date = ""
-                if pd.notna(trans_date_raw):
-                    if isinstance(trans_date_raw, (datetime.datetime, datetime.date)):
-                        received_date = trans_date_raw.strftime("%d-%m-%Y")
-                    else:
-                        s_date = str(trans_date_raw).strip()
-                        if re.match(r'\d{2}-\d{2}-\d{2}$', s_date):
-                            d, m, y = s_date.split('-')
-                            received_date = f"{d}-{m}-20{y}"
-                        else:
-                            received_date = s_date
-                else:
-                    skipped_details.append(f"Row {index+1} ({loan_ref_id}): Missing Transaction Date")
+                rec_dt = parse_date_robustly(trans_date_raw)
+                if not rec_dt:
+                    skipped_details.append(f"Row {index+1} ({loan_ref_id}): Missing or Invalid Transaction Date")
                     continue
+                received_date = rec_dt.strftime("%d-%m-%Y")
 
                 if loan.approval_status != 'APPROVED':
                     skipped_details.append(f"{loan_ref_id}: Status '{loan.approval_status}' is not APPROVED")
@@ -1304,8 +1573,11 @@ def upload_day_book():
 
                 try:
                     today = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-                    due_dt = datetime.datetime.strptime(target_installment.date, "%d-%m-%Y")
-                    rec_dt = datetime.datetime.strptime(received_date, "%d-%m-%Y")
+                    due_dt = parse_date_robustly(target_installment.date)
+                    
+                    if not due_dt:
+                        skipped_details.append(f"{loan_ref_id} EMI {emi_no}: Installment due date '{target_installment.date}' format invalid")
+                        continue
                     
                     if due_dt > today:
                         skipped_details.append(f"{loan_ref_id} EMI {emi_no}: Future installment (Due {target_installment.date})")
@@ -1526,7 +1798,12 @@ def send_due_date_notification(loan, new_date, schedule_item=None, editor_name=N
     
     # Determine acronyms
     pri_acronym = get_acronym(loan.primary_account_name)
-    sec_acronyms = [get_acronym(acc.account_name) for acc in loan.remaining_accounts]
+    sec_acronyms = []
+    for acc in loan.remaining_accounts:
+        acr = get_acronym(acc.account_name).strip().upper()
+        acc_name_obj = AccountName.query.filter_by(acronym=acr).first()
+        if acc_name_obj is None or acc_name_obj.is_need_approval:
+            sec_acronyms.append(acr)
     
     all_users = User.query.filter(User.role != 'admin').all()
     
@@ -1556,6 +1833,17 @@ def send_due_date_notification(loan, new_date, schedule_item=None, editor_name=N
     else:
         # Otherwise (edited by primary manager or admin), send to secondary manager(s)
         notified_users = secondary_managers
+        
+    # FALLBACK TO ADMIN: If notified_users is empty, send to admin users
+    if not notified_users:
+        admin_users = User.query.filter_by(role='admin').all()
+        if not admin_users:
+            class DummyUser:
+                def __init__(self, name):
+                    self.name = name
+            notified_users = [DummyUser('System Admin')]
+        else:
+            notified_users = admin_users
         
     # Get all PENDING schedule items for this loan
     pending_items = [s for s in loan.repayment_schedule if s.date_approval_status == 'PENDING']
@@ -2299,6 +2587,7 @@ def get_short_loans():
 
             result.append({
                 'id': l.id,
+                'loan_id': l.loan_id,
                 'client_name': l.client_name,
                 'loan_amount': l.loan_amount,
                 'int_per_day': l.int_per_day,
@@ -2323,7 +2612,54 @@ def get_short_loans():
 def create_short_loan():
     try:
         data = request.json
+        
+        acronyms = {
+            'AS': 'AS',
+            'ASQ': 'ASQ',
+            'JC': 'JC',
+            'NEXUS': 'NXS',
+            'RE': 'RE',
+            'SCS': 'SCS',
+            'SENTHIL VADIVEL': 'SV',
+            'SN': 'SN'
+        }
+        acc_name = data.get('account')
+        prefix = 'SL'
+        if acc_name:
+            acc_name_clean = str(acc_name).upper().strip()
+            if acc_name_clean in acronyms:
+                prefix = acronyms[acc_name_clean]
+            else:
+                clean_chars = re.sub(r'[^A-Z]', '', acc_name_clean)
+                prefix = clean_chars[:4] if clean_chars else 'SL'
+
+        loan_date = data.get('loan_date')
+        year_val = ""
+        if loan_date:
+            if '-' in loan_date:
+                parts = loan_date.split('-')
+                if len(parts[0]) == 4:
+                    year_val = parts[0][-2:]
+                elif len(parts[-1]) == 4:
+                    year_val = parts[-1][-2:]
+        if not year_val:
+            year_val = str(datetime.datetime.now().year)[-2:]
+
+        pattern = f"SL{prefix}{year_val}%"
+        last_loan = ShortLoan.query.filter(ShortLoan.loan_id.like(pattern)).order_by(ShortLoan.loan_id.desc()).first()
+        if last_loan and last_loan.loan_id:
+            try:
+                seq = int(last_loan.loan_id[-4:])
+                next_seq = seq + 1
+            except Exception:
+                next_seq = 1
+        else:
+            next_seq = 1
+
+        generated_loan_id = f"SL{prefix}{year_val}{next_seq:04d}"
+
         new_loan = ShortLoan(
+            loan_id=generated_loan_id,
             client_name=data.get('client_name'),
             loan_amount=float(data.get('loan_amount', 0)),
             int_per_day=float(data.get('int_per_day', 0)),
