@@ -885,7 +885,7 @@ const RepaymentTable = ({
 
                                             {hasSubRows && expandedRows[entry.id] && (
                                                 <tr className="bg-indigo-50/40 dark:bg-indigo-900/20">
-                                                    <td colSpan={isManual ? 8 : 7} className="p-0 border-l-[3px] border-indigo-400 dark:border-indigo-500 rounded-bl-sm">
+                                                    <td colSpan={isManual ? 7 : 6} className="p-0 border-l-[3px] border-indigo-400 dark:border-indigo-500 rounded-bl-sm">
                                                         <div className="transition-all duration-300 ease-in-out overflow-hidden flex justify-end items-center gap-5 max-h-12 py-2.5 px-5 opacity-100">
                                                             <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 shrink-0">↳ Balance Remaining:</span>
                                                         </div>
@@ -1018,7 +1018,7 @@ const RepaymentTable = ({
                                 <tfoot>
                                     {/* 1. Total Row */}
                                     <tr className="bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-200 dark:border-slate-700">
-                                        <td colSpan="3" className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Total</td>
+                                        <td colSpan="3" className="py-3 px-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Total</td>
                                         <td className="py-3 px-5 text-sm font-bold text-slate-900 dark:text-slate-100 text-right">
                                             {fmtINR(amtTotal, false)}
                                         </td>
@@ -1078,7 +1078,7 @@ const RepaymentTable = ({
 
                                     {/* 2. Total Received Row */}
                                     <tr className="bg-emerald-50/30 dark:bg-emerald-950/15 border-t border-slate-200 dark:border-slate-700">
-                                        <td colSpan="3" className="py-3 px-5 text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider text-center">Total Received</td>
+                                        <td colSpan="3" className="py-3 px-5 text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider text-right">Total Received</td>
                                         <td className="py-3 px-5 text-sm font-bold text-emerald-600 dark:text-emerald-400 text-right">
                                             {fmtINR(amtReceived, false)}
                                         </td>
@@ -1143,7 +1143,7 @@ const RepaymentTable = ({
 
                                     {/* 3. Total Balance Row */}
                                     <tr className="bg-indigo-50/30 dark:bg-indigo-950/15 border-t border-slate-200 dark:border-slate-700">
-                                        <td colSpan="3" className="py-3 px-5 text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider text-center">Total Balance</td>
+                                        <td colSpan="3" className="py-3 px-5 text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider text-right">Total Balance</td>
                                         <td className="py-3 px-5 text-sm font-bold text-indigo-600 dark:text-indigo-400 text-right">
                                             {fmtINR(amtBalance, false)}
                                         </td>
