@@ -2117,7 +2117,7 @@ const ShortLoan = ({ user }) => {
                         placeholder="Search by borrower, amount..."
                         value={searchTerm}
                         onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                        className="pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-80 transition-all"
+                        className="pl-10 pr-4 h-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-80 transition-all"
                     />
                 </div>
             </div>
@@ -2135,7 +2135,7 @@ const ShortLoan = ({ user }) => {
                         </p>
                         <button
                             onClick={() => setSuccess(null)}
-                            className="w-full h-14 bg-emerald-500 text-white text-[12px] font-black rounded-2xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 uppercase tracking-widest transition-all"
+                            className="w-full h-10 bg-emerald-500 text-white text-[12px] font-black rounded-xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 uppercase tracking-widest transition-all"
                         >
                             Got it
                         </button>
@@ -2157,7 +2157,7 @@ const ShortLoan = ({ user }) => {
                         </p>
                         <button
                             onClick={() => setError(null)}
-                            className="w-full h-14 bg-rose-500 text-white text-[12px] font-black rounded-2xl hover:bg-rose-600 shadow-lg shadow-rose-500/20 uppercase tracking-widest transition-all"
+                            className="w-full h-10 bg-rose-500 text-white text-[12px] font-black rounded-xl hover:bg-rose-600 shadow-lg shadow-rose-500/20 uppercase tracking-widest transition-all"
                         >
                             Got it
                         </button>
@@ -2173,7 +2173,7 @@ const ShortLoan = ({ user }) => {
                     <button
                         type="button"
                         onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-                        className="h-[38px] min-w-[130px] pl-4 pr-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 text-left"
+                        className="h-10 min-w-[130px] pl-4 pr-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 text-left"
                     >
                         <span>
                             {statusFilter === 'ALL' ? 'All Statuses' : 
@@ -2221,7 +2221,7 @@ const ShortLoan = ({ user }) => {
                     <button
                         type="button"
                         onClick={() => setIsFollowerFilterDropdownOpen(!isFollowerFilterDropdownOpen)}
-                        className="h-[38px] min-w-[150px] pl-4 pr-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 text-left"
+                        className="h-10 min-w-[150px] pl-4 pr-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 text-left"
                     >
                         <span>
                             {followerFilter === 'ALL' ? 'All Followers' : followerFilter}
@@ -2265,7 +2265,7 @@ const ShortLoan = ({ user }) => {
                     <button
                         type="button"
                         onClick={() => setIsAccountFilterDropdownOpen(!isAccountFilterDropdownOpen)}
-                        className="h-[38px] min-w-[130px] pl-4 pr-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 text-left"
+                        className="h-10 min-w-[130px] pl-4 pr-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 text-left"
                     >
                         <span>
                             {accountFilter === 'ALL' ? 'All Accounts' : accountFilter}
@@ -2309,7 +2309,7 @@ const ShortLoan = ({ user }) => {
                     <button
                         type="button"
                         onClick={() => setIsTdsFilterDropdownOpen(!isTdsFilterDropdownOpen)}
-                        className="h-[38px] min-w-[110px] pl-4 pr-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 text-left"
+                        className="h-10 min-w-[110px] pl-4 pr-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 text-left"
                     >
                         <span>
                             {tdsFilter === 'ALL' ? 'TDS' : 
@@ -2355,7 +2355,7 @@ const ShortLoan = ({ user }) => {
                     <button
                         type="button"
                         onClick={() => setIsCalendarOpen(!isCalendarOpen)}
-                        className="h-[38px] px-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-200 flex items-center gap-2 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-sm min-w-[12rem] justify-between select-none"
+                        className="h-10 px-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-200 flex items-center gap-2 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-sm min-w-[12rem] justify-between select-none"
                     >
                         <div className="flex items-center gap-2">
                             <span className="material-symbols-outlined text-slate-400 text-lg leading-none">calendar_month</span>
@@ -2371,7 +2371,7 @@ const ShortLoan = ({ user }) => {
                                 <button 
                                     type="button"
                                     onClick={handlePrevMonth}
-                                    className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors"
+                                    className="h-10 w-10 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors"
                                 >
                                     <span className="material-symbols-outlined text-lg leading-none">chevron_left</span>
                                 </button>
@@ -2381,7 +2381,7 @@ const ShortLoan = ({ user }) => {
                                 <button 
                                     type="button"
                                     onClick={handleNextMonth}
-                                    className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors"
+                                    className="h-10 w-10 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors"
                                 >
                                     <span className="material-symbols-outlined text-lg leading-none">chevron_right</span>
                                 </button>
@@ -2449,7 +2449,7 @@ const ShortLoan = ({ user }) => {
                 <button
                     type="button"
                     onClick={() => setShowCreateModal(true)}
-                    className="flex items-center gap-2 px-4 h-[38px] bg-emerald-500 text-white rounded-lg font-black uppercase tracking-widest text-xs shadow-lg shadow-emerald-500/20 whitespace-nowrap cursor-pointer hover:bg-emerald-600 border border-transparent"
+                    className="flex items-center gap-2 px-4 h-10 bg-emerald-500 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg shadow-emerald-500/20 whitespace-nowrap cursor-pointer hover:bg-emerald-600 border border-transparent"
                 >
                     <span className="material-symbols-outlined text-lg">add_circle</span>
                     Create New
@@ -2460,7 +2460,7 @@ const ShortLoan = ({ user }) => {
                         type="button"
                         disabled={loans.length === 0}
                         onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
-                        className="h-[38px] px-4 bg-primary text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 flex items-center gap-2 transition-all hover:bg-primary/90 shadow-lg shadow-primary/20 justify-between select-none font-bold cursor-pointer border border-transparent disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary disabled:shadow-none"
+                        className="h-10 px-4 bg-primary text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50 flex items-center gap-2 transition-all hover:bg-primary/90 shadow-lg shadow-primary/20 justify-between select-none font-bold cursor-pointer border border-transparent disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary disabled:shadow-none"
                     >
                         <div className="flex items-center gap-2">
                             <span className="material-symbols-outlined text-white text-[18px] leading-none">file_download</span>
@@ -2522,7 +2522,7 @@ const ShortLoan = ({ user }) => {
                             setIsTdsFilterDropdownOpen(false);
                             setCurrentPage(1);
                         }}
-                        className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all flex items-center justify-center"
+                        className="h-10 w-10 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all flex items-center justify-center"
                         title="Clear Filters"
                     >
                         <span className="material-symbols-outlined text-[20px]">filter_alt_off</span>

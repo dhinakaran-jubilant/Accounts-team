@@ -783,14 +783,14 @@ const RepaymentTable = ({
                                                     return (
                                                         <tr key={`partial-${actualIndex}`} className="bg-indigo-50/20 dark:bg-indigo-900/10 border-indigo-100/50 dark:border-indigo-900/20 border-b last:border-b-0">
                                                             <td colSpan={isManual ? 7 : 6} className={`p-0 border-l-[3px] transition-colors duration-300 rounded-bl-sm border-indigo-300/50 dark:border-indigo-700/50`}>
-                                                                <div className="flex justify-end items-center max-h-12 py-2.5 px-5 opacity-100 gap-5 select-none font-medium">
+                                                                <div className="flex justify-end items-center max-h-12 py-2.5 px-5 opacity-100 select-none font-medium">
                                                                     {(() => {
                                                                         const remarksList = [
                                                                             primaryPartial?.remarks
                                                                         ].filter(Boolean);
                                                                         if (remarksList.length === 0) return null;
                                                                         return (
-                                                                            <span className="text-[12px] text-slate-500 dark:text-slate-400 truncate max-w-[400px] border-r border-slate-300 dark:border-slate-700 pr-3 mr-1" title={remarksList.join(" | ")}>
+                                                                            <span className="text-[12px] text-slate-500 dark:text-slate-400 truncate max-w-[400px] border-r border-slate-300 dark:border-slate-700 pr-1 mr-1" title={remarksList.join(" | ")}>
                                                                                 {remarksList.join(" | ")}
                                                                             </span>
                                                                         );
@@ -826,12 +826,12 @@ const RepaymentTable = ({
                                                                 </td>
                                                             )}
                                                             <td className="p-0">
-                                                                <div className="flex justify-end items-center py-2.5 px-4 h-full gap-3 min-w-max">
+                                                                <div className="flex justify-end items-center py-2.5 px-4 h-full min-w-max">
                                                                     {(() => {
                                                                         const secRemarks = secondarySplits.map(s => s.splits?.[actualIndex]?.remarks).filter(Boolean);
                                                                         if (secRemarks.length > 0) {
                                                                             return (
-                                                                                <span className="text-[12px] font-medium text-slate-600 dark:text-slate-400 truncate max-w-[150px] border-r border-slate-300 dark:border-slate-700 pr-3" title={secRemarks.join(" | ")}>
+                                                                                <span className="text-[12px] font-medium text-slate-600 dark:text-slate-400 truncate max-w-[150px] border-r border-slate-300 dark:border-slate-700 pr-1" title={secRemarks.join(" | ")}>
                                                                                     {secRemarks.join(" | ")}
                                                                                 </span>
                                                                             );
@@ -1369,7 +1369,7 @@ const EditAccountSplitModal = ({ isOpen, onClose, entry, loanData, accountName, 
                 <div className="p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3">
                     <button
                         onClick={onClose}
-                        className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors"
+                        className="px-5 h-10 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors"
                         disabled={saving}
                     >
                         Cancel
@@ -1377,7 +1377,7 @@ const EditAccountSplitModal = ({ isOpen, onClose, entry, loanData, accountName, 
                     <button
                         onClick={handleSave}
                         disabled={saving}
-                        className="px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors shadow-lg shadow-indigo-200 dark:shadow-none flex items-center gap-2"
+                        className="px-5 h-10 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors shadow-lg shadow-indigo-200 dark:shadow-none flex items-center gap-2"
                     >
                         {saving ? (
                             <><span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Saving...</>
@@ -1546,7 +1546,7 @@ const EditAccountsModal = ({ isOpen, onClose, loanData, onSave }) => {
                     </h3>
                     <button
                         onClick={onClose}
-                        className="w-8 h-8 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-500"
+                        className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors text-slate-500"
                     >
                         <span className="material-symbols-outlined text-[20px]">close</span>
                     </button>
@@ -1618,7 +1618,7 @@ const EditAccountsModal = ({ isOpen, onClose, loanData, onSave }) => {
                             <button
                                 type="button"
                                 onClick={(e) => { e.preventDefault(); handleLockChange(-1); }}
-                                className={`p-2 rounded-lg transition-colors ${formData.primary.locked ? 'bg-primary/10 text-primary hover:bg-primary/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                                className={`h-10 w-10 flex items-center justify-center rounded-xl transition-colors ${formData.primary.locked ? 'bg-primary/10 text-primary hover:bg-primary/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                                 title={formData.primary.locked ? "Unlock Interest" : "Lock Interest"}
                             >
                                 <span className="material-symbols-outlined text-[20px]">
@@ -1676,7 +1676,7 @@ const EditAccountsModal = ({ isOpen, onClose, loanData, onSave }) => {
                                         <button
                                             type="button"
                                             onClick={(e) => { e.preventDefault(); handleLockChange(idx); }}
-                                            className={`p-2 rounded-lg transition-colors ${acc.locked ? 'bg-primary/10 text-primary hover:bg-primary/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                                            className={`h-10 w-10 flex items-center justify-center rounded-xl transition-colors ${acc.locked ? 'bg-primary/10 text-primary hover:bg-primary/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                                             title={acc.locked ? "Unlock Interest" : "Lock Interest"}
                                         >
                                             <span className="material-symbols-outlined text-[20px]">
@@ -1714,7 +1714,7 @@ const EditAccountsModal = ({ isOpen, onClose, loanData, onSave }) => {
                     <button
                         onClick={handleSave}
                         disabled={savingStatus === 'saving'}
-                        className={`px-8 py-2.5 text-sm font-bold text-white rounded-xl shadow-lg transition-all ${savingStatus === 'saving' ? 'bg-slate-400 cursor-not-allowed' : 'bg-primary hover:bg-primary/90 shadow-primary/20'}`}
+                        className={`px-8 h-10 text-sm font-bold text-white rounded-xl shadow-lg transition-all ${savingStatus === 'saving' ? 'bg-slate-400 cursor-not-allowed' : 'bg-primary hover:bg-primary/90 shadow-primary/20'}`}
                     >
                         {savingStatus === 'saving' ? 'Saving...' : 'Done'}
                     </button>
@@ -1740,13 +1740,13 @@ const DeleteConfirmationModal = ({ isOpen, onClose, onConfirm }) => {
                     <div className="flex gap-4">
                         <button
                             onClick={onClose}
-                            className="flex-1 px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95"
+                            className="flex-1 px-6 h-10 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95"
                         >
                             Cancel
                         </button>
                         <button
                             onClick={onConfirm}
-                            className="flex-1 px-6 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 shadow-xl shadow-red-200 dark:shadow-none transition-all active:scale-95"
+                            className="flex-1 px-6 h-10 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 shadow-xl shadow-red-200 dark:shadow-none transition-all active:scale-95 flex items-center justify-center"
                         >
                             Delete Now
                         </button>
@@ -1773,13 +1773,13 @@ const ClearConfirmationModal = ({ isOpen, onClose, onConfirm }) => {
                     <div className="flex gap-4">
                         <button
                             onClick={onClose}
-                            className="flex-1 px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95"
+                            className="flex-1 px-6 h-10 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95"
                         >
                             Cancel
                         </button>
                         <button
                             onClick={onConfirm}
-                            className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all active:scale-95"
+                            className="flex-1 px-6 h-10 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all active:scale-95 flex items-center justify-center"
                         >
                             Clear
                         </button>
@@ -1813,7 +1813,7 @@ const UploadStatusModal = ({ status, message, onClose }) => {
                             <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{message}</p>
                             <button
                                 onClick={onClose}
-                                className="w-full px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 dark:shadow-none transition-all active:scale-95"
+                                className="w-full px-6 h-10 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 dark:shadow-none transition-all active:scale-95"
                             >
                                 Continue
                             </button>
@@ -1828,7 +1828,7 @@ const UploadStatusModal = ({ status, message, onClose }) => {
                             <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{message}</p>
                             <button
                                 onClick={onClose}
-                                className="w-full px-6 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95"
+                                className="w-full px-6 h-10 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95"
                             >
                                 Close
                             </button>
@@ -2722,7 +2722,7 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                     <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{error}</p>
                     <button
                         onClick={() => navigate(-1)}
-                        className="px-5 py-2.5 text-sm font-bold bg-primary hover:bg-primary/90 text-white rounded-xl shadow-lg shadow-primary/20 transition-all flex items-center gap-2"
+                        className="px-5 h-10 text-sm font-bold bg-primary hover:bg-primary/90 text-white rounded-xl shadow-lg shadow-primary/20 transition-all flex items-center gap-2"
                     >
                         <span className="material-symbols-outlined text-[18px]">arrow_back</span>
                         Go Back
@@ -2835,7 +2835,7 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                             <button
                                 onClick={() => fileInputRef.current?.click()}
                                 disabled={uploadStatus.status === 'uploading' || !canEdit || loan.approval_status !== 'APPROVED'}
-                                className={`flex items-center gap-2 px-6 py-2.5 bg-orange-600 text-white rounded-2xl hover:bg-orange-700 transition-all font-bold shadow-lg shadow-orange-200 dark:shadow-none active:scale-95 disabled:opacity-70 ${(!canEdit || loan.approval_status !== 'APPROVED') ? 'cursor-not-allowed' : ''}`}
+                                className={`flex items-center gap-2 px-6 h-10 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-all font-bold shadow-lg shadow-orange-200 dark:shadow-none active:scale-95 disabled:opacity-70 ${(!canEdit || loan.approval_status !== 'APPROVED') ? 'cursor-not-allowed' : ''}`}
                             >
                                 <span className="material-symbols-outlined text-[18px]">
                                     {uploadStatus.status === 'uploading' ? 'sync' : 'upload_file'}
@@ -2845,14 +2845,14 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                             <button
                                 onClick={() => setIsEditModalOpen(true)}
                                 disabled={!canEdit || loan.approval_status !== 'APPROVED'}
-                                className={`flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all font-bold shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95 disabled:opacity-70 ${(!canEdit || loan.approval_status !== 'APPROVED') ? 'cursor-not-allowed' : ''}`}
+                                className={`flex items-center gap-2 px-6 h-10 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95 disabled:opacity-70 ${(!canEdit || loan.approval_status !== 'APPROVED') ? 'cursor-not-allowed' : ''}`}
                             >
                                 <span className="material-symbols-outlined text-[18px]">edit</span>
                                 Edit Accounts
                             </button>
                             <button
                                 onClick={handleDownloadExcel}
-                                className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all font-bold shadow-lg shadow-emerald-200 dark:shadow-none active:scale-95"
+                                className="flex items-center gap-2 px-6 h-10 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all font-bold shadow-lg shadow-emerald-200 dark:shadow-none active:scale-95"
                             >
                                 <span className="material-symbols-outlined text-[18px]">download</span>
                                 Download

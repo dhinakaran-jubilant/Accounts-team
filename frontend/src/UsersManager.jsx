@@ -193,7 +193,7 @@ const UsersManager = () => {
     if (loading) {
         return (
             <div className="flex h-full items-center justify-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+                <div className="animate-spin rounded-full h-10 w-12 border-b-2 border-primary"></div>
             </div>
         );
     }
@@ -218,7 +218,7 @@ const UsersManager = () => {
                 </div>
                 <button
                     onClick={() => setShowAddModal(true)}
-                    className="flex items-center gap-2 px-6 h-12 bg-primary text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-lg shadow-primary/20"
+                    className="flex items-center gap-2 px-6 h-10 bg-primary text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg shadow-primary/20"
                 >
                     <span className="material-symbols-outlined text-lg">person_add</span>
                     Add New User
@@ -228,7 +228,7 @@ const UsersManager = () => {
             {/* Error Banner */}
             {success && createPortal(
                 <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
-                    <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-white/20 p-8 text-center">
+                    <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-xl shadow-2xl overflow-hidden border border-white/20 p-8 text-center">
                         <div className="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center mb-6 mx-auto">
                             <span className="material-symbols-outlined text-emerald-500 text-3xl">check_circle</span>
                         </div>
@@ -238,7 +238,7 @@ const UsersManager = () => {
                         </p>
                         <button
                             onClick={() => setSuccess(null)}
-                            className="w-full h-14 bg-emerald-500 text-white text-[12px] font-black rounded-2xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 uppercase tracking-widest transition-all"
+                            className="w-full h-10 bg-emerald-500 text-white text-[12px] font-black rounded-xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 uppercase tracking-widest transition-all"
                         >
                             Got it
                         </button>
@@ -247,14 +247,14 @@ const UsersManager = () => {
                 document.body
             )}
             {error && (
-                <div className="bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 p-4 rounded-2xl border border-rose-100 dark:border-rose-800 flex items-center gap-3">
+                <div className="bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 p-4 rounded-xl border border-rose-100 dark:border-rose-800 flex items-center gap-3">
                     <span className="material-symbols-outlined">error</span>
                     <span className="font-bold text-sm tracking-tight">{error}</span>
                 </div>
             )}
 
             {/* Users Table & Pagination Container */}
-            <div className="flex-1 min-h-0 bg-white dark:bg-[#101822] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 bg-white dark:bg-[#101822] rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl flex flex-col overflow-hidden">
                 <div className="flex-1 min-h-0 overflow-auto scrollbar-premium">
                     <table className="w-full text-left border-collapse">
                         <thead className="sticky top-0 z-10">
@@ -319,7 +319,7 @@ const UsersManager = () => {
                                     <td className="px-8 py-2 text-right flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                                         <button
                                             onClick={() => handleEditClick(u)}
-                                            className="w-10 h-10 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-2xl transition-all"
+                                            className="w-10 h-10 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all"
                                             title="Edit User"
                                         >
                                             <span className="material-symbols-outlined text-xl">edit</span>
@@ -327,7 +327,7 @@ const UsersManager = () => {
                                         <button
                                             onClick={() => setShowDeleteModal(u)}
                                             disabled={u.employee_code === 'admin'}
-                                            className={`w-10 h-10 transition-all rounded-2xl flex items-center justify-center ${u.employee_code === 'admin'
+                                            className={`w-10 h-10 transition-all rounded-xl flex items-center justify-center ${u.employee_code === 'admin'
                                                     ? 'text-slate-200 dark:text-slate-800 cursor-not-allowed'
                                                     : 'text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20'
                                                 }`}
@@ -352,14 +352,14 @@ const UsersManager = () => {
                             <button
                                 onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                                 disabled={currentPage === 1}
-                                className="h-9 w-9 flex items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-white dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-all active:scale-90"
+                                className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-white dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-all active:scale-90"
                             >
                                 <span className="material-symbols-outlined text-[20px]">chevron_left</span>
                             </button>
                             <button
                                 onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                                 disabled={currentPage === totalPages}
-                                className="h-9 w-9 flex items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-white dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-all active:scale-90"
+                                className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-white dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-all active:scale-90"
                             >
                                 <span className="material-symbols-outlined text-[20px]">chevron_right</span>
                             </button>
@@ -371,7 +371,7 @@ const UsersManager = () => {
             {/* User Details Card */}
             {showDetailUser && createPortal(
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4" onClick={() => setShowDetailUser(null)}>
-                    <div className="w-full max-w-xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-white/20 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                    <div className="w-full max-w-xl bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-white/20 overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         {/* Header */}
                         <div className="relative bg-gradient-to-br from-primary/10 via-blue-50 to-violet-50 dark:from-primary/5 dark:via-slate-800 dark:to-slate-800 px-8 py-6 border-b border-slate-100 dark:border-slate-800">
                             <button
@@ -381,7 +381,7 @@ const UsersManager = () => {
                                 <span className="material-symbols-outlined text-xl">close</span>
                             </button>
                             <div className="flex items-center gap-5">
-                                <div className="w-12 h-12 rounded-2xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center shadow-inner">
+                                <div className="w-12 h-10 rounded-xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center shadow-inner">
                                     <span className="material-symbols-outlined text-primary text-3xl">person</span>
                                 </div>
                                 <div>
@@ -409,7 +409,7 @@ const UsersManager = () => {
                         <div className="p-8 space-y-6">
                             {/* Info Cards */}
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 border border-slate-100 dark:border-slate-800">
+                                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
                                     <div className="flex items-center gap-2 mb-2">
                                         <span className="material-symbols-outlined text-slate-400 text-lg">badge</span>
                                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Emp Code</span>
@@ -418,7 +418,7 @@ const UsersManager = () => {
                                         {showDetailUser.employee_code}
                                     </p>
                                 </div>
-                                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 border border-slate-100 dark:border-slate-800">
+                                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
                                     <div className="flex items-center gap-2 mb-2">
                                         <span className="material-symbols-outlined text-slate-400 text-lg">admin_panel_settings</span>
                                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Role</span>
@@ -430,7 +430,7 @@ const UsersManager = () => {
                                         {showDetailUser.role}
                                     </span>
                                 </div>
-                                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 border border-slate-100 dark:border-slate-800">
+                                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
                                     <div className="flex items-center gap-2 mb-2">
                                         <span className="material-symbols-outlined text-slate-400 text-lg">mail</span>
                                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email</span>
@@ -439,7 +439,7 @@ const UsersManager = () => {
                                         {showDetailUser.email || <span className="text-slate-300 dark:text-slate-600">Not provided</span>}
                                     </p>
                                 </div>
-                                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 border border-slate-100 dark:border-slate-800">
+                                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
                                     <div className="flex items-center gap-2 mb-2">
                                         <span className="material-symbols-outlined text-slate-400 text-lg">phone</span>
                                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mobile</span>
@@ -508,7 +508,7 @@ const UsersManager = () => {
                                     setShowDetailUser(null);
                                     handleEditClick(showDetailUser);
                                 }}
-                                className="flex items-center gap-2 px-5 h-11 bg-primary text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-primary/20 transition-all hover:shadow-xl"
+                                className="flex items-center gap-2 px-5 h-11 bg-primary text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-primary/20 transition-all hover:shadow-xl"
                             >
                                 <span className="material-symbols-outlined text-base">edit</span>
                                 Edit User
@@ -522,7 +522,7 @@ const UsersManager = () => {
             {/* Add User Modal */}
             {showAddModal && createPortal(
                 <div className="fixed top-0 left-0 w-full h-full z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
-                    <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-white/20 max-h-[90vh] flex flex-col overflow-hidden">
+                    <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-white/20 max-h-[90vh] flex flex-col overflow-hidden">
                         <div className="p-6 bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-800 relative">
                             <h3 className="text-2xl font-black text-slate-900 dark:text-white">
                                 {isEditing ? 'Edit User' : 'Add New User'}
@@ -547,7 +547,7 @@ const UsersManager = () => {
                                             type="text"
                                             required
                                             disabled={isEditing}
-                                            className={`w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white ${isEditing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            className={`w-full h-10 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white ${isEditing ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             placeholder="JC0001"
                                             value={formData.employee_code}
                                             onChange={(e) => setFormData({ ...formData, employee_code: e.target.value })}
@@ -560,7 +560,7 @@ const UsersManager = () => {
                                         <input
                                             type="text"
                                             required
-                                            className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white"
+                                            className="w-full h-10 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white"
                                             placeholder="Display Name"
                                             value={formData.name}
                                             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -572,7 +572,7 @@ const UsersManager = () => {
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Mail ID</label>
                                         <input
                                             type="email"
-                                            className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white"
+                                            className="w-full h-10 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white"
                                             placeholder="user@example.com"
                                             value={formData.email}
                                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -584,7 +584,7 @@ const UsersManager = () => {
                                         </label>
                                         <input
                                             type="text"
-                                            className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white"
+                                            className="w-full h-10 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white"
                                             placeholder="+91 98765 43210"
                                             value={formData.mobile}
                                             onChange={(e) => setFormData({ ...formData, mobile: e.target.value })}
@@ -603,7 +603,7 @@ const UsersManager = () => {
                                                     role: 'user',
                                                     permissions: []
                                                 })}
-                                                className={`h-12 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all ${formData.role === 'user'
+                                                className={`h-10 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${formData.role === 'user'
                                                         ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20'
                                                         : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 text-slate-400'
                                                     }`}
@@ -617,7 +617,7 @@ const UsersManager = () => {
                                                     role: 'admin',
                                                     permissions: ACCOUNTS_PERMISSIONS.map(p => p.value)
                                                 })}
-                                                className={`h-12 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${formData.role === 'admin'
+                                                className={`h-10 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${formData.role === 'admin'
                                                         ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20'
                                                         : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 text-slate-400'
                                                     }`}
@@ -630,7 +630,7 @@ const UsersManager = () => {
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Password <span className="text-rose-500">*</span></label>
                                         <input
                                             type="text"
-                                            className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white"
+                                            className="w-full h-10 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white"
                                             placeholder="********"
                                             value={formData.password}
                                             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -645,7 +645,7 @@ const UsersManager = () => {
                                         <button
                                             type="button"
                                             onClick={() => setShowMenuDropdown(prev => !prev)}
-                                            className="w-full min-h-[48px] bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-left flex items-center justify-between gap-2 focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                            className="w-full min-h-[48px] bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-xl px-4 py-2.5 text-left flex items-center justify-between gap-2 focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                                         >
                                             <div className="flex-1 flex flex-wrap gap-1.5">
                                                 {formData.allowed_menus.length > 0 ? (
@@ -679,7 +679,7 @@ const UsersManager = () => {
                                         </button>
 
                                         {showMenuDropdown && (
-                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                                                 <div className="p-2 max-h-60 overflow-y-auto custom-scrollbar grid gap-2">
                                                     {MENU_OPTIONS.map(menu => {
                                                         const isSelected = formData.allowed_menus.includes(menu.value);
@@ -715,7 +715,7 @@ const UsersManager = () => {
 
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Permissions <span className="text-rose-500">*</span></label>
-                                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
                                         {ACCOUNTS_PERMISSIONS.map(perm => (
                                             <button
                                                 key={perm.value}
@@ -738,13 +738,13 @@ const UsersManager = () => {
                                     <button
                                         type="button"
                                         onClick={handleCloseModal}
-                                        className="h-12 bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] font-black rounded-2xl hover:bg-slate-200 uppercase tracking-widest"
+                                        className="h-10 bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] font-black rounded-xl hover:bg-slate-200 uppercase tracking-widest"
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         type="submit"
-                                        className="h-12 bg-primary text-white text-[10px] font-black rounded-2xl shadow-lg shadow-primary/20 uppercase tracking-widest"
+                                        className="h-10 bg-primary text-white text-[10px] font-black rounded-xl shadow-lg shadow-primary/20 uppercase tracking-widest"
                                     >
                                         {isEditing ? 'Update User' : 'Create User'}
                                     </button>
@@ -759,7 +759,7 @@ const UsersManager = () => {
             {/* Delete Confirmation */}
             {showDeleteModal && createPortal(
                 <div className="fixed top-0 left-0 w-full h-full z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
-                    <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-white/20">
+                    <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-xl shadow-2xl overflow-hidden border border-white/20">
                         <div className="p-10 text-center">
                             <div className="w-20 h-20 rounded-full bg-rose-50 dark:bg-rose-900/20 flex items-center justify-center mb-6 mx-auto">
                                 <span className="material-symbols-outlined text-rose-500 text-3xl">person_remove</span>
@@ -771,13 +771,13 @@ const UsersManager = () => {
                             <div className="grid grid-cols-2 gap-4">
                                 <button
                                     onClick={() => setShowDeleteModal(null)}
-                                    className="h-14 bg-slate-100 dark:bg-slate-800 text-slate-500 text-[12px] font-black rounded-2xl hover:bg-slate-200 uppercase tracking-widest"
+                                    className="h-10 bg-slate-100 dark:bg-slate-800 text-slate-500 text-[12px] font-black rounded-xl hover:bg-slate-200 uppercase tracking-widest"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     onClick={handleDeleteUser}
-                                    className="h-14 bg-rose-500 text-white text-[12px] font-black rounded-2xl hover:bg-rose-600 shadow-lg shadow-rose-500/20 uppercase tracking-widest"
+                                    className="h-10 bg-rose-500 text-white text-[12px] font-black rounded-xl hover:bg-rose-600 shadow-lg shadow-rose-500/20 uppercase tracking-widest"
                                 >
                                     Confirm
                                 </button>

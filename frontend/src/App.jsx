@@ -62,9 +62,11 @@ function App() {
                     path="/db-ac-report" 
                     element={
                         user ? (
-                            <Layout user={user} onLogout={handleLogout} activeMenu="db-ac-report" showFooter={true}>
-                                <Home />
-                            </Layout>
+                            (!user.allowed_menus || user.allowed_menus.includes('db-ac-report') || user.role === 'admin') ? (
+                                <Layout user={user} onLogout={handleLogout} activeMenu="db-ac-report" showFooter={true}>
+                                    <Home />
+                                </Layout>
+                            ) : <Navigate to="/" replace />
                         ) : <Navigate to="/login" replace />
                     } 
                 />
@@ -72,9 +74,11 @@ function App() {
                     path="/jl-due-report" 
                     element={
                         user ? (
-                            <Layout user={user} onLogout={handleLogout} activeMenu="jl-due-report">
-                                <JlDueReport user={user} />
-                            </Layout>
+                            (!user.allowed_menus || user.allowed_menus.includes('jl-due-report') || user.role === 'admin') ? (
+                                <Layout user={user} onLogout={handleLogout} activeMenu="jl-due-report">
+                                    <JlDueReport user={user} />
+                                </Layout>
+                            ) : <Navigate to="/" replace />
                         ) : <Navigate to="/login" replace />
                     } 
                 />
@@ -82,9 +86,11 @@ function App() {
                     path="/jl-due-report/:id" 
                     element={
                         user ? (
-                            <Layout user={user} onLogout={handleLogout} activeMenu="jl-due-report">
-                                <LoanDetail user={user} />
-                            </Layout>
+                            (!user.allowed_menus || user.allowed_menus.includes('jl-due-report') || user.role === 'admin') ? (
+                                <Layout user={user} onLogout={handleLogout} activeMenu="jl-due-report">
+                                    <LoanDetail user={user} />
+                                </Layout>
+                            ) : <Navigate to="/" replace />
                         ) : <Navigate to="/login" replace />
                     } 
                 />
@@ -92,9 +98,11 @@ function App() {
                     path="/loans/:id" 
                     element={
                         user ? (
-                            <Layout user={user} onLogout={handleLogout} activeMenu="jl-due-report">
-                                <LoanDetail user={user} />
-                            </Layout>
+                            (!user.allowed_menus || user.allowed_menus.includes('jl-due-report') || user.role === 'admin') ? (
+                                <Layout user={user} onLogout={handleLogout} activeMenu="jl-due-report">
+                                    <LoanDetail user={user} />
+                                </Layout>
+                            ) : <Navigate to="/" replace />
                         ) : <Navigate to="/login" replace />
                     } 
                 />
@@ -142,9 +150,11 @@ function App() {
                     path="/short-loan" 
                     element={
                         user ? (
-                            <Layout user={user} onLogout={handleLogout} activeMenu="short-loan">
-                                <ShortLoan user={user} />
-                            </Layout>
+                            (!user.allowed_menus || user.allowed_menus.includes('short-loan') || user.role === 'admin') ? (
+                                <Layout user={user} onLogout={handleLogout} activeMenu="short-loan">
+                                    <ShortLoan user={user} />
+                                </Layout>
+                            ) : <Navigate to="/" replace />
                         ) : <Navigate to="/login" replace />
                     } 
                 />
@@ -154,9 +164,13 @@ function App() {
                     path="/" 
                     element={
                         user ? (
-                            <Layout user={user} onLogout={handleLogout} activeMenu="home" showFooter={true}>
-                                <Dashboard user={user} />
-                            </Layout>
+                            user.role === 'admin' ? (
+                                <Layout user={user} onLogout={handleLogout} activeMenu="home" showFooter={true}>
+                                    <Dashboard user={user} />
+                                </Layout>
+                            ) : (
+                                <Navigate to={user.allowed_menus?.length > 0 ? `/${user.allowed_menus[0]}` : "/my-requests"} replace />
+                            )
                         ) : <Navigate to="/login" replace />
                     } 
                 />

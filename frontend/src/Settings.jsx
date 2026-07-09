@@ -215,7 +215,7 @@ const Settings = () => {
     };
 
     return (
-        <div className="p-12 w-full min-h-0 flex flex-col">
+        <div className="p-8 w-full min-h-0 flex flex-col">
             {/* Header */}
             <div className="mb-8 flex justify-between items-center">
                 <div>
@@ -232,7 +232,7 @@ const Settings = () => {
                     <button
                         onClick={handleSave}
                         disabled={isSaving}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-2xl transition-all font-bold shadow-lg shadow-primary/20 active:scale-95 disabled:opacity-75"
+                        className="flex items-center gap-2 h-10 px-6 bg-primary hover:bg-primary/90 text-white rounded-xl transition-all font-bold shadow-lg shadow-primary/20 active:scale-95 disabled:opacity-75"
                     >
                         {isSaving ? (
                             <>
@@ -362,7 +362,7 @@ const Settings = () => {
                                 placeholder="Search accounts..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl text-sm focus:outline-none focus:border-primary text-slate-900 dark:text-white w-full sm:w-60 transition-all focus:bg-white dark:focus:bg-slate-900"
+                                className="pl-9 pr-4 h-10 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary text-slate-900 dark:text-white w-full sm:w-60 transition-all focus:bg-white dark:focus:bg-slate-900"
                             />
                         </div>
                         <button

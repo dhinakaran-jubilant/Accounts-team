@@ -832,7 +832,7 @@ const JlDueReport = ({ user }) => {
         return accountColorMap[name || 'Unknown'] || TAG_COLORS[0];
     };
 
-    const handleBendingExport = async () => {
+    const handleBendingExport = async (isTodayOS = false) => {
         setIsExportDropdownOpen(false);
         // Filter out closed loans for the O/S report
         let osData = data.filter(loan => getLoanStatus(loan).label !== 'Closed');
@@ -878,13 +878,14 @@ const JlDueReport = ({ user }) => {
         }
 
         // Pass 'true' for isDetailed mode
-        await handleExport('OS_Report', osData, true);
+        await handleExport(isTodayOS ? 'Today_OS_Report' : 'OS_Report', osData, true, isTodayOS);
     };
 
-    const handleExport = async (reportPrefix = 'JL_Report', exportData = filteredData, isDetailed = false) => {
+    const handleExport = async (reportPrefix = 'JL_Report', exportData = filteredData, isDetailed = false, isTodayOS = false) => {
         if (exportData.length === 0) return;
 
         const workbook = new ExcelJS.Workbook();
+        let totalDataRowsAdded = 0;
         const groups = new Map();
         exportData.forEach(loan => {
             const key = loan.primary_account_name || 'Unknown';
@@ -1008,7 +1009,17 @@ if (isDetailed) {
 
             const osInstallments = schedule.filter(e => {
                 const dKey = getDateKey(e.date);
-                return (dKey > 0 && dKey <= cutoffKey) && hasRowBalance(e, loan);
+                let isOS = (dKey > 0 && dKey <= cutoffKey) && hasRowBalance(e, loan);
+                if (isOS && isTodayOS) {
+                    const todayObj = new Date();
+                    const y = todayObj.getFullYear();
+                    const m = String(todayObj.getMonth() + 1).padStart(2, '0');
+                    const d = String(todayObj.getDate()).padStart(2, '0');
+                    if (toYYYYMMDD(e.received_date) !== `${y}-${m}-${d}`) {
+                        isOS = false;
+                    }
+                }
+                return isOS;
             });
             if (osInstallments.length === 0) return;
 
@@ -1138,6 +1149,7 @@ if (isDetailed) {
         });
 
         if (hasPrimaryPermission && worksheet) {
+            totalDataRowsAdded += rowItems.length;
             // Sort primary rows
             rowItems.sort((a, b) => {
                 if (a.statusWeight !== b.statusWeight) return a.statusWeight - b.statusWeight;
@@ -1245,6 +1257,8 @@ if (isDetailed) {
     secondaryRowsMap.forEach((rows, secAcr) => {
         const hasSecondaryPermission = user?.role === 'admin' || userPermissions.length >= 10 || userPermissions.includes(secAcr);
         if (!hasSecondaryPermission) return;
+
+        totalDataRowsAdded += rows.length;
 
         const sheetName = `${secAcr}-SECONDARY`.slice(0, 31);
         const ws = workbook.addWorksheet(sheetName);
@@ -1387,6 +1401,7 @@ if (isDetailed) {
         else {
             // STANDARD ROW-BASED LAYOUT (For JL Report)
             groups.forEach((loans, primaryAccName) => {
+                totalDataRowsAdded += loans.length;
                 const getStatusWeight = (loan) => {
                     const s = getLoanStatus(loan).label;
                     // Compute the effective excel status (same logic as the row builder)
@@ -1706,6 +1721,11 @@ if (isDetailed) {
             });
         }
 
+        if (totalDataRowsAdded === 0) {
+            setUploadError("No results found for the selected report criteria.");
+            return;
+        }
+
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const url = window.URL.createObjectURL(blob);
@@ -1761,7 +1781,7 @@ if (isDetailed) {
                                     setSearchTerm(e.target.value);
                                     setCurrentPage(1);
                                 }}
-                                className="pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-80 transition-all"
+                                className="pl-10 pr-4 h-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-80 transition-all"
                             />
                         </div>
 
@@ -1776,7 +1796,7 @@ if (isDetailed) {
                                     setStatusFilter(['ACTIVE', 'OVERDUE', 'DATE OVERDUE', 'CLOSED', 'PENDING']);
                                     setCurrentPage(1);
                                 }}
-                                className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all flex items-center justify-center"
+                                className="h-10 w-10 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all flex items-center justify-center"
                                 title="Clear All Filters"
                             >
                                 <span className="material-symbols-outlined text-[20px]">filter_alt_off</span>
@@ -1789,7 +1809,7 @@ if (isDetailed) {
                             <div className="relative" ref={accountDropdownRef}>
                                 <button
                                     onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
-                                    className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-56 flex items-center justify-between transition-all"
+                                    className="px-4 h-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-900 dark:text-white w-56 flex items-center justify-between transition-all"
                                 >
                                     <span className="truncate">
                                         {isAllAccountsSelected
@@ -1861,7 +1881,7 @@ if (isDetailed) {
                             <div className="relative" ref={accountDropdownRef}>
                                 <button
                                     onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
-                                    className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-200 w-56 flex items-center justify-between transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-sm cursor-pointer select-none"
+                                    className="px-4 h-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-200 w-56 flex items-center justify-between transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-sm cursor-pointer select-none"
                                 >
                                     <span className="truncate">
                                         {accountFilter.length === 0
@@ -1942,7 +1962,7 @@ if (isDetailed) {
                         <div className="relative" ref={statusDropdownRef}>
                             <button
                                 onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
-                                className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-200 w-44 flex items-center justify-between transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-sm cursor-pointer select-none"
+                                className="px-4 h-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-200 w-44 flex items-center justify-between transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-sm cursor-pointer select-none"
                             >
                                 <span className="truncate">
                                     {statusFilter.length === 5
@@ -2019,7 +2039,7 @@ if (isDetailed) {
                         <div className="relative" ref={calendarRef}>
                             <button
                                 onClick={() => setIsCalendarOpen(!isCalendarOpen)}
-                                className="h-9 px-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-200 flex items-center gap-2 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-sm min-w-56 justify-between select-none"
+                                className="h-10 px-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-200 flex items-center gap-2 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-sm min-w-56 justify-between select-none"
                             >
                                 <div className="flex items-center gap-2">
                                     <span className="material-symbols-outlined text-slate-400 text-lg leading-none">calendar_month</span>
@@ -2034,7 +2054,7 @@ if (isDetailed) {
                                     <div className="flex items-center justify-between mb-4">
                                         <button 
                                             onClick={handlePrevMonth}
-                                            className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors"
+                                            className="h-10 w-10 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors"
                                         >
                                             <span className="material-symbols-outlined text-lg leading-none">chevron_left</span>
                                         </button>
@@ -2043,7 +2063,7 @@ if (isDetailed) {
                                         </h4>
                                         <button 
                                             onClick={handleNextMonth}
-                                            className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors"
+                                            className="h-10 w-10 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors"
                                         >
                                             <span className="material-symbols-outlined text-lg leading-none">chevron_right</span>
                                         </button>
@@ -2112,7 +2132,7 @@ if (isDetailed) {
                             <div className="relative" ref={importDropdownRef}>
                                 <button
                                     onClick={() => setIsImportDropdownOpen(!isImportDropdownOpen)}
-                                    className="h-9 px-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-2 text-sm"
+                                    className="h-10 px-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-2 text-sm"
                                 >
                                     <span className="material-symbols-outlined text-sm">upload_file</span>
                                     Import
@@ -2165,7 +2185,7 @@ if (isDetailed) {
                             <button
                                 onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
                                 title="Export options"
-                                className="h-9 px-4 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg shadow-sm transition-all flex items-center gap-2 text-sm"
+                                className="h-10 px-4 bg-primary hover:bg-primary/90 text-white font-semibold rounded-xl shadow-sm transition-all flex items-center gap-2 text-sm"
                             >
                                 <span className="material-symbols-outlined text-[18px]">download</span>
                                 Export
@@ -2186,13 +2206,23 @@ if (isDetailed) {
                                     </button>
                                     <button
                                         onClick={() => {
-                                            handleBendingExport();
+                                            handleBendingExport(false);
                                             setIsExportDropdownOpen(false);
                                         }}
                                         className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2 border-t border-slate-200/50 dark:border-slate-700/50"
                                     >
                                         <span className="material-symbols-outlined text-[18px] text-amber-500">pending_actions</span>
                                         O/S Report
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            handleBendingExport(true);
+                                            setIsExportDropdownOpen(false);
+                                        }}
+                                        className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2 border-t border-slate-200/50 dark:border-slate-700/50"
+                                    >
+                                        <span className="material-symbols-outlined text-[18px] text-emerald-500">today</span>
+                                        Today O/S Report
                                     </button>
                                 </div>
                             )}
@@ -2394,14 +2424,14 @@ if (isDetailed) {
                                 <button
                                     onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                                     disabled={currentPage === 1}
-                                    className="h-9 w-9 flex items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+                                    className="h-10 w-10 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
                                 >
                                     <span className="material-symbols-outlined text-[20px]">chevron_left</span>
                                 </button>
                                 <button
                                     onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                                     disabled={currentPage === totalPages}
-                                    className="h-9 w-9 flex items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+                                    className="h-10 w-10 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
                                 >
                                     <span className="material-symbols-outlined text-[20px]">chevron_right</span>
                                 </button>
@@ -2418,7 +2448,7 @@ if (isDetailed) {
                     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col">
                         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                             <h3 className="text-xl font-bold text-slate-900 dark:text-white">Configure Remaining Accounts</h3>
-                            <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+                            <button onClick={() => setShowModal(false)} className="h-10 w-10 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
                                 <span className="material-symbols-outlined">close</span>
                             </button>
                         </div>
@@ -2480,7 +2510,7 @@ if (isDetailed) {
                                                 </div>
                                             </div>
                                             {accounts.length > 1 && (
-                                                <button onClick={() => handleRemoveAccount(index)} className="mt-5 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 p-2 rounded-lg transition-colors group" title="Remove account">
+                                                <button onClick={() => handleRemoveAccount(index)} className="mt-5 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 h-10 w-10 flex items-center justify-center rounded-xl transition-colors group" title="Remove account">
                                                     <span className="material-symbols-outlined transform group-hover:scale-110 transition-transform">delete</span>
                                                 </button>
                                             )}
@@ -2495,10 +2525,10 @@ if (isDetailed) {
                         </div>
 
                         <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3">
-                            <button onClick={() => setShowModal(false)} className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors">
+                            <button onClick={() => setShowModal(false)} className="px-5 h-10 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors">
                                 Cancel
                             </button>
-                            <button onClick={handleSubmit} disabled={isSubmitting} className="px-6 py-2.5 text-sm font-bold bg-primary hover:bg-primary/90 text-white rounded-xl shadow-lg shadow-primary/20 transition-all flex items-center gap-2 disabled:opacity-70 disabled:shadow-none active:scale-95">
+                            <button onClick={handleSubmit} disabled={isSubmitting} className="px-6 h-10 text-sm font-bold bg-primary hover:bg-primary/90 text-white rounded-xl shadow-lg shadow-primary/20 transition-all flex items-center gap-2 disabled:opacity-70 disabled:shadow-none active:scale-95">
                                 {isSubmitting ? (
                                     <>
                                         <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
@@ -2545,7 +2575,7 @@ if (isDetailed) {
                         </p>
                         <button
                             onClick={() => setUploadError('')}
-                            className="w-full py-3 px-4 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
+                            className="w-full h-10 px-4 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
                         >
                             Close
                         </button>
@@ -2604,7 +2634,7 @@ if (isDetailed) {
                                 setSkippedDetails([]);
                                 setMismatchDetails([]);
                             }}
-                            className="w-full py-3 px-4 text-sm font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800/50 dark:text-emerald-400 dark:hover:bg-emerald-900/60 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
+                            className="w-full h-10 px-4 text-sm font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800/50 dark:text-emerald-400 dark:hover:bg-emerald-900/60 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
                         >
                             <span className="material-symbols-outlined text-[18px]">done</span> Close
                         </button>
@@ -2628,14 +2658,14 @@ if (isDetailed) {
                         <div className="flex gap-3">
                             <button
                                 onClick={() => setLoanToDelete(null)}
-                                className="flex-1 px-4 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all"
+                                className="flex-1 px-4 h-10 text-sm font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={confirmDelete}
                                 disabled={isDeleting}
-                                className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-lg shadow-rose-600/20 transition-all flex items-center justify-center gap-2"
+                                className="flex-1 px-4 h-10 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-lg shadow-rose-600/20 transition-all flex items-center justify-center gap-2"
                             >
                                 {isDeleting ? (
                                     <>
