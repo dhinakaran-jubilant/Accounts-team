@@ -3594,6 +3594,33 @@ const ShortLoan = ({ user }) => {
                                         const recdInterest = isClosed ? grossInterest : calculateActualInterestReceived(selectedLoan.renew_history);
                                         const balanceInterest = isClosed ? 0 : Math.max(0, grossInterest - calculateActualInterestReceived(selectedLoan.renew_history));
                                         const totalRecd = recdAmount + recdInterest - tdsAmount;
+
+                                        let recdInterestDays = 0;
+                                        if (selectedLoan.renew_history) {
+                                            try {
+                                                const history = JSON.parse(selectedLoan.renew_history);
+                                                if (Array.isArray(history)) {
+                                                    for (const log of history) {
+                                                        if (log.includes('Interest Collected Upfront') || log.includes('Interest Received')) {
+                                                            const match = log.match(/(\d+)\s+days/i);
+                                                            if (match) {
+                                                                recdInterestDays += parseInt(match[1], 10);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } catch (e) {}
+                                        }
+                                        const baseDays = calculateDaysRecd(selectedLoan.loan_date, isClosed ? selectedLoan.close_date : new Date().toISOString().split('T')[0]);
+                                        let totalDays = Math.max(baseDays, recdInterestDays);
+                                        let balanceInterestDays = 0;
+                                        
+                                        if (isClosed) {
+                                            recdInterestDays = totalDays;
+                                        } else {
+                                            balanceInterestDays = Math.max(0, totalDays - recdInterestDays);
+                                        }
+
                                         return (
                                             <div className="space-y-3">
                                                 <div className="bg-white dark:bg-slate-900/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800 space-y-2">
@@ -3619,19 +3646,19 @@ const ShortLoan = ({ user }) => {
 
                                                 <div className="bg-white dark:bg-slate-900/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800 space-y-2">
                                                     <div className="flex justify-between items-center">
-                                                        <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Total Interest</span>
+                                                        <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Total Interest <span className="text-xs text-slate-400 dark:text-slate-500">({totalDays} days)</span></span>
                                                         <span className="text-sm font-bold text-slate-700 dark:text-slate-300 font-mono">
                                                             ₹ {grossInterest.toLocaleString('en-IN')}
                                                         </span>
                                                     </div>
                                                     <div className="flex justify-between items-center">
-                                                        <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Recd Interest</span>
+                                                        <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Recd Interest <span className="text-xs text-slate-400 dark:text-slate-500">({recdInterestDays} days)</span></span>
                                                         <span className="text-sm font-bold text-slate-700 dark:text-slate-300 font-mono">
                                                             ₹ {recdInterest.toLocaleString('en-IN')}
                                                         </span>
                                                     </div>
                                                     <div className="flex justify-between items-center">
-                                                        <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Balance Interest</span>
+                                                        <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Balance Interest <span className="text-xs text-slate-400 dark:text-slate-500">({balanceInterestDays} days)</span></span>
                                                         <span className="text-sm font-bold text-amber-500 dark:text-amber-400 font-mono">
                                                             ₹ {balanceInterest.toLocaleString('en-IN')}
                                                         </span>
@@ -4006,10 +4033,20 @@ const ShortLoan = ({ user }) => {
                                                 Interest Period Days
                                             </label>
                                             <input
-                                                type="text"
-                                                disabled
-                                                className="w-full h-12 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 text-sm font-bold outline-none cursor-not-allowed"
-                                                value={`${calculateDaysRecd(getLastRenewalDate(showRenewConfirm), renewDate)} days`}
+                                                type="number"
+                                                min="0"
+                                                className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white"
+                                                value={renewDate ? calculateDaysRecd(getLastRenewalDate(showRenewConfirm), renewDate) : ''}
+                                                onChange={(e) => {
+                                                    const days = parseInt(e.target.value, 10);
+                                                    if (!isNaN(days) && days >= 0) {
+                                                        const newDate = addDaysToDate(getLastRenewalDate(showRenewConfirm), days);
+                                                        handleRenewDateChange(newDate);
+                                                    } else if (e.target.value === '') {
+                                                        setRenewDate('');
+                                                        setRenewAmount('');
+                                                    }
+                                                }}
                                             />
                                         </div>
                                         <div className="space-y-2">
