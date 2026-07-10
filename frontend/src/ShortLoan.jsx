@@ -418,6 +418,7 @@ const ShortLoan = ({ user }) => {
     const [renewType, setRenewType] = useState('INTEREST');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
     const [formData, setFormData] = useState({
+        loan_id: '',
         client_name: '',
         loan_amount: '',
         int_per_day: '',
@@ -1554,6 +1555,7 @@ const ShortLoan = ({ user }) => {
             }
             const payload = {
                 ...formData,
+                loan_id: formData.loan_id ? formData.loan_id.trim() : null,
                 loan_amount: String(formData.loan_amount).replace(/,/g, ''),
                 int_per_day: String(formData.int_per_day).replace(/,/g, ''),
                 created_by: user?.name || 'Unknown'
@@ -2997,6 +2999,18 @@ const ShortLoan = ({ user }) => {
                                 <div className="grid grid-cols-2 gap-6">
                                     <div className="space-y-2 col-span-2">
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">
+                                            Loan ID <span className="text-slate-400 normal-case">(Leave blank to auto-generate)</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white uppercase"
+                                            placeholder="Enter loan ID (e.g., ST.56)"
+                                            value={formData.loan_id || ''}
+                                            onChange={(e) => setFormData({ ...formData, loan_id: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="space-y-2 col-span-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">
                                             Client Name <span className="text-rose-500">*</span>
                                         </label>
                                         <input
@@ -3090,10 +3104,6 @@ const ShortLoan = ({ user }) => {
                                         <div 
                                             onClick={(e) => {
                                                 setIsCreateFollowerDropdownOpen(!isCreateFollowerDropdownOpen);
-                                                if (!isCreateFollowerDropdownOpen) {
-                                                    const target = e.currentTarget;
-                                                    setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
-                                                }
                                             }}
                                             className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 flex items-center justify-between text-sm font-bold cursor-pointer dark:text-white"
                                         >
@@ -3145,10 +3155,6 @@ const ShortLoan = ({ user }) => {
                                         <div 
                                             onClick={(e) => {
                                                 setIsCreateAccountDropdownOpen(!isCreateAccountDropdownOpen);
-                                                if (!isCreateAccountDropdownOpen) {
-                                                    const target = e.currentTarget;
-                                                    setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
-                                                }
                                             }}
                                             className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 flex items-center justify-between text-sm font-bold cursor-pointer dark:text-white"
                                         >
@@ -3281,6 +3287,19 @@ const ShortLoan = ({ user }) => {
                                                 loan_amount: selectedLoan.loan_amount ? Number(selectedLoan.loan_amount).toLocaleString('en-IN') : '',
                                                 int_per_day: selectedLoan.int_per_day ? Number(selectedLoan.int_per_day).toLocaleString('en-IN') : '',
                                             });
+                                            setFormData({
+                                                loan_id: '',
+                                                client_name: '',
+                                                loan_amount: '',
+                                                int_per_day: '',
+                                                loan_date: '',
+                                                days: '',
+                                                days_received: '',
+                                                remarks: '',
+                                                follower: '',
+                                                account: '',
+                                                interest_collected: false
+                                            });
                                         }}
                                         className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-primary bg-slate-100 dark:bg-slate-800 hover:bg-primary/10 rounded-full transition-all"
                                         title="Edit"
@@ -3384,10 +3403,6 @@ const ShortLoan = ({ user }) => {
                                         <div 
                                             onClick={(e) => {
                                                 setIsEditFollowerDropdownOpen(!isEditFollowerDropdownOpen);
-                                                if (!isEditFollowerDropdownOpen) {
-                                                    const target = e.currentTarget;
-                                                    setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
-                                                }
                                             }}
                                             className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 flex items-center justify-between text-sm font-bold cursor-pointer dark:text-white"
                                         >
@@ -3437,10 +3452,6 @@ const ShortLoan = ({ user }) => {
                                         <div 
                                             onClick={(e) => {
                                                 setIsEditAccountDropdownOpen(!isEditAccountDropdownOpen);
-                                                if (!isEditAccountDropdownOpen) {
-                                                    const target = e.currentTarget;
-                                                    setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
-                                                }
                                             }}
                                             className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 flex items-center justify-between text-sm font-bold cursor-pointer dark:text-white"
                                         >

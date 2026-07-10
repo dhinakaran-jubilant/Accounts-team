@@ -309,6 +309,10 @@ const JlDueReport = ({ user }) => {
     const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
     const statusDropdownRef = useRef(null);
 
+    const [showOsDatePopup, setShowOsDatePopup] = useState(false);
+    const [osPopupStartDate, setOsPopupStartDate] = useState('');
+    const [osPopupEndDate, setOsPopupEndDate] = useState('');
+
     const todayString = useMemo(() => {
         const today = new Date();
         const y = today.getFullYear();
@@ -832,7 +836,7 @@ const JlDueReport = ({ user }) => {
         return accountColorMap[name || 'Unknown'] || TAG_COLORS[0];
     };
 
-    const handleBendingExport = async (isTodayOS = false) => {
+    const handleBendingExport = async (customDateRange = null) => {
         setIsExportDropdownOpen(false);
         // Filter out closed loans for the O/S report
         let osData = data.filter(loan => getLoanStatus(loan).label !== 'Closed');
@@ -878,10 +882,10 @@ const JlDueReport = ({ user }) => {
         }
 
         // Pass 'true' for isDetailed mode
-        await handleExport(isTodayOS ? 'Today_OS_Report' : 'OS_Report', osData, true, isTodayOS);
+        await handleExport('OS_Report', osData, true, false, customDateRange);
     };
 
-    const handleExport = async (reportPrefix = 'JL_Report', exportData = filteredData, isDetailed = false, isTodayOS = false) => {
+    const handleExport = async (reportPrefix = 'JL_Report', exportData = filteredData, isDetailed = false, isTodayOS = false, customDateRange = null) => {
         if (exportData.length === 0) return;
 
         const workbook = new ExcelJS.Workbook();
@@ -1017,6 +1021,14 @@ if (isDetailed) {
                     const d = String(todayObj.getDate()).padStart(2, '0');
                     if (toYYYYMMDD(e.received_date) !== `${y}-${m}-${d}`) {
                         isOS = false;
+                    }
+                } else if (isOS && customDateRange) {
+                    const recDate = toYYYYMMDD(e.received_date);
+                    if (recDate === '0000-00-00' || recDate === '—' || !e.received_date) {
+                        isOS = false;
+                    } else {
+                        if (customDateRange.startDate && recDate < customDateRange.startDate) isOS = false;
+                        if (customDateRange.endDate && recDate > customDateRange.endDate) isOS = false;
                     }
                 }
                 return isOS;
@@ -1736,7 +1748,7 @@ if (isDetailed) {
         
         const activeFilterStr = user?.role === 'admin'
             ? (adminAccountFilter.length > 0 ? adminAccountFilter.join('-') : 'No Accounts')
-            : (accountFilter.length > 0 ? accountFilter.join('-') : 'All Accounts');
+            : (accountFilter.length > 0 && accountFilter[0] !== 'NONE' ? accountFilter.join('-') : accountFilter[0] === 'NONE' ? 'No Accounts' : 'All Accounts');
             
         const filenameFilter = activeFilterStr !== 'All Accounts' ? activeFilterStr : (searchTerm || 'All');
         anchor.download = `${reportPrefix}_${filenameFilter}${dateStr}.xlsx`;
@@ -1888,9 +1900,11 @@ if (isDetailed) {
                                             ? 'All Accounts'
                                             : accountFilter.length === filteredAccountOptions.length
                                                 ? 'All Accounts'
-                                                : accountFilter.length === 1
-                                                    ? filteredAccountOptions.find(o => o.value === accountFilter[0])?.label || accountFilter[0]
-                                                    : `${accountFilter.length} Accounts Selected`}
+                                                : accountFilter.length === 1 && accountFilter[0] === 'NONE'
+                                                    ? 'No Accounts'
+                                                    : accountFilter.length === 1
+                                                        ? filteredAccountOptions.find(o => o.value === accountFilter[0])?.label || accountFilter[0]
+                                                        : `${accountFilter.length} Accounts Selected`}
                                     </span>
                                     <span className="material-symbols-outlined text-slate-400 text-sm leading-none">expand_more</span>
                                 </button>
@@ -1906,7 +1920,7 @@ if (isDetailed) {
                                                         if (e.target.checked) {
                                                             setAccountFilter([]);
                                                         } else {
-                                                            setAccountFilter([]);
+                                                            setAccountFilter(['NONE']);
                                                         }
                                                         setCurrentPage(1);
                                                     }}
@@ -1918,22 +1932,25 @@ if (isDetailed) {
                                                 <label key={opt.value} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
                                                     <input
                                                         type="checkbox"
-                                                        checked={accountFilter.includes(opt.value) || accountFilter.length === 0}
+                                                        checked={accountFilter.length === 0 ? true : accountFilter.includes(opt.value)}
                                                         onChange={(e) => {
                                                             let newFilter;
                                                             if (accountFilter.length === 0) {
                                                                 newFilter = filteredAccountOptions.map(o => o.value).filter(v => v !== opt.value);
                                                             } else {
                                                                 if (e.target.checked) {
-                                                                    newFilter = [...accountFilter, opt.value];
-                                                                    if (newFilter.length === filteredAccountOptions.length) {
-                                                                        newFilter = [];
-                                                                    }
+                                                                    newFilter = [...accountFilter.filter(v => v !== 'NONE'), opt.value];
                                                                 } else {
-                                                                    newFilter = accountFilter.filter(v => v !== opt.value);
+                                                                    newFilter = accountFilter.filter(v => v !== opt.value && v !== 'NONE');
                                                                 }
                                                             }
-                                                            setAccountFilter(newFilter);
+                                                            if (newFilter.length === filteredAccountOptions.length) {
+                                                                setAccountFilter([]);
+                                                            } else if (newFilter.length === 0) {
+                                                                setAccountFilter(['NONE']);
+                                                            } else {
+                                                                setAccountFilter(newFilter);
+                                                            }
                                                             setCurrentPage(1);
                                                         }}
                                                         className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
@@ -1942,11 +1959,11 @@ if (isDetailed) {
                                                 </label>
                                             ))}
                                         </div>
-                                        {accountFilter.length > 0 && (
+                                        {accountFilter.length > 0 && accountFilter[0] !== 'NONE' && (
                                             <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
                                                 <button
                                                     onClick={() => {
-                                                        setAccountFilter([]);
+                                                        setAccountFilter(['NONE']);
                                                         setCurrentPage(1);
                                                     }}
                                                     className="w-full p-3 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
@@ -2206,7 +2223,7 @@ if (isDetailed) {
                                     </button>
                                     <button
                                         onClick={() => {
-                                            handleBendingExport(false);
+                                            setShowOsDatePopup(true);
                                             setIsExportDropdownOpen(false);
                                         }}
                                         className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2 border-t border-slate-200/50 dark:border-slate-700/50"
@@ -2214,16 +2231,7 @@ if (isDetailed) {
                                         <span className="material-symbols-outlined text-[18px] text-amber-500">pending_actions</span>
                                         O/S Report
                                     </button>
-                                    <button
-                                        onClick={() => {
-                                            handleBendingExport(true);
-                                            setIsExportDropdownOpen(false);
-                                        }}
-                                        className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2 border-t border-slate-200/50 dark:border-slate-700/50"
-                                    >
-                                        <span className="material-symbols-outlined text-[18px] text-emerald-500">today</span>
-                                        Today O/S Report
-                                    </button>
+
                                 </div>
                             )}
                         </div>
@@ -2420,18 +2428,18 @@ if (isDetailed) {
                             <p className="text-sm text-slate-500 dark:text-slate-400">
                                 Showing <span className="font-semibold text-slate-700 dark:text-slate-200">{startIndex + 1}</span> to <span className="font-semibold text-slate-700 dark:text-slate-200">{endIndex}</span> of <span className="font-semibold text-slate-700 dark:text-slate-200">{filteredData.length}</span> results
                             </p>
-                            <div className="flex gap-2">
+                            <div className="flex items-center gap-2">
                                 <button
                                     onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                                    disabled={currentPage === 1}
-                                    className="h-10 w-10 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+                                    disabled={currentPage === 1 || filteredData.length === 0}
+                                    className="h-9 w-9 flex items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
                                 >
                                     <span className="material-symbols-outlined text-[20px]">chevron_left</span>
                                 </button>
                                 <button
                                     onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                                    disabled={currentPage === totalPages}
-                                    className="h-10 w-10 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+                                    disabled={currentPage === totalPages || filteredData.length === 0}
+                                    className="h-9 w-9 flex items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
                                 >
                                     <span className="material-symbols-outlined text-[20px]">chevron_right</span>
                                 </button>
@@ -2641,6 +2649,63 @@ if (isDetailed) {
                     </div>
                 </div>
             )}
+            {/* O/S Report Date Popup */}
+            {showOsDatePopup && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div
+                        className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 animate-in zoom-in-95 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mb-4">
+                            <span className="material-symbols-outlined text-amber-600 dark:text-amber-400 text-[28px]">calendar_month</span>
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Select O/S Report Date Range</h3>
+                        <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
+                            Choose a received date range to filter the O/S report.
+                        </p>
+                        <div className="flex gap-3 mb-6">
+                            <div className="flex-1">
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Start Date</label>
+                                <input
+                                    type="date"
+                                    value={osPopupStartDate}
+                                    onChange={(e) => setOsPopupStartDate(e.target.value)}
+                                    className="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 dark:text-white"
+                                />
+                            </div>
+                            <div className="flex-1">
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">End Date</label>
+                                <input
+                                    type="date"
+                                    value={osPopupEndDate}
+                                    onChange={(e) => setOsPopupEndDate(e.target.value)}
+                                    className="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 dark:text-white"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowOsDatePopup(false)}
+                                className="flex-1 px-4 h-10 text-sm font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowOsDatePopup(false);
+                                    const hasDates = osPopupStartDate || osPopupEndDate;
+                                    handleBendingExport(hasDates ? { startDate: osPopupStartDate, endDate: osPopupEndDate } : null);
+                                }}
+                                className="flex-1 px-4 h-10 text-sm font-bold text-white bg-primary hover:bg-primary/90 rounded-xl shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">download</span>
+                                Download
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
             {/* Delete Confirmation Modal */}
             {loanToDelete && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">

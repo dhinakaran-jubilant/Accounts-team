@@ -2641,40 +2641,45 @@ def create_short_loan():
             'SENTHIL VADIVEL': 'SV',
             'SN': 'SN'
         }
-        acc_name = data.get('account')
-        prefix = 'SL'
-        if acc_name:
-            acc_name_clean = str(acc_name).upper().strip()
-            if acc_name_clean in acronyms:
-                prefix = acronyms[acc_name_clean]
-            else:
-                clean_chars = re.sub(r'[^A-Z]', '', acc_name_clean)
-                prefix = clean_chars[:4] if clean_chars else 'SL'
-
-        loan_date = data.get('loan_date')
-        year_val = ""
-        if loan_date:
-            if '-' in loan_date:
-                parts = loan_date.split('-')
-                if len(parts[0]) == 4:
-                    year_val = parts[0][-2:]
-                elif len(parts[-1]) == 4:
-                    year_val = parts[-1][-2:]
-        if not year_val:
-            year_val = str(datetime.datetime.now().year)[-2:]
-
-        pattern = f"SL{prefix}{year_val}%"
-        last_loan = ShortLoan.query.filter(ShortLoan.loan_id.like(pattern)).order_by(ShortLoan.loan_id.desc()).first()
-        if last_loan and last_loan.loan_id:
-            try:
-                seq = int(last_loan.loan_id[-4:])
-                next_seq = seq + 1
-            except Exception:
-                next_seq = 1
+        
+        explicit_loan_id = data.get('loan_id')
+        if explicit_loan_id and str(explicit_loan_id).strip():
+            generated_loan_id = str(explicit_loan_id).strip()
         else:
-            next_seq = 1
+            acc_name = data.get('account')
+            prefix = 'SL'
+            if acc_name:
+                acc_name_clean = str(acc_name).upper().strip()
+                if acc_name_clean in acronyms:
+                    prefix = acronyms[acc_name_clean]
+                else:
+                    clean_chars = re.sub(r'[^A-Z]', '', acc_name_clean)
+                    prefix = clean_chars[:4] if clean_chars else 'SL'
 
-        generated_loan_id = f"SL{prefix}{year_val}{next_seq:04d}"
+            loan_date = data.get('loan_date')
+            year_val = ""
+            if loan_date:
+                if '-' in loan_date:
+                    parts = loan_date.split('-')
+                    if len(parts[0]) == 4:
+                        year_val = parts[0][-2:]
+                    elif len(parts[-1]) == 4:
+                        year_val = parts[-1][-2:]
+            if not year_val:
+                year_val = str(datetime.datetime.now().year)[-2:]
+
+            pattern = f"SL{prefix}{year_val}%"
+            last_loan = ShortLoan.query.filter(ShortLoan.loan_id.like(pattern)).order_by(ShortLoan.loan_id.desc()).first()
+            if last_loan and last_loan.loan_id:
+                try:
+                    seq = int(last_loan.loan_id[-4:])
+                    next_seq = seq + 1
+                except Exception:
+                    next_seq = 1
+            else:
+                next_seq = 1
+
+            generated_loan_id = f"SL{prefix}{year_val}{next_seq:04d}"
 
         new_loan = ShortLoan(
             loan_id=generated_loan_id,
