@@ -482,7 +482,7 @@ const Settings = () => {
 
             {/* Add Account Modal Popup */}
             {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+                <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
                     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl space-y-6 transform transition-all animate-in fade-in zoom-in-95 duration-200">
                         <div>
                             <h3 className="text-xl font-extrabold text-slate-900 dark:text-white mb-1">
@@ -566,16 +566,23 @@ const Settings = () => {
                                     </>
                                 )}
                             </div>
-                            <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-800/50">
+                            <div className={`flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-800/50 ${accountType === 'short_loan' ? 'opacity-50' : ''}`}>
                                 <div>
                                     <h4 className="text-xs font-bold text-slate-900 dark:text-white">Needs Approval</h4>
-                                    <p className="text-[10px] text-slate-400 mt-0.5">Toggle approval requirement</p>
+                                    <p className="text-[10px] text-slate-400 mt-0.5">
+                                        {accountType === 'both' ? 'Approval applies only to JL Report' : accountType === 'short_loan' ? 'Not applicable for Short Loans' : 'Toggle approval requirement'}
+                                    </p>
                                 </div>
-                                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                                <label className={`relative inline-flex items-center shrink-0 ${accountType === 'short_loan' ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                                     <input
                                         type="checkbox"
-                                        checked={isNeedApproval}
-                                        onChange={(e) => setIsNeedApproval(e.target.checked)}
+                                        checked={accountType === 'short_loan' ? false : isNeedApproval}
+                                        onChange={(e) => {
+                                            if (accountType !== 'short_loan') {
+                                                setIsNeedApproval(e.target.checked);
+                                            }
+                                        }}
+                                        disabled={accountType === 'short_loan'}
                                         className="sr-only peer"
                                     />
                                     <div className="w-11 h-6 bg-slate-200 dark:bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>

@@ -2758,22 +2758,16 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
         <div className="flex-1 w-full flex flex-col">
             {/* Sticky Header - Works with the parent Layout scroll */}
             {!isPanel && (
-                <div className="sticky top-0 z-50 flex-shrink-0 h-14 flex items-center px-8 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-[#101822]/95 backdrop-blur-md transition-colors">
+                <div className="sticky top-0 z-50 flex-shrink-0 min-h-[56px] flex items-center px-8 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-[#101822]/95 backdrop-blur-md transition-colors gap-4">
                     <button
                         onClick={() => navigate(-1)}
-                        className="flex items-center gap-1.5 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-primary dark:hover:text-primary transition-colors group"
+                        className="flex items-center justify-center w-8 h-8 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-primary dark:hover:text-primary transition-all group shrink-0"
+                        title="Go Back"
                     >
-                        <span className="material-symbols-outlined text-[20px] group-hover:-translate-x-1 transition-transform">arrow_back</span>
-                        Back to JL Due Report
+                        <span className="material-symbols-outlined text-[20px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
                     </button>
-                </div>
-            )}
-
-            <main className="mx-auto px-8 py-8 flex-1 flex flex-col w-full">
-                {/* Header Info */}
-                <div className="mb-8">
-                    <div className="flex items-center gap-3 flex-wrap">
-                        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                    <div className="flex items-center gap-3 flex-wrap py-2">
+                        <h1 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                             {loan.client_name}
                         </h1>
                         {loan.loan_ref_id && (
@@ -2801,6 +2795,42 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                         )}
                     </div>
                 </div>
+            )}
+
+            <main className={`mx-auto px-8 flex-1 flex flex-col w-full ${isPanel ? 'py-8' : 'py-6'}`}>
+                {/* Header Info - Only show here if in panel mode */}
+                {isPanel && (
+                    <div className="mb-8">
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <h1 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                                {loan.client_name}
+                            </h1>
+                            {loan.loan_ref_id && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold font-mono bg-primary/10 text-primary border border-primary/20 dark:bg-primary/20 dark:border-primary/30 tracking-widest">
+                                    <span className="material-symbols-outlined text-[13px]">tag</span>
+                                    {loan.loan_ref_id}
+                                </span>
+                            )}
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                <span className="material-symbols-outlined text-[13px]">calendar_today</span>
+                                {loan.loan_date}
+                            </span>
+                            {loan.verified_by && (
+                                loan.approval_status === 'APPROVED' ? (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800/50">
+                                        <span className="material-symbols-outlined text-[13px]">verified_user</span>
+                                        {loan.verified_by}
+                                    </span>
+                                ) : (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50">
+                                        <span className="material-symbols-outlined text-[13px] animate-pulse">pending</span>
+                                        {loan.verified_by}
+                                    </span>
+                                )
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {(() => {
                     const totalInterestAmount = (loan?.primary_account_interest || 0) + (loan?.remaining_accounts || []).reduce((s, a) => s + (a.interest_amount || 0), 0);

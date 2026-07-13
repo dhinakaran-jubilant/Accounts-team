@@ -194,20 +194,7 @@ const getLastInterestReceivedDate = (renewHistory) => {
     }
 };
 
-// Delay Days = days from max(tenureEndDate, lastInterestDate) to today.
-// Closed loans always return 0.
-const calculateDelayDays = (loanDate, tenureDays, renewHistory, closeDate, status) => {
-    if (status === 'CLOSED') return 0;
-    const todayStr = new Date().toISOString().split('T')[0];
-    const tenureEndDate = addDaysToDate(loanDate, Number(tenureDays || 0));
-    const lastInterestDate = getLastInterestReceivedDate(renewHistory);
-    // Start counting delay from whichever is later: tenure end OR last paid date
-    const delayStart = (lastInterestDate && lastInterestDate > tenureEndDate)
-        ? lastInterestDate
-        : tenureEndDate;
-    if (delayStart >= todayStr) return 0;
-    return calculateDaysRecd(delayStart, todayStr);
-};
+
 
 const getPrincipalPayments = (renewHistory) => {
     const payments = [];
@@ -349,6 +336,21 @@ const calculateGrossInterest = (loanAmount, intPerDay, loanDate, closeDateStr, r
     return grossInterest;
 };
 
+const calculateDelayDays = (loanDate, tenureDays, renewHistory, closeDate, status, loanAmount, intPerDay) => {
+    if (status === 'CLOSED') return 0;
+    const grossInterest = calculateGrossInterest(loanAmount, intPerDay, loanDate, closeDate, renewHistory);
+    const actualInterestReceived = calculateActualInterestReceived(renewHistory);
+    const pendingInterestAmount = Math.max(0, grossInterest - actualInterestReceived);
+    
+    const currentPrincipal = getRemainingPrincipal(loanAmount, renewHistory);
+    const dailyInterest = calculateDailyInterest(intPerDay, currentPrincipal);
+    
+    if (dailyInterest > 0) {
+        return Math.floor(pendingInterestAmount / dailyInterest);
+    }
+    return 0;
+};
+
 
 const calculateTotalRepayable = (loanAmount, intPerDay, loanDate, closeDateStr, renewHistory, status) => {
     if (status === 'CLOSED') return 0;
@@ -372,19 +374,103 @@ const ShortLoan = ({ user }) => {
         return Array.isArray(perms) ? perms : [];
     }, [user]);
 
+    const [dbAccounts, setDbAccounts] = useState([]);
+
+    useEffect(() => {
+        const fetchAccounts = async () => {
+            try {
+                const response = await fetch('/api/accounts-name');
+                const data = await response.json();
+                if (data.success && data.accounts) {
+                    const filtered = data.accounts
+                        .filter(a => a.type === 'short_loan' || a.type === 'both')
+                        .map(a => ({
+                            acronym: a.acronym.toUpperCase().trim(),
+                            name: a.name.trim()
+                        }));
+                    // Deduplicate by acronym
+                    const seen = new Set();
+                    const uniqueAccounts = [];
+                    for (const a of filtered) {
+                        if (!seen.has(a.acronym)) {
+                            seen.add(a.acronym);
+                            uniqueAccounts.push(a);
+                        }
+                    }
+                    uniqueAccounts.sort((a, b) => a.acronym.localeCompare(b.acronym));
+                    setDbAccounts(uniqueAccounts);
+                }
+            } catch (error) {
+                console.error('Error fetching accounts:', error);
+            }
+        };
+        fetchAccounts();
+    }, []);
+
     const allowedAccounts = useMemo(() => {
-        if (user?.role === 'admin') return ACCOUNTS;
-        return ACCOUNTS.filter(acc => userPermissions.some(p => p.toUpperCase().trim() === acc.toUpperCase().trim()));
-    }, [user, userPermissions]);
+        const baseAccounts = dbAccounts.length > 0 
+            ? dbAccounts 
+            : ACCOUNTS.map(a => ({ acronym: a, name: a }));
+        if (user?.role === 'admin') return baseAccounts;
+        return baseAccounts.filter(acc => userPermissions.some(p => p.toUpperCase().trim() === acc.acronym));
+    }, [user, userPermissions, dbAccounts]);
     const [loading, setLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState('ALL');
+    const [statusFilter, setStatusFilter] = useState([]);
     const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
-    const [followerFilter, setFollowerFilter] = useState('ALL');
+    const [followerFilter, setFollowerFilter] = useState([]);
     const [isFollowerFilterDropdownOpen, setIsFollowerFilterDropdownOpen] = useState(false);
-    const [accountFilter, setAccountFilter] = useState('ALL');
+    const [accountFilter, setAccountFilter] = useState([]);
     const [isAccountFilterDropdownOpen, setIsAccountFilterDropdownOpen] = useState(false);
+
+    const toggleStatusFilter = (status) => {
+        if (status === 'ALL') {
+            setStatusFilter([]);
+        } else {
+            setStatusFilter(prev => {
+                if (prev.includes(status)) {
+                    return prev.filter(s => s !== status);
+                } else {
+                    return [...prev, status];
+                }
+            });
+        }
+        setCurrentPage(1);
+    };
+
+    const toggleFollowerFilter = (follower) => {
+        if (follower === 'ALL') {
+            setFollowerFilter([]);
+        } else {
+            const fUpper = follower.toUpperCase();
+            setFollowerFilter(prev => {
+                if (prev.includes(fUpper)) {
+                    return prev.filter(f => f !== fUpper);
+                } else {
+                    return [...prev, fUpper];
+                }
+            });
+        }
+        setCurrentPage(1);
+    };
+
+    const toggleAccountFilter = (account) => {
+        if (account === 'ALL') {
+            setAccountFilter([]);
+        } else {
+            const accUpper = account.toUpperCase();
+            setAccountFilter(prev => {
+                if (prev.includes(accUpper)) {
+                    return prev.filter(a => a !== accUpper);
+                } else {
+                    return [...prev, accUpper];
+                }
+            });
+        }
+        setCurrentPage(1);
+    };
+
     const [tdsFilter, setTdsFilter] = useState('ALL');
     const [isTdsFilterDropdownOpen, setIsTdsFilterDropdownOpen] = useState(false);
     const [startDate, setStartDate] = useState('');
@@ -430,7 +516,7 @@ const ShortLoan = ({ user }) => {
         account: '',
         interest_collected: false
     });
-    const itemsPerPage = 10;
+    const itemsPerPage = 20;
 
     const API_URL = '/api';
 
@@ -900,8 +986,8 @@ const ShortLoan = ({ user }) => {
                     );
                 }
                 let matchesStatus = loan.status === 'OVERDUE';
-                let matchesFollower = followerFilter !== 'ALL' ? (loan.follower || '').toUpperCase() === followerFilter.toUpperCase() : true;
-                let matchesAccount = accountFilter !== 'ALL' ? (loan.account || '').toUpperCase() === accountFilter.toUpperCase() : true;
+                let matchesFollower = followerFilter.length > 0 ? followerFilter.includes((loan.follower || '').toUpperCase()) : true;
+                let matchesAccount = accountFilter.length > 0 ? accountFilter.includes((loan.account || '').toUpperCase()) : true;
                 let matchesDateRange = true;
                 if (startDate || endDate) {
                     if (!loan.loan_date) matchesDateRange = false;
@@ -980,7 +1066,7 @@ const ShortLoan = ({ user }) => {
                         loanAmount: Number(loan.loan_amount || 0),
                         tenureDays: Number(loan.days || 0),
                         actualDays: calculateDaysRecd(loan.loan_date, null),
-                        delayDays: calculateDelayDays(loan.loan_date, loan.days, loan.renew_history, loan.close_date, loan.status),
+                        delayDays: calculateDelayDays(loan.loan_date, loan.days, loan.renew_history, loan.close_date, loan.status, loan.loan_amount, loan.int_per_day),
                         amounts: {}
                     };
                     sortedAccounts.forEach(acc => { groups[key].amounts[acc] = 0; });
@@ -1256,6 +1342,212 @@ const ShortLoan = ({ user }) => {
         }
     };
 
+    const handleExportProfit = async () => {
+        setIsExportDropdownOpen(false);
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Profit Report');
+
+            let filterStart = startDate;
+            let filterEnd = endDate;
+            if (!filterStart || !filterEnd) {
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = String(now.getMonth() + 1).padStart(2, '0');
+                filterStart = `${year}-${month}-01`;
+                const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
+                filterEnd = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+            }
+
+            const startObj = new Date(filterStart);
+            startObj.setHours(0,0,0,0);
+            const endObj = new Date(filterEnd);
+            endObj.setHours(23,59,59,999);
+
+            const parseLogDate = (logStr) => {
+                const pipeIdx = logStr.lastIndexOf('|');
+                if (pipeIdx === -1) return null;
+                const ts = logStr.substring(pipeIdx + 1).trim();
+                const dmyMatch = ts.match(/(\d{2})-(\d{2})-(\d{4})/);
+                if (dmyMatch) return new Date(dmyMatch[3], dmyMatch[2] - 1, dmyMatch[1]);
+                const dmmmMatch = ts.match(/(\d{2})\s+([A-Za-z]{3})\s+(\d{4})/);
+                if (dmmmMatch) return new Date(`${dmmmMatch[2]} ${dmmmMatch[1]}, ${dmmmMatch[3]}`);
+                const dObj = new Date(ts);
+                if (!isNaN(dObj.getTime())) return dObj;
+                return null;
+            };
+
+            const baseAccountSet = new Set(['AS', 'ASE', 'ASQ', 'JC', 'NEXUS', 'RE', 'SCE', 'SCS', 'SENTHIL VADIVEL', 'SN']);
+            loans.forEach(loan => {
+                if (loan.account) baseAccountSet.add(loan.account.toUpperCase().trim());
+            });
+            baseAccountSet.delete('ASQ');
+            baseAccountSet.delete('RE');
+            baseAccountSet.delete('ASE');
+            baseAccountSet.delete('SCE');
+            
+            const sortedAccounts = Array.from(baseAccountSet).sort((a, b) => a.localeCompare(b));
+            const exportGroups = {};
+            
+            loans.forEach(loan => {
+                if (user?.role !== 'admin') {
+                    const loanAcc = (loan.account || '').toUpperCase().trim();
+                    const hasPerm = userPermissions.some(p => p.toUpperCase().trim() === loanAcc);
+                    if (!hasPerm) return;
+                }
+                
+                if (searchTerm) {
+                    const term = searchTerm.toLowerCase();
+                    if (!(loan.client_name || loan.borrower_name || '').toLowerCase().includes(term)) {
+                        return;
+                    }
+                }
+
+                let sumInterest = 0;
+                if (loan.renew_history) {
+                    try {
+                        const history = JSON.parse(loan.renew_history);
+                        if (Array.isArray(history)) {
+                            history.forEach(log => {
+                                if (log.includes('Interest Collected Upfront') || log.includes('Interest Received') || log.includes('Partial Interest Received')) {
+                                    const logDate = parseLogDate(log);
+                                    if (logDate && logDate >= startObj && logDate <= endObj) {
+                                        const amountMatch = log.match(/-\s*₹\s*([\d,.]+)/);
+                                        if (amountMatch) {
+                                            const amt = parseFloat(amountMatch[1].replace(/,/g, ''));
+                                            if (!isNaN(amt)) sumInterest += amt;
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    } catch(e) {}
+                }
+
+                if (sumInterest > 0) {
+                    let rawAcc = (loan.account || '').toUpperCase().trim();
+                    if (rawAcc === 'ASQ' || rawAcc === 'RE') rawAcc = 'JC';
+                    else if (rawAcc === 'ASE') rawAcc = 'AS';
+                    else if (rawAcc === 'SCE') rawAcc = 'SCS';
+                    
+                    const client = (loan.client_name || '').toUpperCase().trim();
+                    const dateStr = loan.loan_date ? loan.loan_date.split('-').reverse().join('-') : '';
+                    const key = `${client}_${dateStr}`;
+                    
+                    if (!exportGroups[key]) {
+                        exportGroups[key] = {
+                            date: dateStr,
+                            client: client,
+                            loan_date_obj: loan.loan_date ? new Date(loan.loan_date) : new Date(0),
+                            amounts: {}
+                        };
+                    }
+                    
+                    let matchedAcc = sortedAccounts.find(a => rawAcc === a) || sortedAccounts.find(a => a.includes(rawAcc) || rawAcc.includes(a)) || 'AS';
+                    
+                    if (!exportGroups[key].amounts[matchedAcc]) {
+                        exportGroups[key].amounts[matchedAcc] = 0;
+                    }
+                    exportGroups[key].amounts[matchedAcc] += sumInterest;
+                }
+            });
+
+            const worksheetColumns = [
+                { key: 'date', width: 15 },
+                { key: 'party_name', width: 35 },
+            ];
+            sortedAccounts.forEach(acc => worksheetColumns.push({ key: acc.toLowerCase(), width: 15 }));
+            worksheet.columns = worksheetColumns;
+
+            const thinBorder = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+            const mediumBorder = { top: { style: 'medium' }, left: { style: 'medium' }, bottom: { style: 'medium' }, right: { style: 'medium' } };
+            const headerGrayFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFA6A6A6' } };
+
+            const monthLabel = getMonthsLabelRange(filterStart, filterEnd);
+
+            const titleRow = worksheet.getRow(1);
+            titleRow.height = 30;
+            
+            const getColLetter = (colIdx) => {
+                let temp = colIdx;
+                let letter = '';
+                while (temp > 0) {
+                    let modulo = (temp - 1) % 26;
+                    letter = String.fromCharCode(65 + modulo) + letter;
+                    temp = Math.floor((temp - modulo) / 26);
+                }
+                return letter;
+            };
+
+            const endColLetter = getColLetter(2 + sortedAccounts.length);
+            worksheet.mergeCells(`B1:${endColLetter}1`);
+            const titleCell = worksheet.getCell('B1');
+            titleCell.value = monthLabel;
+            titleCell.font = { bold: true, name: 'Trebuchet MS', size: 12 };
+            titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+            titleCell.border = mediumBorder;
+            
+            worksheet.getRow(2).height = 15;
+
+            const headerRow = worksheet.getRow(3);
+            headerRow.height = 24;
+            const headers = ['DATE', 'CLIENT NAME', ...sortedAccounts];
+            headers.forEach((h, idx) => {
+                const cell = headerRow.getCell(idx + 1);
+                cell.value = h;
+                cell.fill = headerGrayFill;
+                cell.font = { color: { argb: 'FF000000' }, bold: true, name: 'Trebuchet MS', size: 10 };
+                cell.border = thinBorder;
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            });
+
+            const sortedRows = Object.values(exportGroups).sort((a, b) => a.loan_date_obj - b.loan_date_obj);
+
+            let currentExcelRow = 4;
+            sortedRows.forEach(g => {
+                const row = worksheet.getRow(currentExcelRow);
+                row.height = 20;
+
+                const rowValues = [g.date, g.client];
+                sortedAccounts.forEach(acc => {
+                    rowValues.push(g.amounts[acc] || null);
+                });
+
+                rowValues.forEach((val, idx) => {
+                    const cell = row.getCell(idx + 1);
+                    cell.value = val;
+                    cell.border = thinBorder;
+                    cell.font = { name: 'Trebuchet MS', size: 10 };
+                    if (idx === 0) {
+                        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                    } else if (idx === 1) {
+                        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+                    } else {
+                        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                        if (val !== null) cell.numFmt = '#,##0';
+                    }
+                });
+                currentExcelRow++;
+            });
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = window.URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            const dateStr = new Date().toISOString().slice(0, 10).split('-').reverse().join('-');
+            anchor.download = `Profit_Report_${dateStr}.xlsx`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            window.URL.revokeObjectURL(url);
+
+        } catch (error) {
+            console.error("Export Profit Error:", error);
+            setError("Failed to export Profit Report.");
+        }
+    };
+
     const handleExportInterestPending = async () => {
         setIsExportDropdownOpen(false);
         try {
@@ -1280,13 +1572,13 @@ const ShortLoan = ({ user }) => {
                 let matchesStatus = loan.status !== 'CLOSED';
 
                 let matchesFollower = true;
-                if (followerFilter !== 'ALL') {
-                    matchesFollower = (loan.follower || '').toUpperCase() === followerFilter.toUpperCase();
+                if (followerFilter.length > 0) {
+                    matchesFollower = followerFilter.includes((loan.follower || '').toUpperCase());
                 }
 
                 let matchesAccount = true;
-                if (accountFilter !== 'ALL') {
-                    matchesAccount = (loan.account || '').toUpperCase() === accountFilter.toUpperCase();
+                if (accountFilter.length > 0) {
+                    matchesAccount = accountFilter.includes((loan.account || '').toUpperCase());
                 }
 
                 let matchesDateRange = true;
@@ -1384,7 +1676,7 @@ const ShortLoan = ({ user }) => {
                         loanAmount: Number(loan.loan_amount || 0),
                         tenureDays: Number(loan.days || 0),
                         actualDays: calculateDaysRecd(loan.loan_date, null),
-                        delayDays: calculateDelayDays(loan.loan_date, loan.days, loan.renew_history, loan.close_date, loan.status),
+                        delayDays: calculateDelayDays(loan.loan_date, loan.days, loan.renew_history, loan.close_date, loan.status, loan.loan_amount, loan.int_per_day),
                         amounts: {}
                     };
                     sortedAccounts.forEach(acc => {
@@ -1562,14 +1854,15 @@ const ShortLoan = ({ user }) => {
             };
 
             const cleanAmount = Number(payload.loan_amount) || 0;
+            const cleanInt = Number(payload.int_per_day) || 0;
+            const diffDays = Number(payload.days) || 0;
+            const formattedInt = Number.isInteger(cleanInt) ? cleanInt.toLocaleString('en-IN') : cleanInt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\.00$/, '');
             const now = new Date();
             const updatedAt = now.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
-            const creationLog = `Loan Created with Principal ₹ ${cleanAmount.toLocaleString('en-IN')} | ${updatedAt}`;
+            const creationLog = `Loan Created with Principal ₹ ${cleanAmount.toLocaleString('en-IN')}, Int/Day ₹ ${formattedInt}, Tenure ${diffDays} days | ${updatedAt}`;
             let historyList = [creationLog];
 
             if (formData.interest_collected) {
-                const cleanInt = Number(payload.int_per_day) || 0;
-                const diffDays = Number(formData.days) || 0;
                 const dailyInt = (cleanAmount / 100000) * cleanInt;
                 const amount = diffDays * dailyInt;
 
@@ -1637,14 +1930,29 @@ const ShortLoan = ({ user }) => {
                 }
             }
             
+            let hasUpfrontBefore = false;
             if (Array.isArray(historyList)) {
+                // First filter out upfront if it's toggled off
+                historyList = historyList.filter(log => {
+                    const pipeIdx = log.lastIndexOf(' | ');
+                    const text = pipeIdx !== -1 ? log.slice(0, pipeIdx) : log;
+                    if (text.includes('Interest Collected Upfront')) {
+                        hasUpfrontBefore = true;
+                        if (!editFormData.interest_collected) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+
                 historyList = historyList.map(log => {
                     const pipeIdx = log.lastIndexOf(' | ');
                     const text = pipeIdx !== -1 ? log.slice(0, pipeIdx) : log;
                     const timestamp = pipeIdx !== -1 ? log.slice(pipeIdx + 3) : '';
                     
                     if (text.includes('Loan Created with Principal')) {
-                        return `Loan Created with Principal ₹ ${cleanAmount.toLocaleString('en-IN')} | ${timestamp}`;
+                        const formattedInt = Number.isInteger(cleanInt) ? cleanInt.toLocaleString('en-IN') : cleanInt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\.00$/, '');
+                        return `Loan Created with Principal ₹ ${cleanAmount.toLocaleString('en-IN')}, Int/Day ₹ ${formattedInt}, Tenure ${diffDays} days | ${timestamp}`;
                     }
                     
                     if (text.includes('Interest Collected Upfront')) {
@@ -1676,6 +1984,42 @@ const ShortLoan = ({ user }) => {
                     
                     return log;
                 });
+            }
+
+            // Add if it was toggled on and didn't exist before
+            if (editFormData.interest_collected && !hasUpfrontBefore) {
+                const dailyInt = (cleanAmount / 100000) * cleanInt;
+                const upfrontInterestAmount = diffDays * dailyInt;
+                const netPaid = cleanAmount - Math.round(upfrontInterestAmount);
+                
+                let formattedFrom = '';
+                let formattedTo = '';
+                if (editFormData.loan_date) {
+                    const dateParts = editFormData.loan_date.split('-');
+                    const loanDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+                    const toDateObj = new Date(loanDate);
+                    toDateObj.setDate(toDateObj.getDate() + diffDays);
+
+                    const formatDate = (dObj) => {
+                        const y = dObj.getFullYear();
+                        const m = String(dObj.getMonth() + 1).padStart(2, '0');
+                        const d = String(dObj.getDate()).padStart(2, '0');
+                        return `${d}-${m}-${y}`;
+                    };
+
+                    formattedFrom = formatDate(loanDate);
+                    formattedTo = formatDate(toDateObj);
+                }
+                const now = new Date();
+                const updatedAt = now.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+
+                const newLog = `Interest Collected Upfront (Net Disbursed: ₹ ${netPaid.toLocaleString('en-IN')} deducted from ₹ ${cleanAmount.toLocaleString('en-IN')} Principal) from ${formattedFrom} to ${formattedTo} ${diffDays} days - ₹ ${Math.round(upfrontInterestAmount).toLocaleString('en-IN')} | ${updatedAt}`;
+                
+                if (historyList.length > 0 && historyList[0].includes('Loan Created')) {
+                    historyList.splice(1, 0, newLog);
+                } else {
+                    historyList.unshift(newLog);
+                }
             }
 
             const payload = {
@@ -1950,19 +2294,19 @@ const ShortLoan = ({ user }) => {
         }
 
         let matchesStatus = true;
-        if (statusFilter !== 'ALL') {
+        if (statusFilter.length > 0) {
             const currentStatus = loan.status || 'ACTIVE';
-            matchesStatus = currentStatus === statusFilter;
+            matchesStatus = statusFilter.includes(currentStatus);
         }
 
         let matchesFollower = true;
-        if (followerFilter !== 'ALL') {
-            matchesFollower = (loan.follower || '').toUpperCase() === followerFilter.toUpperCase();
+        if (followerFilter.length > 0) {
+            matchesFollower = followerFilter.includes((loan.follower || '').toUpperCase());
         }
 
         let matchesAccount = true;
-        if (accountFilter !== 'ALL') {
-            matchesAccount = (loan.account || '').toUpperCase() === accountFilter.toUpperCase();
+        if (accountFilter.length > 0) {
+            matchesAccount = accountFilter.includes((loan.account || '').toUpperCase());
         }
 
         let matchesTds = true;
@@ -2039,8 +2383,8 @@ const ShortLoan = ({ user }) => {
                     valB = calculateDaysRecd(b.loan_date, b.status === 'CLOSED' ? b.close_date : null);
                     break;
                 case 'delay_days':
-                    valA = calculateDelayDays(a.loan_date, a.days, a.renew_history, a.close_date, a.status);
-                    valB = calculateDelayDays(b.loan_date, b.days, b.renew_history, b.close_date, b.status);
+                    valA = calculateDelayDays(a.loan_date, a.days, a.renew_history, a.close_date, a.status, a.loan_amount, a.int_per_day);
+                    valB = calculateDelayDays(b.loan_date, b.days, b.renew_history, b.close_date, b.status, b.loan_amount, b.int_per_day);
                     break;
                 case 'tds_status': {
                     const getTdsVal = (l) => {
@@ -2169,7 +2513,7 @@ const ShortLoan = ({ user }) => {
             )}
 
             {/* Filters */}
-            <div className="flex items-center gap-4 !mt-5 justify-end">
+            <div className="flex items-center gap-2 !mt-5 justify-end">
 
                 <div className="relative">
                     <button
@@ -2178,9 +2522,11 @@ const ShortLoan = ({ user }) => {
                         className="h-10 min-w-[130px] pl-4 pr-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 text-left"
                     >
                         <span>
-                            {statusFilter === 'ALL' ? 'All Statuses' : 
-                             statusFilter === 'ACTIVE' ? 'Active' : 
-                             statusFilter === 'OVERDUE' ? 'Overdue' : 'Closed'}
+                            {statusFilter.length === 0 
+                                ? 'All Statuses' 
+                                : statusFilter.length === 1 
+                                    ? (statusFilter[0] === 'ACTIVE' ? 'Active' : statusFilter[0] === 'OVERDUE' ? 'Overdue' : 'Closed')
+                                    : `${statusFilter.length} Selected`}
                         </span>
                         <span className={`material-symbols-outlined text-slate-400 text-[18px] transition-transform duration-200 absolute right-4 ${isFilterDropdownOpen ? 'rotate-180' : ''}`}>
                             expand_more
@@ -2200,18 +2546,16 @@ const ShortLoan = ({ user }) => {
                                     <button
                                         key={option.value}
                                         type="button"
-                                        onClick={() => {
-                                            setStatusFilter(option.value);
-                                            setIsFilterDropdownOpen(false);
-                                            setCurrentPage(1);
-                                        }}
-                                        className={`w-full px-3 py-2 text-left text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                                            statusFilter === option.value
-                                                ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-white'
-                                                : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                                        }`}
+                                        onClick={() => toggleStatusFilter(option.value)}
+                                        className="w-full px-3 py-2 text-left text-xs font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-200"
                                     >
-                                        {option.label}
+                                        <input 
+                                            type="checkbox" 
+                                            checked={option.value === 'ALL' ? statusFilter.length === 0 : statusFilter.includes(option.value)}
+                                            onChange={() => {}} 
+                                            className="rounded text-primary focus:ring-primary border-slate-300 dark:border-slate-700 pointer-events-none"
+                                        />
+                                        <span>{option.label}</span>
                                     </button>
                                 ))}
                             </div>
@@ -2226,7 +2570,11 @@ const ShortLoan = ({ user }) => {
                         className="h-10 min-w-[150px] pl-4 pr-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 text-left"
                     >
                         <span>
-                            {followerFilter === 'ALL' ? 'All Followers' : followerFilter}
+                            {followerFilter.length === 0 
+                                ? 'All Followers' 
+                                : followerFilter.length === 1 
+                                    ? followerFilter[0] 
+                                    : `${followerFilter.length} Selected`}
                         </span>
                         <span className={`material-symbols-outlined text-slate-400 text-[18px] transition-transform duration-200 absolute right-4 ${isFollowerFilterDropdownOpen ? 'rotate-180' : ''}`}>
                             expand_more
@@ -2239,23 +2587,21 @@ const ShortLoan = ({ user }) => {
                             <div className="absolute top-[calc(100%+6px)] left-0 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 p-1.5 space-y-1 max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-2 duration-150">
                                 {[
                                     { value: 'ALL', label: 'All Followers' },
-                                    ...FOLLOWERS.map(f => ({ value: f, label: f }))
+                                    ...FOLLOWERS.map(f => ({ value: f.toUpperCase(), label: f }))
                                 ].map((option) => (
                                     <button
                                         key={option.value}
                                         type="button"
-                                        onClick={() => {
-                                            setFollowerFilter(option.value);
-                                            setIsFollowerFilterDropdownOpen(false);
-                                            setCurrentPage(1);
-                                        }}
-                                        className={`w-full px-3 py-2 text-left text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                                            followerFilter === option.value
-                                                ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-white'
-                                                : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                                        }`}
+                                        onClick={() => toggleFollowerFilter(option.value)}
+                                        className="w-full px-3 py-2 text-left text-xs font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-200"
                                     >
-                                        {option.label}
+                                        <input 
+                                            type="checkbox" 
+                                            checked={option.value === 'ALL' ? followerFilter.length === 0 : followerFilter.includes(option.value)}
+                                            onChange={() => {}} 
+                                            className="rounded text-primary focus:ring-primary border-slate-300 dark:border-slate-700 pointer-events-none"
+                                        />
+                                        <span>{option.label}</span>
                                     </button>
                                 ))}
                             </div>
@@ -2267,10 +2613,14 @@ const ShortLoan = ({ user }) => {
                     <button
                         type="button"
                         onClick={() => setIsAccountFilterDropdownOpen(!isAccountFilterDropdownOpen)}
-                        className="h-10 min-w-[130px] pl-4 pr-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 text-left"
+                        className="h-10 min-w-[100px] pl-4 pr-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 text-left relative"
                     >
-                        <span>
-                            {accountFilter === 'ALL' ? 'All Accounts' : accountFilter}
+                        <span className="truncate pr-2">
+                            {accountFilter.length === 0 
+                                ? 'All Accounts' 
+                                : accountFilter.length === 1 
+                                    ? (allowedAccounts.find(a => a.acronym === accountFilter[0])?.name || accountFilter[0])
+                                    : `${accountFilter.length} Selected`}
                         </span>
                         <span className={`material-symbols-outlined text-slate-400 text-[18px] transition-transform duration-200 absolute right-4 ${isAccountFilterDropdownOpen ? 'rotate-180' : ''}`}>
                             expand_more
@@ -2280,26 +2630,25 @@ const ShortLoan = ({ user }) => {
                     {isAccountFilterDropdownOpen && (
                         <>
                             <div className="fixed inset-0 z-40" onClick={() => setIsAccountFilterDropdownOpen(false)}></div>
-                            <div className="absolute top-[calc(100%+6px)] left-0 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 p-1.5 space-y-1 max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-2 duration-150">
+                            <div className="absolute top-[calc(100%+6px)] left-0 w-60 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 p-1.5 space-y-1 max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-2 duration-150">
                                 {[
                                     { value: 'ALL', label: 'All Accounts' },
-                                    ...allowedAccounts.map(a => ({ value: a, label: a }))
+                                    ...allowedAccounts.map(a => ({ value: a.acronym, label: a.name }))
                                 ].map((option) => (
                                     <button
                                         key={option.value}
                                         type="button"
-                                        onClick={() => {
-                                            setAccountFilter(option.value);
-                                            setIsAccountFilterDropdownOpen(false);
-                                            setCurrentPage(1);
-                                        }}
-                                        className={`w-full px-3 py-2 text-left text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                                            accountFilter === option.value
-                                                ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-white'
-                                                : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                                        }`}
+                                        onClick={() => toggleAccountFilter(option.value)}
+                                        className="w-full px-3 py-2 text-left text-xs font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-200 uppercase truncate"
+                                        title={option.label}
                                     >
-                                        {option.label}
+                                        <input 
+                                            type="checkbox" 
+                                            checked={option.value === 'ALL' ? accountFilter.length === 0 : accountFilter.includes(option.value)}
+                                            onChange={() => {}} 
+                                            className="rounded text-primary focus:ring-primary border-slate-300 dark:border-slate-700 pointer-events-none"
+                                        />
+                                        <span className="truncate">{option.label}</span>
                                     </button>
                                 ))}
                             </div>
@@ -2325,7 +2674,7 @@ const ShortLoan = ({ user }) => {
                     {isTdsFilterDropdownOpen && (
                         <>
                             <div className="fixed inset-0 z-40" onClick={() => setIsTdsFilterDropdownOpen(false)}></div>
-                            <div className="absolute top-[calc(100%+6px)] left-0 w-36 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 p-1.5 space-y-1 animate-in fade-in slide-in-from-top-2 duration-150">
+                            <div className="absolute top-[calc(100%+6px)] left-0 w-36 bg-white dark:bg-slate-900 border border-slate-200@short dark:border-slate-800 rounded-xl shadow-xl z-50 p-1.5 space-y-1 animate-in fade-in slide-in-from-top-2 duration-150">
                                 {[
                                     { value: 'ALL', label: 'All' },
                                     { value: 'YES', label: 'Yes' },
@@ -2503,18 +2852,25 @@ const ShortLoan = ({ user }) => {
                                 >
                                     TDS Report
                                 </button>
+                                <button
+                                    type="button"
+                                    onClick={handleExportProfit}
+                                    className="w-full px-3 py-2 text-left text-xs font-bold rounded-lg transition-colors cursor-pointer text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                                >
+                                    Profit Report
+                                </button>
                             </div>
                         </>
                     )}
                 </div>
 
-                {(searchTerm || statusFilter !== 'ALL' || followerFilter !== 'ALL' || accountFilter !== 'ALL' || tdsFilter !== 'ALL' || startDate || endDate) && (
+                {(searchTerm || statusFilter.length > 0 || followerFilter.length > 0 || accountFilter.length > 0 || tdsFilter !== 'ALL' || startDate || endDate) && (
                     <button
                         onClick={() => {
                             setSearchTerm('');
-                            setStatusFilter('ALL');
-                            setFollowerFilter('ALL');
-                            setAccountFilter('ALL');
+                            setStatusFilter([]);
+                            setFollowerFilter([]);
+                            setAccountFilter([]);
                             setTdsFilter('ALL');
                             setStartDate('');
                             setEndDate('');
@@ -2534,9 +2890,9 @@ const ShortLoan = ({ user }) => {
 
             {/* Table */}
             <div className="bg-white dark:bg-[#101822] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden flex flex-col flex-1 min-h-0 !mt-5">
-                <div className="flex-1 overflow-x-auto scrollbar-premium">
+                <div className="flex-1 overflow-auto scrollbar-premium">
                     <table className="w-full text-left border-collapse">
-                        <thead>
+                        <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-[#101822]">
                             <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
                                 <th 
                                     style={{minWidth:'70px'}} 
@@ -2807,7 +3163,7 @@ const ShortLoan = ({ user }) => {
                                         </td>
                                         <td className="px-4 py-2 text-center">
                                             <span className="text-sm font-medium text-slate-700 dark:text-slate-400">
-                                                {calculateDelayDays(loan.loan_date, loan.days, loan.renew_history, loan.close_date, loan.status)}
+                                                {calculateDelayDays(loan.loan_date, loan.days, loan.renew_history, loan.close_date, loan.status, loan.loan_amount, loan.int_per_day)}
                                             </span>
                                         </td>
                                         <td className="px-4 py-2 text-center">
@@ -3158,7 +3514,7 @@ const ShortLoan = ({ user }) => {
                                             }}
                                             className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 flex items-center justify-between text-sm font-bold cursor-pointer dark:text-white"
                                         >
-                                            {formData.account || 'Select Account'}
+                                            {(formData.account && (allowedAccounts.find(a => a.acronym === formData.account)?.name || formData.account)) || 'Select Account'}
                                             <span className={`material-symbols-outlined text-slate-400 text-sm transition-transform duration-200 ${isCreateAccountDropdownOpen ? 'rotate-180' : ''}`}>expand_more</span>
                                         </div>
                                         
@@ -3181,18 +3537,18 @@ const ShortLoan = ({ user }) => {
                                                     </div>
                                                     {allowedAccounts.map((a) => (
                                                         <div 
-                                                            key={a}
+                                                            key={a.acronym}
                                                             onClick={() => {
-                                                                setFormData({...formData, account: a});
+                                                                setFormData({...formData, account: a.acronym});
                                                                 setIsCreateAccountDropdownOpen(false);
                                                             }}
                                                             className={`px-4 py-3 text-sm font-bold cursor-pointer transition-colors ${
-                                                                formData.account === a 
+                                                                formData.account === a.acronym 
                                                                     ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-white' 
                                                                     : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50'
                                                             }`}
                                                         >
-                                                            {a}
+                                                            {a.name}
                                                         </div>
                                                     ))}
                                                 </div>
@@ -3282,10 +3638,18 @@ const ShortLoan = ({ user }) => {
                                     <button
                                         onClick={() => {
                                             setIsEditMode(true);
+                                            let hasUpfront = false;
+                                            try {
+                                                const history = JSON.parse(selectedLoan.renew_history);
+                                                if (Array.isArray(history)) {
+                                                    hasUpfront = history.some(log => log.includes('Interest Collected Upfront'));
+                                                }
+                                            } catch(e) {}
                                             setEditFormData({
                                                 ...selectedLoan,
                                                 loan_amount: selectedLoan.loan_amount ? Number(selectedLoan.loan_amount).toLocaleString('en-IN') : '',
                                                 int_per_day: selectedLoan.int_per_day ? Number(selectedLoan.int_per_day).toLocaleString('en-IN') : '',
+                                                interest_collected: hasUpfront,
                                             });
                                             setFormData({
                                                 loan_id: '',
@@ -3447,6 +3811,7 @@ const ShortLoan = ({ user }) => {
                                             </>
                                         )}
                                     </div>
+
                                     <div className="space-y-2 relative">
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Acc</label>
                                         <div 
@@ -3455,7 +3820,7 @@ const ShortLoan = ({ user }) => {
                                             }}
                                             className="w-full h-12 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 flex items-center justify-between text-sm font-bold cursor-pointer dark:text-white"
                                         >
-                                            {editFormData.account || 'Select Account'}
+                                            {(editFormData.account && (allowedAccounts.find(a => a.acronym === editFormData.account)?.name || editFormData.account)) || 'Select Account'}
                                             <span className={`material-symbols-outlined text-slate-400 text-sm transition-transform duration-200 ${isEditAccountDropdownOpen ? 'rotate-180' : ''}`}>expand_more</span>
                                         </div>
                                         
@@ -3478,24 +3843,60 @@ const ShortLoan = ({ user }) => {
                                                     </div>
                                                     {allowedAccounts.map((a) => (
                                                         <div 
-                                                            key={a}
+                                                            key={a.acronym}
                                                             onClick={() => {
-                                                                setEditFormData({...editFormData, account: a});
+                                                                setEditFormData({...editFormData, account: a.acronym});
                                                                 setIsEditAccountDropdownOpen(false);
                                                             }}
                                                             className={`px-4 py-3 text-sm font-bold cursor-pointer transition-colors ${
-                                                                editFormData.account === a 
+                                                                editFormData.account === a.acronym 
                                                                     ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-white' 
                                                                     : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50'
                                                             }`}
                                                         >
-                                                            {a}
+                                                            {a.name}
                                                         </div>
                                                     ))}
                                                 </div>
                                             </>
                                         )}
                                     </div>
+
+                                    <div className="flex items-center justify-between py-3 px-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800/50 mt-[1rem]">
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                            Interest collected
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditFormData({ ...editFormData, interest_collected: !editFormData.interest_collected })}
+                                            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                                editFormData.interest_collected ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-700'
+                                            }`}
+                                        >
+                                            <span
+                                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                                    editFormData.interest_collected ? 'translate-x-5' : 'translate-x-0'
+                                                }`}
+                                            />
+                                        </button>
+                                    </div>
+
+                                    {editFormData.interest_collected && (() => {
+                                        const dailyInt = calculateDailyInterest(editFormData.int_per_day, editFormData.loan_amount) || 0;
+                                        const diffDays = Number(editFormData.days) || 0;
+                                        const totalIntAmount = diffDays * dailyInt;
+                                        return (
+                                            <div className="flex items-center justify-between py-3 px-4 bg-primary/5 dark:bg-primary/10 rounded-2xl border border-primary/10 dark:border-primary/20 mt-[1rem]">
+                                                <span className="text-[10px] font-black text-primary uppercase tracking-widest">
+                                                    {diffDays} Days Interest
+                                                </span>
+                                                <span className="text-sm font-bold text-primary font-mono">
+                                                    ₹ {Math.round(totalIntAmount || 0).toLocaleString('en-IN')}
+                                                </span>
+                                            </div>
+                                        );
+                                    })()}
+
                                 </div>
                                 <div className="space-y-2 pt-2">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Remarks</label>
@@ -3542,7 +3943,7 @@ const ShortLoan = ({ user }) => {
                                     <div>
                                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Delay Days</p>
                                         <p className="text-sm font-bold text-slate-500 dark:text-slate-400">
-                                            {calculateDelayDays(selectedLoan.loan_date, selectedLoan.days, selectedLoan.renew_history, selectedLoan.close_date, selectedLoan.status)}
+                                            {calculateDelayDays(selectedLoan.loan_date, selectedLoan.days, selectedLoan.renew_history, selectedLoan.close_date, selectedLoan.status, selectedLoan.loan_amount, selectedLoan.int_per_day)}
                                         </p>
                                     </div>
                                     <div>

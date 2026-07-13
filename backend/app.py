@@ -180,14 +180,14 @@ def migrate_existing_short_loans():
             
             if last_loan and last_loan.loan_id:
                 try:
-                    seq = int(last_loan.loan_id[-4:])
+                    seq = int(last_loan.loan_id[-3:])
                     next_seq = seq + 1
                 except Exception:
                     next_seq = 1
             else:
                 next_seq = 1
                 
-            l.loan_id = f"SL{prefix}{year_val}{next_seq:04d}"
+            l.loan_id = f"SL{prefix}{year_val}{next_seq:03d}"
             
         db.session.commit()
         print("Existing short loans migration completed successfully!")
@@ -2672,14 +2672,14 @@ def create_short_loan():
             last_loan = ShortLoan.query.filter(ShortLoan.loan_id.like(pattern)).order_by(ShortLoan.loan_id.desc()).first()
             if last_loan and last_loan.loan_id:
                 try:
-                    seq = int(last_loan.loan_id[-4:])
+                    seq = int(last_loan.loan_id[-3:])
                     next_seq = seq + 1
                 except Exception:
                     next_seq = 1
             else:
                 next_seq = 1
 
-            generated_loan_id = f"SL{prefix}{year_val}{next_seq:04d}"
+            generated_loan_id = f"SL{prefix}{year_val}{next_seq:03d}"
 
         new_loan = ShortLoan(
             loan_id=generated_loan_id,
