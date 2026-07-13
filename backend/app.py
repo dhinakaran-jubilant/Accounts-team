@@ -1443,36 +1443,57 @@ def upload_day_book():
 
     try:
         df = pd.read_excel(file_path)
+        
+        # Clean column names to prevent matching issues from trailing spaces
+        df.columns = df.columns.str.strip()
+        
+        # Clean Voucher Type values
+        if "Voucher Type" in df.columns:
+            df["Voucher Type"] = df["Voucher Type"].astype(str).str.strip()
+            
         receipt_df = df[df["Voucher Type"] == "Receipt Voucher"].copy()
         
         # --- Pre-check for Reversals ---
-        # Get set of Instrument Numbers and Voucher Numbers that were reversed (Payment Voucher + "Reversal EMI" in comments)
+        # Get set of Instrument Numbers and Voucher Numbers that were reversed
         reversed_instruments = set()
         reversed_vouchers = set()
         
-        # Clean Instrument No: remove .0 and strip whitespace
-        def clean_inst_val(v):
+        # Clean values (like Instrument No or Voucher Number): remove .0 and strip whitespace
+        def clean_val(v):
             if pd.isna(v): return None
             s = str(v).strip()
             if s.endswith('.0'): s = s[:-2]
             return s if s else None
+            
+        def extract_vnum_from_comment(comment):
+            if not isinstance(comment, str): return None
+            match = re.search(r'([A-Za-z0-9]+)_\d+', comment)
+            if match:
+                return clean_val(match.group(1))
+            return None
 
         if "Voucher Type" in df.columns and "Comments" in df.columns:
-            rev_mask = (df["Voucher Type"] == "Payment Voucher") & (df["Comments"].str.contains("Reversal EMI", na=False, case=False))
+            rev_mask = (df["Voucher Type"] == "Payment Voucher") & (df["Comments"].astype(str).str.contains("Reversal EMI", na=False, case=False))
             
             if "Instrument No." in df.columns:
-                reversed_instruments = {clean_inst_val(v) for v in df[rev_mask]["Instrument No."].dropna() if clean_inst_val(v)}
+                reversed_instruments = {clean_val(v) for v in df[rev_mask]["Instrument No."].dropna() if clean_val(v)}
                 
+            receipt_vcs = set()
             if "Voucher Number" in df.columns:
                 # Find all receipt voucher numbers in the daybook
-                receipt_vcs = {str(v).strip() for v in df[df["Voucher Type"] == "Receipt Voucher"]["Voucher Number"].dropna() if str(v).strip()}
+                receipt_vcs = {clean_val(v) for v in df[df["Voucher Type"] == "Receipt Voucher"]["Voucher Number"].dropna() if clean_val(v)}
                 
-                # Check each reversal comment to see if it mentions any receipt voucher number
-                rev_comments = df[rev_mask]["Comments"].dropna().astype(str).tolist()
-                for comment in rev_comments:
-                    for vnum in receipt_vcs:
-                        if vnum and vnum in comment:
-                            reversed_vouchers.add(vnum)
+            # Extract from Comments as well
+            for rc in df[df["Voucher Type"] == "Receipt Voucher"]["Comments"].dropna().astype(str):
+                ev = extract_vnum_from_comment(rc)
+                if ev: receipt_vcs.add(ev)
+                
+            # Check each reversal comment to see if it mentions any receipt voucher number
+            rev_comments = df[rev_mask]["Comments"].dropna().astype(str).tolist()
+            for comment in rev_comments:
+                for vnum in receipt_vcs:
+                    if vnum and vnum in comment:
+                        reversed_vouchers.add(vnum)
         # -------------------------------
         
         # --- Validation: Ensure file matches the account folder ---
@@ -1524,17 +1545,18 @@ def upload_day_book():
             try:
                 # Robust cleaning for Instrument No
                 inst_raw = row.get("Instrument No.")
-                instrument_no = ""
-                if pd.notna(inst_raw):
-                    instrument_no = str(inst_raw).strip()
-                    if instrument_no.endswith('.0'): instrument_no = instrument_no[:-2]
+                instrument_no = clean_val(inst_raw) if pd.notna(inst_raw) else ""
 
                 if instrument_no and instrument_no in reversed_instruments:
                     skipped_details.append(f"Row {index+1}: Instrument No '{instrument_no}' is in Reversal Set")
                     continue
 
                 vnum_raw = row.get("Voucher Number")
-                vnum = str(vnum_raw).strip() if pd.notna(vnum_raw) else ""
+                vnum = clean_val(vnum_raw) if pd.notna(vnum_raw) else ""
+                
+                if not vnum:
+                    vnum = extract_vnum_from_comment(str(row.get("Comments", "")))
+                    
                 if vnum and vnum in reversed_vouchers:
                     skipped_details.append(f"Row {index+1}: Voucher Number '{vnum}' is in Reversal Set")
                     continue

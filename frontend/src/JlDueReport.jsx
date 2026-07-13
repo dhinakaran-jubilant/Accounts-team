@@ -313,6 +313,10 @@ const JlDueReport = ({ user }) => {
     const [osPopupStartDate, setOsPopupStartDate] = useState('');
     const [osPopupEndDate, setOsPopupEndDate] = useState('');
 
+    const [showJCloudDatePopup, setShowJCloudDatePopup] = useState(false);
+    const [jCloudStartDate, setJCloudStartDate] = useState('');
+    const [jCloudEndDate, setJCloudEndDate] = useState('');
+
     const todayString = useMemo(() => {
         const today = new Date();
         const y = today.getFullYear();
@@ -883,6 +887,149 @@ const JlDueReport = ({ user }) => {
 
         // Pass 'true' for isDetailed mode
         await handleExport('OS_Report', osData, true, false, customDateRange);
+    };
+
+    const handleJCloudExport = async (dateRange = null) => {
+        if (filteredData.length === 0) return;
+
+        const workbook = new ExcelJS.Workbook();
+        const { startDate, endDate } = dateRange || {};
+
+        const todayISO = new Date().toISOString().split('T')[0];
+        const effectiveEndDate = endDate || (startDate ? todayISO : '9999-12-31');
+        const endKey = getDateKey(effectiveEndDate.split('-').reverse().join('-'));
+        const startKey = startDate ? getDateKey(startDate.split('-').reverse().join('-')) : 0;
+
+        // Group loans by primary_account_name
+        const groups = new Map();
+        filteredData.forEach(loan => {
+            const acctName = loan.primary_account_name ? getAcronym(loan.primary_account_name).toUpperCase() : 'UNKNOWN';
+            if (!groups.has(acctName)) groups.set(acctName, []);
+            groups.get(acctName).push(loan);
+        });
+
+        const headerStyle = {
+            font: { bold: true, color: { argb: 'FFFFFFFF' } },
+            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F3864' } },
+            alignment: { horizontal: 'center', vertical: 'middle' },
+            border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+        };
+        const cellStyle = {
+            alignment: { horizontal: 'center', vertical: 'middle' },
+            border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+        };
+
+        Array.from(groups.keys()).sort().forEach(acctName => {
+            const sheetName = acctName.endsWith('-PRIMARY') || acctName.endsWith('-SECONDARY') ? acctName : `${acctName}-PRIMARY`;
+            const sheet = workbook.addWorksheet(sheetName.substring(0, 31));
+            sheet.columns = [
+                { header: 'LOAN DATE', key: 'loanDate', width: 15 },
+                { header: 'CLIENT NAME', key: 'clientName', width: 25 },
+                { header: 'LOAN ID', key: 'loanId', width: 15 },
+                { header: 'DUES', key: 'dues', width: 12 },
+                { header: 'TOTAL', key: 'total', width: 18 },
+                { header: 'RECEIVED', key: 'received', width: 18 },
+                { header: 'ACCOUNT', key: 'account', width: 15 }
+            ];
+
+            const headerRow = sheet.getRow(1);
+            headerRow.eachCell(cell => {
+                cell.font = headerStyle.font;
+                cell.fill = headerStyle.fill;
+                cell.alignment = headerStyle.alignment;
+                cell.border = headerStyle.border;
+            });
+
+            const loans = groups.get(acctName);
+            loans.forEach(loan => {
+                const schedule = loan.repayment_schedule || [];
+                const systemSched = schedule.filter(s => s.type !== 'manual');
+                const totalEmis = systemSched.length;
+                if (totalEmis === 0) return;
+
+                const loanAccounts = [{ name: loan.primary_account_name, isPrimary: true, share: 0 }];
+                const secAccs = loan.secondary_accounts || [];
+                secAccs.forEach(sec => loanAccounts.push({ name: sec.account_name, isPrimary: false, share: parseINR(sec.share) + parseINR(sec.interest_amount) }));
+
+                const priRepayTotal = (parseINR(loan.primary_account_amount) || 0) + (parseINR(loan.primary_account_interest) || 0);
+                let grandTotal = priRepayTotal;
+                secAccs.forEach(acc => {
+                    grandTotal += (parseINR(acc.share) || 0) + (parseINR(acc.interest_amount) || 0);
+                });
+                
+                loanAccounts[0].percentage = grandTotal > 0 ? (priRepayTotal / grandTotal) * 100 : 0;
+                for (let i = 1; i < loanAccounts.length; i++) {
+                    loanAccounts[i].percentage = grandTotal > 0 ? (loanAccounts[i].share / grandTotal) * 100 : 0;
+                }
+
+                loanAccounts.forEach(accInfo => {
+                    if (!accInfo.name) return;
+
+                    let receivedCount = 0;
+                    let receivedAmount = 0;
+                    const isPri = accInfo.isPrimary;
+
+                    systemSched.forEach((e, idx) => {
+                        const target = parseINR(e.amount) * (accInfo.percentage / 100);
+                        const dVal = isPri ? e.received_date : (e.date_approval_status === 'APPROVED' ? e.payment_date : '');
+                        const rKey = getDateKey(dVal);
+                        
+                        if (rKey > 0 && rKey >= startKey && rKey <= endKey) {
+                            let expectedTds = 0;
+                            if (!isPri && idx === 0) {
+                                const origSec = secAccs.find(sa => sa.account_name === accInfo.name);
+                                if (origSec) expectedTds = (parseINR(origSec.interest_amount) || 0) * 0.10;
+                            }
+                            const paid = getRowAccountPaid(e, accInfo.name, target, isPri, expectedTds);
+                            if (paid > 0) {
+                                receivedAmount += paid;
+                            }
+                            receivedCount++;
+                        }
+                    });
+
+                    const accountTotal = systemSched.reduce((sum, e) => sum + (parseINR(e.amount) * (accInfo.percentage / 100)), 0);
+
+                    const row = sheet.addRow({
+                        loanDate: loan.loan_date || '',
+                        clientName: loan.client_name || '',
+                        loanId: loan.loan_ref_id || '',
+                        dues: `${receivedCount}/${totalEmis}`,
+                        total: accountTotal,
+                        received: receivedAmount,
+                        account: getAcronym(accInfo.name)
+                    });
+
+                    row.eachCell((cell, colNumber) => {
+                        cell.style = cellStyle;
+                        if (colNumber === 5 || colNumber === 6) {
+                            cell.numFmt = '#,##0';
+                        }
+                    });
+                });
+            });
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        
+        let filenameStr = `JCloud_Report_${new Date().getTime()}.xlsx`;
+        if (startDate && endDate) {
+            filenameStr = `JCloud_Report_${startDate}_to_${endDate}.xlsx`;
+        } else if (startDate) {
+            filenameStr = `JCloud_Report_${startDate}_to_today.xlsx`;
+        } else if (endDate) {
+            filenameStr = `JCloud_Report_till_${endDate}.xlsx`;
+        }
+        
+        link.download = filenameStr;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(downloadUrl);
     };
 
     const handleExport = async (reportPrefix = 'JL_Report', exportData = filteredData, isDetailed = false, isTodayOS = false, customDateRange = null) => {
@@ -2231,7 +2378,16 @@ if (isDetailed) {
                                         <span className="material-symbols-outlined text-[18px] text-amber-500">pending_actions</span>
                                         O/S Report
                                     </button>
-
+                                    <button
+                                        onClick={() => {
+                                            setShowJCloudDatePopup(true);
+                                            setIsExportDropdownOpen(false);
+                                        }}
+                                        className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2 border-t border-slate-200/50 dark:border-slate-700/50"
+                                    >
+                                        <span className="material-symbols-outlined text-[18px] text-sky-500">cloud_download</span>
+                                        J Cloud Report
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -2695,6 +2851,70 @@ if (isDetailed) {
                                     setShowOsDatePopup(false);
                                     const hasDates = osPopupStartDate || osPopupEndDate;
                                     handleBendingExport(hasDates ? { startDate: osPopupStartDate, endDate: osPopupEndDate } : null);
+                                }}
+                                className="flex-1 px-4 h-10 text-sm font-bold text-white bg-primary hover:bg-primary/90 rounded-xl shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">download</span>
+                                Download
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* J Cloud Date Range Modal */}
+            {showJCloudDatePopup && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div
+                        className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 animate-in zoom-in-95 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-10 h-10 rounded-full bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center shrink-0">
+                                <span className="material-symbols-outlined text-sky-600 dark:text-sky-400">cloud_download</span>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800 dark:text-white">J Cloud Report</h3>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">Select date range for export</p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mb-6">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                                    From Date
+                                </label>
+                                <input
+                                    type="date"
+                                    value={jCloudStartDate}
+                                    onChange={(e) => setJCloudStartDate(e.target.value)}
+                                    className="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                                    To Date
+                                </label>
+                                <input
+                                    type="date"
+                                    value={jCloudEndDate}
+                                    onChange={(e) => setJCloudEndDate(e.target.value)}
+                                    className="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowJCloudDatePopup(false)}
+                                className="flex-1 px-4 h-10 text-sm font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowJCloudDatePopup(false);
+                                    const hasDates = jCloudStartDate || jCloudEndDate;
+                                    handleJCloudExport(hasDates ? { startDate: jCloudStartDate, endDate: jCloudEndDate } : null);
                                 }}
                                 className="flex-1 px-4 h-10 text-sm font-bold text-white bg-primary hover:bg-primary/90 rounded-xl shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2"
                             >
