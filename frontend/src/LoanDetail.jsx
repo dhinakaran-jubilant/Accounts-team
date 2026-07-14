@@ -982,30 +982,56 @@ const RepaymentTable = ({
                             const amtTotal = data.reduce((s, e) => s + parseINR(e.amount), 0);
                             const intTotal = data.reduce((s, e) => s + parseINR(e.interest_amount), 0);
                             const priAmtTotal = data.reduce((s, e) => {
-                                const pShareAmount = getSplitAmount(e.splits, loan.primary_account_name) ?? (e.type === 'manual' ? 0 : (parseINR(e.amount) * primaryRatio));
-                                const pTdsAmount = getSplitTDS(e.splits, loan.primary_account_name);
-                                return s + pShareAmount + pTdsAmount;
+                                return s + (e.type === 'manual' ? 0 : (parseINR(e.amount) * primaryRatio));
                             }, 0);
                             const priIntTotal = data.reduce((s, e) => s + (e.type === 'manual' ? 0 : parseINR(e.interest_amount) * primaryIntRatio), 0);
-                            const priTdsTotal = data.reduce((s, e) => s + getSplitTDS(e.splits, loan.primary_account_name), 0);
+                            const priTdsTotal = 0;
 
                             // 2. Received totals (Total Received row)
-                            const amtReceived = data.reduce((s, e) => s + (isReceived(e) ? parseINR(e.amount) : 0), 0);
-                            const intReceived = data.reduce((s, e) => s + (isReceived(e) ? parseINR(e.interest_amount) : 0), 0);
                             const priAmtReceived = data.reduce((s, e) => {
-                                if (!isReceived(e)) return s;
-                                const pShareAmount = getSplitAmount(e.splits, loan.primary_account_name) ?? (e.type === 'manual' ? 0 : (parseINR(e.amount) * primaryRatio));
+                                const pShareAmount = getSplitAmount(e.splits, loan.primary_account_name);
                                 const pTdsAmount = getSplitTDS(e.splits, loan.primary_account_name);
-                                return s + pShareAmount + pTdsAmount;
+                                if (pShareAmount !== null) {
+                                    return s + pShareAmount + pTdsAmount;
+                                }
+                                if (!isReceived(e)) return s;
+                                return s + (e.type === 'manual' ? 0 : (parseINR(e.amount) * primaryRatio)) + pTdsAmount;
                             }, 0);
                             const priIntReceived = data.reduce((s, e) => {
                                 if (!isReceived(e)) return s;
                                 return s + (e.type === 'manual' ? 0 : parseINR(e.interest_amount) * primaryIntRatio);
                             }, 0);
                             const priTdsReceived = data.reduce((s, e) => {
+                                const pShareAmount = getSplitAmount(e.splits, loan.primary_account_name);
+                                if (pShareAmount !== null) {
+                                    return s + getSplitTDS(e.splits, loan.primary_account_name);
+                                }
                                 if (!isReceived(e)) return s;
                                 return s + getSplitTDS(e.splits, loan.primary_account_name);
                             }, 0);
+
+                            const secAmtReceivedTotal = (loan.remaining_accounts || []).reduce((total, acc) => {
+                                const accTotal = (acc.share || 0) + (acc.interest_amount || 0);
+                                const accRatio = grandTotal > 0 ? accTotal / grandTotal : 0;
+                                return total + data.reduce((s, e) => {
+                                    const overridenAmount = getSplitAmount(e.splits, acc.account_name);
+                                    if (overridenAmount !== null) return s + overridenAmount;
+                                    if (!hasApprovedDueDate(e)) return s;
+                                    const defaultNet = (parseINR(e.amount) * accRatio) - (schedule && e.id === schedule[0]?.id ? (acc.interest_amount || 0) * 0.10 : 0);
+                                    return s + (e.type === 'manual' ? 0 : defaultNet);
+                                }, 0);
+                            }, 0);
+
+                            const secIntReceivedTotal = (loan.remaining_accounts || []).reduce((total, acc) => {
+                                const accIntRatio = totalInt > 0 ? (acc.interest_amount || 0) / totalInt : 0;
+                                return total + data.reduce((s, e) => {
+                                    if (!hasApprovedDueDate(e)) return s;
+                                    return s + (e.type === 'manual' ? 0 : parseINR(e.interest_amount) * accIntRatio);
+                                }, 0);
+                            }, 0);
+
+                            const amtReceived = priAmtReceived + secAmtReceivedTotal;
+                            const intReceived = priIntReceived + secIntReceivedTotal;
 
                             // 3. Balance totals (Total Balance row)
                             const amtBalance = amtTotal - amtReceived;
@@ -1045,9 +1071,8 @@ const RepaymentTable = ({
                                             const accIntRatio = totalInt > 0 ? (acc.interest_amount || 0) / totalInt : 0;
 
                                             const secAmtTotal = data.reduce((s, e) => {
-                                                const overridenAmount = getSplitAmount(e.splits, acc.account_name);
                                                 const defaultNet = (parseINR(e.amount) * accRatio) - (schedule && e.id === schedule[0]?.id ? (acc.interest_amount || 0) * 0.10 : 0);
-                                                return s + (overridenAmount !== null ? overridenAmount : (e.type === 'manual' ? 0 : defaultNet));
+                                                return s + (e.type === 'manual' ? 0 : defaultNet);
                                             }, 0);
                                             const secIntTotal = data.reduce((s, e) => s + (e.type === 'manual' ? 0 : parseINR(e.interest_amount) * accIntRatio), 0);
                                             const secTdsTotal = data.reduce((s, e) => {
@@ -1170,9 +1195,8 @@ const RepaymentTable = ({
                                             const accIntRatio = totalInt > 0 ? (acc.interest_amount || 0) / totalInt : 0;
 
                                             const secAmtTotal = data.reduce((s, e) => {
-                                                const overridenAmount = getSplitAmount(e.splits, acc.account_name);
                                                 const defaultNet = (parseINR(e.amount) * accRatio) - (schedule && e.id === schedule[0]?.id ? (acc.interest_amount || 0) * 0.10 : 0);
-                                                return s + (overridenAmount !== null ? overridenAmount : (e.type === 'manual' ? 0 : defaultNet));
+                                                return s + (e.type === 'manual' ? 0 : defaultNet);
                                             }, 0);
                                             const secAmtReceived = data.reduce((s, e) => {
                                                 if (!hasApprovedDueDate(e)) return s;
