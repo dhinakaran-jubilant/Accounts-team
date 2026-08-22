@@ -10,6 +10,8 @@ import subprocess
 import threading
 import time
 import signal
+import json
+import datetime
 from pathlib import Path
 
 # ANSI color codes for premium console output
@@ -48,6 +50,56 @@ def find_python():
     # 2. Fallback to system python
     return sys.executable or "python"
 
+def trigger_daybook_sync(python_exe, backend_dir):
+    """Triggers the SFTP DayBook sync directly via python process."""
+    print(f"\n{COLOR_HEADER}[SFTP SYNCHRONIZER] Triggering DayBook SFTP Sync...{COLOR_RESET}")
+    cmd = [
+        python_exe, "-c",
+        "import os, sys; sys.path.insert(0, '.'); from app import app, process_day_book_file_internal, send_sftp_sync_notification, TEMP_FOLDER; from sftp_service import run_sftp_sync; sftp_temp_dir = os.path.join(TEMP_FOLDER, 'sftp'); ctx = app.app_context(); ctx.push(); res = run_sftp_sync(process_day_book_file_internal, sftp_temp_dir); send_sftp_sync_notification(res); print(f'SYNC RESULT: success={res.get(\"success\")} | {res.get(\"message\")} | updated={res.get(\"updated_count\")}')"
+    ]
+    try:
+        proc = subprocess.run(cmd, cwd=str(backend_dir), capture_output=True, text=True)
+        if proc.returncode == 0:
+            print(f"{COLOR_FRONTEND}[SFTP SYNCHRONIZER] DayBook Sync completed!{COLOR_RESET}")
+            for line in proc.stdout.splitlines():
+                if "SYNC RESULT" in line or "SFTP" in line:
+                    print(f"  {COLOR_BOLD}{line}{COLOR_RESET}")
+        else:
+            print(f"{COLOR_ERROR}[SFTP SYNCHRONIZER] Error during sync: {proc.stderr}{COLOR_RESET}")
+    except Exception as e:
+        print(f"{COLOR_ERROR}[SFTP SYNCHRONIZER] Exception: {e}{COLOR_RESET}")
+
+def sftp_scheduler_thread_func(python_exe, backend_dir):
+    """Background thread in run.py that monitors daily sync time and triggers DayBook sync."""
+    last_synced_date = None
+    config_file = backend_dir / "sftp_config.json"
+    print(f"{COLOR_HEADER}[SFTP SCHEDULER THREAD] Thread started in run.py. Monitoring daily sync schedule...{COLOR_RESET}")
+
+    while True:
+        try:
+            time.sleep(30)
+            if not config_file.exists():
+                continue
+
+            with open(config_file, "r", encoding="utf-8") as f:
+                config = json.load(f)
+
+            if not config.get("enabled", False):
+                continue
+
+            scheduled_time = config.get("daily_sync_time", "09:00").strip()
+            now = datetime.datetime.now()
+            current_time = now.strftime("%H:%M")
+            today_date = now.strftime("%Y-%m-%d")
+
+            if current_time == scheduled_time and last_synced_date != today_date:
+                print(f"\n{COLOR_HEADER}[SFTP SCHEDULER THREAD] Scheduled time ({scheduled_time}) reached. Triggering daily SFTP DayBook Sync...{COLOR_RESET}")
+                last_synced_date = today_date
+                trigger_daybook_sync(python_exe, backend_dir)
+
+        except Exception as e:
+            pass
+
 def main():
     
     # Enable ANSI escape sequences on Windows if needed
@@ -65,6 +117,11 @@ def main():
     print(f"  - Backend Path:      {backend_dir}")
     print(f"  - Frontend Path:     {frontend_dir}")
     print("-" * 70)
+
+    # Check for direct DayBook sync CLI flag
+    if any(arg in sys.argv for arg in ["--sync-daybook", "--sync", "--trigger-daybook", "sync"]):
+        trigger_daybook_sync(python_exe, backend_dir)
+        return
 
     # 1. Start Backend Process
     print(f"{COLOR_BACKEND}[SYSTEM] Launching Flask Backend...{COLOR_RESET}")
@@ -104,7 +161,7 @@ def main():
         backend_process.terminate()
         sys.exit(1)
 
-    # 3. Create Threads to stream outputs concurrently
+    # 3. Create Threads to stream outputs and monitor daily SFTP sync concurrently
     backend_thread = threading.Thread(
         target=stream_output, 
         args=(backend_process, "[BACKEND]", COLOR_BACKEND),
@@ -115,9 +172,15 @@ def main():
         args=(frontend_process, "[FRONTEND]", COLOR_FRONTEND),
         daemon=True
     )
+    sftp_scheduler_thread = threading.Thread(
+        target=sftp_scheduler_thread_func,
+        args=(python_exe, backend_dir),
+        daemon=True
+    )
     
     backend_thread.start()
     frontend_thread.start()
+    sftp_scheduler_thread.start()
 
     print(f"\n{COLOR_BOLD}{COLOR_HEADER}[SYSTEM] Both applications started! Press Ctrl+C to terminate both.{COLOR_RESET}\n")
 

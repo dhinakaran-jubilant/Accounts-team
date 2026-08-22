@@ -24,6 +24,10 @@ import json
 import os
 import re
 import logging
+from sftp_service import (
+    load_sftp_config, save_sftp_config, test_sftp_connection,
+    run_sftp_sync, start_sftp_scheduler
+)
 logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
 app = Flask(__name__, static_folder='../frontend/dist', static_url_path='')
@@ -1423,26 +1427,21 @@ def parse_date_robustly(date_val):
             continue
     return None
 
-@app.route('/api/upload-day-book', methods=['POST'])
-def upload_day_book():
-    account_name = request.form.get('account_name', 'Unknown')
-    file = request.files.get('file')
-    
-    # Standardized filename
-    staged_filename = f"{account_name}_DayBook.xlsx"
-    file_path = os.path.join(TEMP_FOLDER, staged_filename)
-
-    if file:
-        # If a file is provided in the request, save/overwrite it
-        if not os.path.exists(TEMP_FOLDER):
-            os.makedirs(TEMP_FOLDER)
-        file.save(file_path)
-    elif not os.path.exists(file_path):
-        # If no file in request and no staged file exists
-        return jsonify({'error': f'No Day Book staged or provided for {account_name}'}), 400
-
+def process_day_book_file_internal(file_path, account_name='Unknown'):
     try:
         df = pd.read_excel(file_path)
+        cols = [str(c).strip() for c in df.columns]
+        if 'Voucher Type' not in cols or 'Particulars' not in cols:
+            # Header not in row 0, inspect top 30 rows for the table header row
+            raw_df = pd.read_excel(file_path, header=None)
+            header_idx = None
+            for idx, row in raw_df.head(30).iterrows():
+                row_str = [str(x).strip() for x in row.values if pd.notna(x)]
+                if 'Voucher Type' in row_str or ('Particulars' in row_str and 'Transaction Date' in row_str):
+                    header_idx = idx
+                    break
+            if header_idx is not None:
+                df = pd.read_excel(file_path, header=header_idx)
         
         # Clean column names to prevent matching issues from trailing spaces
         df.columns = df.columns.str.strip()
@@ -1453,8 +1452,7 @@ def upload_day_book():
             
         receipt_df = df[df["Voucher Type"] == "Receipt Voucher"].copy()
         
-        # --- Pre-check for Reversals ---
-        # Get set of Instrument Numbers and Voucher Numbers that were reversed
+        # --- Pre-check for Reversals and Execute DB Reversals ---
         reversed_instruments = set()
         reversed_vouchers = set()
         
@@ -1472,6 +1470,26 @@ def upload_day_book():
                 return clean_val(match.group(1))
             return None
 
+        # Build mapping of Receipt Voucher Number -> EMI number from receipt vouchers
+        voucher_to_emi_map = {}
+        for _, r_row in df[df["Voucher Type"] == "Receipt Voucher"].iterrows():
+            v_num = clean_val(r_row.get("Voucher Number"))
+            r_comm = str(r_row.get("Comments", ""))
+            r_part = str(r_row.get("Particulars", ""))
+            emi_no = None
+            if '_' in r_comm:
+                try:
+                    emi_no = int(r_comm.split('_')[-1].strip())
+                except ValueError:
+                    pass
+            if v_num and emi_no:
+                voucher_to_emi_map[v_num] = (r_part, emi_no)
+
+        updated_count = 0
+        updated_details = []
+        skipped_details = []
+        mismatch_details = []
+
         if "Voucher Type" in df.columns and "Comments" in df.columns:
             rev_mask = (df["Voucher Type"] == "Payment Voucher") & (df["Comments"].astype(str).str.contains("Reversal EMI", na=False, case=False))
             
@@ -1480,20 +1498,60 @@ def upload_day_book():
                 
             receipt_vcs = set()
             if "Voucher Number" in df.columns:
-                # Find all receipt voucher numbers in the daybook
                 receipt_vcs = {clean_val(v) for v in df[df["Voucher Type"] == "Receipt Voucher"]["Voucher Number"].dropna() if clean_val(v)}
                 
-            # Extract from Comments as well
             for rc in df[df["Voucher Type"] == "Receipt Voucher"]["Comments"].dropna().astype(str):
                 ev = extract_vnum_from_comment(rc)
                 if ev: receipt_vcs.add(ev)
                 
-            # Check each reversal comment to see if it mentions any receipt voucher number
             rev_comments = df[rev_mask]["Comments"].dropna().astype(str).tolist()
             for comment in rev_comments:
                 for vnum in receipt_vcs:
                     if vnum and vnum in comment:
                         reversed_vouchers.add(vnum)
+
+            # --- Clear DB received_date for Reversal Payment Vouchers ---
+            all_approved_loans_rev = [l for l in Loan.query.filter_by(approval_status='APPROVED', is_deleted=False).all() if l.loan_ref_id]
+            for _, rev_row in df[rev_mask].iterrows():
+                rev_comm = str(rev_row.get("Comments", ""))
+                rev_part = str(rev_row.get("Particulars", ""))
+                rev_det = str(rev_row.get("Details", ""))
+                row_full_text = f"{rev_part} {rev_det} {rev_comm}"
+
+                rev_vnum = extract_vnum_from_comment(rev_comm)
+                if not rev_vnum and "_" in rev_comm:
+                    rev_vnum = rev_comm.split('_')[-1].strip()
+
+                if rev_vnum and rev_vnum in voucher_to_emi_map:
+                    mapped_text, _ = voucher_to_emi_map[rev_vnum]
+                    row_full_text += f" {mapped_text}"
+
+                loan_obj = None
+                for l in all_approved_loans_rev:
+                    if l.loan_ref_id in row_full_text:
+                        loan_obj = l
+                        break
+                    if l.loan_ref_id.upper().startswith('JL') and l.loan_ref_id[2:] in row_full_text:
+                        loan_obj = l
+                        break
+
+                emi_no = None
+                if rev_vnum and rev_vnum in voucher_to_emi_map:
+                    _, emi_no = voucher_to_emi_map[rev_vnum]
+                elif '_' in rev_comm:
+                    try:
+                        emi_no = int(rev_comm.split('_')[-1].strip())
+                    except ValueError:
+                        pass
+
+                if loan_obj and emi_no:
+                    sys_schedule = [s for s in loan_obj.repayment_schedule if s.type != 'manual']
+                    if 1 <= emi_no <= len(sys_schedule):
+                        target_inst = sys_schedule[emi_no - 1]
+                        if target_inst.received_date and str(target_inst.received_date).strip() and str(target_inst.received_date).strip() != 'dd-mm-yyyy':
+                            target_inst.received_date = ''
+                            updated_count += 1
+                            updated_details.append(f"REVERSED & CLEARED: {loan_obj.client_account_name} - EMI {emi_no}")
         # -------------------------------
         
         # --- Validation: Ensure file matches the account folder ---
@@ -1526,20 +1584,15 @@ def upload_day_book():
                     continue
                     
             if mismatch_found:
-                return jsonify({
+                return {
                     'success': False,
                     'error': f'Incorrect Folder: This file appears to contain data for {mismatch_acronym}, but was uploaded to the {account_name} folder. Please upload to the correct folder.'
-                }), 400
+                }
         # ---------------------------------------------------------
 
         # Get all approved loans for substring matching (sorted by length descending for precision)
         all_approved_loans = [l for l in Loan.query.filter_by(approval_status='APPROVED', is_deleted=False).all() if l.loan_ref_id]
         all_approved_loans.sort(key=lambda x: len(x.loan_ref_id), reverse=True)
-
-        updated_count = 0
-        updated_details = []
-        skipped_details = []
-        mismatch_details = []
 
         for index, row in receipt_df.iterrows():
             try:
@@ -1661,17 +1714,124 @@ def upload_day_book():
         
         db.session.commit()
         message = f'Successfully updated {updated_count} installments from Day Book.' if updated_count > 0 else "No updates"
-        return jsonify({
+        return {
             'success': True, 
             'message': message,
             'updated_count': updated_count,
             'updated_details': updated_details,
             'skipped_details': skipped_details,
             'mismatch_details': mismatch_details
-        }), 200
+        }
     except Exception as e:
         db.session.rollback()
+        return {'success': False, 'error': str(e)}
+
+@app.route('/api/upload-day-book', methods=['POST'])
+def upload_day_book():
+    account_name = request.form.get('account_name', 'Unknown')
+    file = request.files.get('file')
+    
+    # Standardized filename
+    staged_filename = f"{account_name}_DayBook.xlsx"
+    file_path = os.path.join(TEMP_FOLDER, staged_filename)
+
+    if file:
+        # If a file is provided in the request, save/overwrite it
+        if not os.path.exists(TEMP_FOLDER):
+            os.makedirs(TEMP_FOLDER)
+        file.save(file_path)
+    elif not os.path.exists(file_path):
+        # If no file in request and no staged file exists
+        return jsonify({'error': f'No Day Book staged or provided for {account_name}'}), 400
+
+    result = process_day_book_file_internal(file_path, account_name=account_name)
+    if not result.get('success'):
+        return jsonify({'error': result.get('error', 'Failed to process Day Book'), 'success': False}), 400
+    return jsonify(result), 200
+
+# --- SFTP Integration API Routes ---
+@app.route('/api/sftp/config', methods=['GET'])
+def get_sftp_config_route():
+    try:
+        config = load_sftp_config(hide_password=True)
+        return jsonify({'success': True, 'config': config}), 200
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/sftp/config', methods=['POST'])
+def save_sftp_config_route():
+    try:
+        new_config = request.json or {}
+        saved_config = save_sftp_config(new_config)
+        return jsonify({'success': True, 'message': 'SFTP configuration saved successfully', 'config': saved_config}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/sftp/test', methods=['POST'])
+def test_sftp_route():
+    try:
+        config_data = request.json or None
+        result = test_sftp_connection(config_data)
+        if result.get('success'):
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def send_sftp_sync_notification(sync_result):
+    """Create system Notification card for all users upon daily SFTP sync completion."""
+    try:
+        if not sync_result or not sync_result.get('success'):
+            return
+
+        total_files = sync_result.get('total_files', 0)
+        updated_count = sync_result.get('updated_count', 0)
+        updated_details = sync_result.get('updated_details', [])
+
+        now_str = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
+        title = "SFTP Daily DayBook Sync"
+
+        if updated_count > 0:
+            details_str = ", ".join(updated_details[:3])
+            if len(updated_details) > 3:
+                details_str += f" and {len(updated_details) - 3} more"
+            msg = f"SFTP daily sync processed {total_files} file(s) and updated {updated_count} installment(s): {details_str}."
+        else:
+            msg = f"SFTP daily sync checked latest file ({total_files} file processed). No new installment updates required."
+
+        all_users = User.query.all()
+        for u in all_users:
+            if not u.name:
+                continue
+            notif = Notification(
+                user_name=u.name,
+                title=title,
+                message=msg,
+                link="/jl-due-report",
+                created_at=now_str,
+                is_read=False
+            )
+            db.session.add(notif)
+
+        db.session.commit()
+        print(f"[SFTP Notification] Created notification for {len(all_users)} user(s): {msg}")
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error creating SFTP notification: {e}")
+
+@app.route('/api/sftp/sync', methods=['POST'])
+def trigger_sftp_sync_route():
+    try:
+        sftp_temp_dir = os.path.join(TEMP_FOLDER, 'sftp')
+        result = run_sftp_sync(process_day_book_file_internal, sftp_temp_dir)
+        if result.get('success'):
+            send_sftp_sync_notification(result)
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/staged-folders', methods=['GET'])
 def get_staged_folders():
@@ -2781,6 +2941,13 @@ def delete_short_loan(loan_id):
         db.session.rollback()
         print(f"Error deleting short loan: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
+
+# Initialize SFTP scheduler
+try:
+    sftp_temp_dir = os.path.join(TEMP_FOLDER, 'sftp')
+    start_sftp_scheduler(app, process_day_book_file_internal, sftp_temp_dir, on_sync_complete=send_sftp_sync_notification)
+except Exception as _sch_err:
+    print(f"Failed to start SFTP scheduler: {_sch_err}")
 
 if __name__ == '__main__':
     # Use self-signed certs for local development

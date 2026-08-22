@@ -317,6 +317,48 @@ const JlDueReport = ({ user }) => {
     const [jCloudStartDate, setJCloudStartDate] = useState('');
     const [jCloudEndDate, setJCloudEndDate] = useState('');
 
+    const [isSyncingSftp, setIsSyncingSftp] = useState(false);
+    const [lastSyncTime, setLastSyncTime] = useState('');
+
+    const fetchLastSyncTime = async () => {
+        try {
+            const res = await fetch('/api/sftp/config');
+            const data = await res.json();
+            if (data.success && data.config?.last_sync_time) {
+                setLastSyncTime(data.config.last_sync_time);
+            }
+        } catch (e) {}
+    };
+
+    useEffect(() => {
+        fetchLastSyncTime();
+    }, []);
+
+    const handleSyncSftpNow = async () => {
+        setIsSyncingSftp(true);
+        setIsSubmitting(true);
+        try {
+            const res = await fetch('/api/sftp/sync', { method: 'POST' });
+            const result = await res.json();
+            if (res.ok && result.success) {
+                setSuccessMessage(result.message);
+                setUpdatedDetails(result.updated_details || []);
+                setSkippedDetails(result.skipped_details || []);
+                setMismatchDetails(result.mismatch_details || []);
+                setShowSuccessPopup(true);
+                fetchLoans();
+                fetchLastSyncTime();
+            } else {
+                setUploadError(result.error || 'SFTP Sync failed');
+            }
+        } catch (e) {
+            setUploadError('Network error during SFTP sync: ' + e.message);
+        } finally {
+            setIsSyncingSftp(false);
+            setIsSubmitting(false);
+        }
+    };
+
     const todayString = useMemo(() => {
         const today = new Date();
         const y = today.getFullYear();
@@ -1942,6 +1984,26 @@ if (isDetailed) {
                     <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white whitespace-nowrap">JL Due Report</h1>
                     
                     <div className="flex flex-row items-center gap-4">
+                        {/* SFTP Sync Now Button with Last Sync Timestamp */}
+                        <button
+                            onClick={handleSyncSftpNow}
+                            disabled={isSyncingSftp}
+                            className="h-10 px-3.5 bg-sky-500 hover:bg-sky-600 active:scale-95 disabled:bg-sky-400 text-white rounded-xl shadow-sm transition-all flex items-center gap-2 text-xs font-semibold disabled:cursor-not-allowed"
+                            title={lastSyncTime ? `Last Updated: ${lastSyncTime}` : "Trigger Immediate SFTP Sync"}
+                        >
+                            <span className={`material-symbols-outlined text-[20px] ${isSyncingSftp ? 'animate-spin' : ''}`}>
+                                {isSyncingSftp ? 'sync' : 'cloud_sync'}
+                            </span>
+                            <div className="flex flex-col text-left leading-tight">
+                                <span className="font-extrabold text-[12px]">{isSyncingSftp ? 'Syncing...' : 'DB Sync Now'}</span>
+                                {lastSyncTime && (
+                                    <span className="text-[9px] text-sky-100 font-medium tracking-tight whitespace-nowrap">
+                                        Last: {lastSyncTime}
+                                    </span>
+                                )}
+                            </div>
+                        </button>
+
                         {/* Search Bar */}
                         <div className="relative group">
                             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm transition-colors group-focus-within:text-primary">search</span>
@@ -2337,7 +2399,7 @@ if (isDetailed) {
                                             className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-2 border-t border-slate-200/50 dark:border-slate-700/50"
                                         >
                                             <span className="material-symbols-outlined text-[18px] text-amber-500">book</span>
-                                            Day Book
+                                            Day Book (File)
                                         </button>
                                     </div>
                                 )}
@@ -2939,7 +3001,8 @@ if (isDetailed) {
                 </div>
             )}
             
-            {/* Delete Confirmation Modal */}
+
+
             {loanToDelete && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
                     <div

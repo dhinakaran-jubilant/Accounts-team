@@ -23,6 +23,23 @@ const Settings = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
 
+    // SFTP Config States
+    const [sftpConfig, setSftpConfig] = useState({
+        enabled: false,
+        host: '',
+        port: 22,
+        username: '',
+        password: '',
+        key_path: '',
+        remote_dir: '/',
+        daily_sync_time: '09:00',
+        last_sync_time: null,
+        last_sync_status: null
+    });
+    const [isTestingSftp, setIsTestingSftp] = useState(false);
+    const [isSavingSftp, setIsSavingSftp] = useState(false);
+    const [sftpStatusMsg, setSftpStatusMsg] = useState({ type: '', text: '' });
+
     const filteredAccounts = useMemo(() => {
         if (!searchQuery.trim()) return accounts;
         const q = searchQuery.toLowerCase().trim();
@@ -185,8 +202,65 @@ const Settings = () => {
                 setError('Network error loading system configuration');
             }
         };
+        const fetchSftpConfig = async () => {
+            try {
+                const res = await fetch('/api/sftp/config');
+                const data = await res.json();
+                if (data.success && data.config) {
+                    setSftpConfig(data.config);
+                }
+            } catch (e) {
+                console.error("Error fetching SFTP config:", e);
+            }
+        };
         fetchConfig();
+        fetchSftpConfig();
     }, []);
+
+    const handleSaveSftpConfig = async () => {
+        setIsSavingSftp(true);
+        setSftpStatusMsg({ type: '', text: '' });
+        try {
+            const res = await fetch('/api/sftp/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(sftpConfig)
+            });
+            const data = await res.json();
+            if (data.success) {
+                setSftpConfig(data.config);
+                setSftpStatusMsg({ type: 'success', text: 'SFTP Sync Settings saved successfully!' });
+            } else {
+                setSftpStatusMsg({ type: 'error', text: 'Failed to save settings: ' + (data.error || '') });
+            }
+        } catch (e) {
+            setSftpStatusMsg({ type: 'error', text: 'Error saving settings: ' + e.message });
+        } finally {
+            setIsSavingSftp(false);
+        }
+    };
+
+    const handleTestSftpConnection = async () => {
+        setIsTestingSftp(true);
+        setSftpStatusMsg({ type: '', text: '' });
+        try {
+            const res = await fetch('/api/sftp/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(sftpConfig)
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                setSftpStatusMsg({ type: 'success', text: data.message });
+            } else {
+                setSftpStatusMsg({ type: 'error', text: data.error || 'SFTP Connection test failed' });
+            }
+        } catch (e) {
+            setSftpStatusMsg({ type: 'error', text: 'Error testing connection: ' + e.message });
+        } finally {
+            setIsTestingSftp(false);
+        }
+    };
 
     const handleSave = async () => {
         setIsSaving(true);
@@ -477,6 +551,172 @@ const Settings = () => {
                             )}
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            {/* SFTP Integration & Daily Sync Card */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 shadow-sm space-y-6 mt-8">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
+                            <span className="material-symbols-outlined text-sky-500 text-xl">cloud_sync</span>
+                            SFTP Auto Sync Settings
+                        </h3>
+                        <p className="text-xs text-slate-400">Configure client SFTP server credentials for automatic daily DayBook report downloads.</p>
+                    </div>
+
+                    {sftpConfig.last_sync_time && (
+                        <div className="flex items-center gap-2">
+                            <span className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-[15px]">history</span>
+                                Last Sync: <strong>{sftpConfig.last_sync_time}</strong> ({sftpConfig.last_sync_status || 'SUCCESS'})
+                            </span>
+                        </div>
+                    )}
+                </div>
+                <hr className="border-slate-100 dark:border-slate-800/60" />
+
+                <div className="space-y-5">
+                    {/* Automated Daily Download Toggle */}
+                    <div className="flex items-center justify-between p-5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-800/50 transition-all hover:border-slate-200 dark:hover:border-slate-800">
+                        <div className="pr-4">
+                            <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                <span className="material-symbols-outlined text-sky-500 text-lg">schedule</span>
+                                Automated Daily Download & Processing
+                            </h4>
+                            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                                When enabled, the background service will connect to the remote SFTP server every day at the scheduled time and process the latest DayBook file.
+                            </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                            <input
+                                type="checkbox"
+                                checked={sftpConfig.enabled}
+                                onChange={(e) => setSftpConfig({ ...sftpConfig, enabled: e.target.checked })}
+                                className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 dark:bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-500"></div>
+                        </label>
+                    </div>
+
+                    {/* SFTP Credentials Inputs Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="md:col-span-2 flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">SFTP Host / Server IP</label>
+                            <input
+                                type="text"
+                                placeholder="e.g. 115.245.23.187 or sftp.domain.com"
+                                value={sftpConfig.host || ''}
+                                onChange={(e) => setSftpConfig({ ...sftpConfig, host: e.target.value })}
+                                className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-sky-500 text-slate-900 dark:text-white"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Port</label>
+                            <input
+                                type="number"
+                                placeholder="22"
+                                value={sftpConfig.port || 22}
+                                onChange={(e) => setSftpConfig({ ...sftpConfig, port: e.target.value })}
+                                className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-sky-500 text-slate-900 dark:text-white"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Username</label>
+                            <input
+                                type="text"
+                                placeholder="SFTP Username"
+                                value={sftpConfig.username || ''}
+                                onChange={(e) => setSftpConfig({ ...sftpConfig, username: e.target.value })}
+                                className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-sky-500 text-slate-900 dark:text-white"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Password</label>
+                            <input
+                                type="password"
+                                placeholder="••••••••"
+                                value={sftpConfig.password || ''}
+                                onChange={(e) => setSftpConfig({ ...sftpConfig, password: e.target.value })}
+                                className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-sky-500 text-slate-900 dark:text-white"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Remote Folder Path</label>
+                            <input
+                                type="text"
+                                placeholder="e.g. /Jubilant/2/Reports/QueuedReports/VehicleLoan/DayBook"
+                                value={sftpConfig.remote_dir || '/'}
+                                onChange={(e) => setSftpConfig({ ...sftpConfig, remote_dir: e.target.value })}
+                                className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-sky-500 text-slate-900 dark:text-white"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Daily Sync Time (24-Hour Format)</label>
+                            <input
+                                type="time"
+                                value={sftpConfig.daily_sync_time || '09:00'}
+                                onChange={(e) => setSftpConfig({ ...sftpConfig, daily_sync_time: e.target.value })}
+                                className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-sky-500 text-slate-900 dark:text-white"
+                            />
+                        </div>
+                    </div>
+
+                    {sftpStatusMsg.text && (
+                        <div className={`p-4 rounded-2xl text-xs font-bold flex items-center gap-2 ${sftpStatusMsg.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 text-rose-600 dark:text-rose-400'}`}>
+                            <span className="material-symbols-outlined text-[18px]">
+                                {sftpStatusMsg.type === 'success' ? 'check_circle' : 'error'}
+                            </span>
+                            {sftpStatusMsg.text}
+                        </div>
+                    )}
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center justify-between pt-2">
+                        <button
+                            type="button"
+                            onClick={handleTestSftpConnection}
+                            disabled={isTestingSftp || !sftpConfig.host || !sftpConfig.username}
+                            className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-2xl transition-all text-sm flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                        >
+                            {isTestingSftp ? (
+                                <>
+                                    <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                                    Testing Connection...
+                                </>
+                            ) : (
+                                <>
+                                    <span className="material-symbols-outlined text-[18px]">network_check</span>
+                                    Test Connection
+                                </>
+                            )}
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleSaveSftpConfig}
+                            disabled={isSavingSftp}
+                            className="px-6 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-2xl transition-all text-sm flex items-center gap-2 shadow-lg shadow-sky-500/20 active:scale-95 disabled:opacity-75"
+                        >
+                            {isSavingSftp ? (
+                                <>
+                                    <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                                    Saving...
+                                </>
+                            ) : (
+                                <>
+                                    <span className="material-symbols-outlined text-[18px]">save</span>
+                                    Save SFTP Settings
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
 
