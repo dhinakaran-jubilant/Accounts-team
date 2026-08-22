@@ -2683,7 +2683,7 @@ if (isDetailed) {
 
             {/* Document Import Modal Placeholder */}
             {showModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
                     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col">
                         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                             <h3 className="text-xl font-bold text-slate-900 dark:text-white">Configure Remaining Accounts</h3>
@@ -2786,7 +2786,7 @@ if (isDetailed) {
             )}
             {/* Processing Overlay */}
             {isSubmitting && (
-                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px] animate-in fade-in duration-300">
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
                     <div className="bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl p-10 flex flex-col items-center border border-white/20 transform transition-all animate-in zoom-in-95 duration-300">
                         <div className="relative mb-8">
                             <div className="w-20 h-20 border-4 border-slate-100 dark:border-slate-800 rounded-full"></div>
@@ -2803,7 +2803,7 @@ if (isDetailed) {
 
             {/* Error Popup Modal */}
             {uploadError && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
                     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col items-center text-center p-8 animate-in zoom-in-95 duration-200">
                         <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mb-6 shadow-inner">
                             <span className="material-symbols-outlined text-[35px]">error</span>
@@ -2824,7 +2824,7 @@ if (isDetailed) {
 
             {/* Success Popup Modal */}
             {showSuccessPopup && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
                     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col items-center text-center p-8 animate-in zoom-in-95 duration-200">
                         <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mb-6 shadow-inner">
                             <span className="material-symbols-outlined text-[35px]">check_circle</span>
@@ -2882,7 +2882,7 @@ if (isDetailed) {
             )}
             {/* O/S Report Date Popup */}
             {showOsDatePopup && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
                     <div
                         className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 animate-in zoom-in-95 duration-200"
                         onClick={(e) => e.stopPropagation()}
@@ -2939,7 +2939,7 @@ if (isDetailed) {
             
             {/* J Cloud Date Range Modal */}
             {showJCloudDatePopup && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
                     <div
                         className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 animate-in zoom-in-95 duration-200"
                         onClick={(e) => e.stopPropagation()}
@@ -3004,7 +3004,7 @@ if (isDetailed) {
 
 
             {loanToDelete && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
                     <div
                         className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 animate-in zoom-in-95 duration-200"
                         onClick={(e) => e.stopPropagation()}
