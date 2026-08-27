@@ -29,6 +29,29 @@ const MENU_OPTIONS = [
     { value: 'short-loan', label: 'Short Loan' },
 ];
 
+const parsePermissionsArray = (perms) => {
+    if (!perms) return [];
+    let raw = perms;
+    if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch (e) { return []; }
+    }
+    if (Array.isArray(raw)) {
+        return raw.map(item => {
+            if (typeof item === 'string') {
+                return item.includes(':') ? item.split(':')[0].trim().toUpperCase() : item.trim().toUpperCase();
+            }
+            if (item && typeof item === 'object' && item.value) {
+                return item.value.trim().toUpperCase();
+            }
+            return String(item).toUpperCase();
+        });
+    }
+    if (raw && typeof raw === 'object') {
+        return Object.keys(raw).map(k => k.trim().toUpperCase());
+    }
+    return [];
+};
+
 const UsersManager = () => {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -76,21 +99,29 @@ const UsersManager = () => {
     };
 
     const togglePermission = (perm) => {
-        setFormData(prev => ({
-            ...prev,
-            permissions: prev.permissions.includes(perm)
-                ? prev.permissions.filter(p => p !== perm)
-                : [...prev.permissions, perm]
-        }));
+        setFormData(prev => {
+            const currentPerms = parsePermissionsArray(prev.permissions);
+            const updatedPerms = currentPerms.includes(perm)
+                ? currentPerms.filter(p => p !== perm)
+                : [...currentPerms, perm];
+            return {
+                ...prev,
+                permissions: updatedPerms
+            };
+        });
     };
 
     const toggleMenu = (menuValue) => {
-        setFormData(prev => ({
-            ...prev,
-            allowed_menus: prev.allowed_menus.includes(menuValue)
-                ? prev.allowed_menus.filter(m => m !== menuValue)
-                : [...prev.allowed_menus, menuValue]
-        }));
+        setFormData(prev => {
+            const currentMenus = Array.isArray(prev.allowed_menus) ? prev.allowed_menus : [];
+            const updatedMenus = currentMenus.includes(menuValue)
+                ? currentMenus.filter(m => m !== menuValue)
+                : [...currentMenus, menuValue];
+            return {
+                ...prev,
+                allowed_menus: updatedMenus
+            };
+        });
     };
 
     const handleAddUser = async (e) => {
@@ -484,8 +515,8 @@ const UsersManager = () => {
                                             <span className="px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-xs font-bold border border-amber-100 dark:border-amber-800/50">
                                                 Full Access (Admin)
                                             </span>
-                                        ) : showDetailUser.permissions?.length > 0 ? (
-                                            showDetailUser.permissions.map((p, i) => {
+                                        ) : parsePermissionsArray(showDetailUser.permissions).length > 0 ? (
+                                            parsePermissionsArray(showDetailUser.permissions).map((p, i) => {
                                                 const perm = ACCOUNTS_PERMISSIONS.find(ap => ap.value === p);
                                                 return (
                                                     <span key={i} className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-bold border border-blue-100 dark:border-blue-800/50">
@@ -716,20 +747,23 @@ const UsersManager = () => {
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Permissions <span className="text-rose-500">*</span></label>
                                     <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
-                                        {ACCOUNTS_PERMISSIONS.map(perm => (
-                                            <button
-                                                key={perm.value}
-                                                type="button"
-                                                onClick={() => togglePermission(perm.value)}
-                                                className={`h-10 rounded-xl text-[10px] font-black transition-all border ${formData.permissions.includes(perm.value)
-                                                        ? 'bg-amber-500 border-amber-500 text-white shadow-md'
-                                                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-400'
-                                                    }`}
-                                                title={perm.label}
-                                            >
-                                                {perm.value}
-                                            </button>
-                                        ))}
+                                        {ACCOUNTS_PERMISSIONS.map(perm => {
+                                            const isSelected = parsePermissionsArray(formData.permissions).includes(perm.value);
+                                            return (
+                                                <button
+                                                    key={perm.value}
+                                                    type="button"
+                                                    onClick={() => togglePermission(perm.value)}
+                                                    className={`h-10 rounded-xl text-[10px] font-black transition-all border ${isSelected
+                                                            ? 'bg-amber-500 border-amber-500 text-white shadow-md'
+                                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-400'
+                                                        }`}
+                                                    title={perm.label}
+                                                >
+                                                    {perm.value}
+                                                </button>
+                                            );
+                                        })}
                                     </div>
                                 </div>
 

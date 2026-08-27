@@ -349,6 +349,55 @@ def format_loan_ref_id(ref_id):
         ref_str = f"JL{ref_str[2:]}"
     return ref_str[:11]
 
+def user_has_company_approval(user, acronym):
+    """
+    Returns True if user has 'approve' or 'full' access level for the specified company acronym.
+    Admins always return True.
+    Legacy string permissions without access level default to True (full access).
+    """
+    if not user:
+        return False
+    if getattr(user, 'role', '') == 'admin' or getattr(user, 'name', '') == 'System Admin':
+        return True
+
+    if not user.permissions:
+        return False
+
+    try:
+        perms = json.loads(user.permissions) if isinstance(user.permissions, str) else user.permissions
+    except Exception:
+        return False
+
+    acronym_upper = acronym.strip().upper()
+
+    def check_level(level):
+        if not level:
+            return True # Legacy default is full
+        lvl = str(level).strip().lower()
+        return lvl in ['approve', 'full']
+
+    if isinstance(perms, dict):
+        for k, v in perms.items():
+            if k.strip().upper() == acronym_upper:
+                return check_level(v)
+        return False
+
+    if isinstance(perms, list):
+        for item in perms:
+            if isinstance(item, str):
+                if ':' in item:
+                    code, level = item.split(':', 1)
+                    if code.strip().upper() == acronym_upper:
+                        return check_level(level)
+                else:
+                    if item.strip().upper() == acronym_upper:
+                        return True # Legacy string = full access
+            elif isinstance(item, dict) and 'value' in item:
+                if item['value'].strip().upper() == acronym_upper:
+                    return check_level(item.get('access', 'full'))
+
+    return False
+
 def find_secondary_manager(secondary_accounts):
     """
     Finds a user who manages one of the secondary accounts as their primary.
@@ -377,10 +426,9 @@ def find_secondary_manager(secondary_accounts):
     for acronym in approval_acronyms:
         for u in users:
             try:
-                perms = json.loads(u.permissions) if u.permissions else []
-                if acronym in perms:
+                if user_has_company_approval(u, acronym):
                     return u.name
-            except:
+            except Exception:
                 continue
                 
     return 'System Admin'
@@ -2012,14 +2060,9 @@ def send_due_date_notification(loan, new_date, schedule_item=None, editor_name=N
     secondary_managers = []
     
     for u in all_users:
-        try:
-            u_perms = json.loads(u.permissions) if u.permissions else []
-        except Exception:
-            u_perms = []
-            
-        if pri_acronym in u_perms:
+        if user_has_company_approval(u, pri_acronym):
             primary_managers.append(u)
-        elif any(acr in u_perms for acr in sec_acronyms):
+        elif any(user_has_company_approval(u, acr) for acr in sec_acronyms):
             secondary_managers.append(u)
             
     # Check if editor is a secondary manager
@@ -2131,14 +2174,7 @@ def add_repayment_schedule(loan_id):
                 pri_acronym = get_acronym(loan.primary_account_name)
                 sec_acronyms = [get_acronym(acc.account_name) for acc in loan.remaining_accounts]
                 all_users = User.query.filter(User.role != 'admin').all()
-                secondary_managers = []
-                for u in all_users:
-                    try:
-                        u_perms = json.loads(u.permissions) if u.permissions else []
-                    except Exception:
-                        u_perms = []
-                    if not pri_acronym in u_perms and any(acr in u_perms for acr in sec_acronyms):
-                        secondary_managers.append(u)
+                secondary_managers = [u for u in all_users if not user_has_company_approval(u, pri_acronym) and any(user_has_company_approval(u, acr) for acr in sec_acronyms)]
                 is_editor_sec_manager = any(u.name == editor_name for u in secondary_managers)
                 if is_editor_sec_manager:
                     editor_role = 'SECONDARY'
@@ -2186,14 +2222,7 @@ def patch_repayment_schedule(schedule_id):
                     pri_acronym = get_acronym(loan.primary_account_name)
                     sec_acronyms = [get_acronym(acc.account_name) for acc in loan.remaining_accounts]
                     all_users = User.query.filter(User.role != 'admin').all()
-                    secondary_managers = []
-                    for u in all_users:
-                        try:
-                            u_perms = json.loads(u.permissions) if u.permissions else []
-                        except Exception:
-                            u_perms = []
-                        if not pri_acronym in u_perms and any(acr in u_perms for acr in sec_acronyms):
-                            secondary_managers.append(u)
+                    secondary_managers = [u for u in all_users if not user_has_company_approval(u, pri_acronym) and any(user_has_company_approval(u, acr) for acr in sec_acronyms)]
                     is_editor_sec_manager = any(u.name == editor_name for u in secondary_managers)
                     if is_editor_sec_manager:
                         editor_role = 'SECONDARY'
@@ -2223,14 +2252,7 @@ def patch_repayment_schedule(schedule_id):
                     pri_acronym = get_acronym(loan.primary_account_name)
                     sec_acronyms = [get_acronym(acc.account_name) for acc in loan.remaining_accounts]
                     all_users = User.query.filter(User.role != 'admin').all()
-                    secondary_managers = []
-                    for u in all_users:
-                        try:
-                            u_perms = json.loads(u.permissions) if u.permissions else []
-                        except Exception:
-                            u_perms = []
-                        if not pri_acronym in u_perms and any(acr in u_perms for acr in sec_acronyms):
-                            secondary_managers.append(u)
+                    secondary_managers = [u for u in all_users if not user_has_company_approval(u, pri_acronym) and any(user_has_company_approval(u, acr) for acr in sec_acronyms)]
                     is_editor_sec_manager = any(u.name == editor_name for u in secondary_managers)
                     if is_editor_sec_manager:
                         editor_role = 'SECONDARY'

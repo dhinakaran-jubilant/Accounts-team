@@ -149,53 +149,48 @@ def extract_pdf_data(pdf_path):
                     pass
 
             if not is_page_scanned:
-                start_extracting = False
-                if "Amortization Schedule" in page_text:
-                    start_extracting = True
-                
-                if start_extracting:
-                    tables = page.extract_tables()
-                    for table in tables:
-                        df = pd.DataFrame(table)
-                        header_index = None
-                        for i, row in df.iterrows():
-                            row_text = " ".join([str(x) for x in row if pd.notna(x)])
-                            if "Due" in row_text and "EMI" in row_text and "Interest" in row_text:
-                                header_index = i
-                                break
-                        
-                        if header_index is not None:
-                            df.columns = df.iloc[header_index]
-                            df = df[header_index + 1:].reset_index(drop=True)
-                            df.columns = [str(col).strip().replace("\n", " ") for col in df.columns]
+                tables = page.extract_tables()
+                for table in tables:
+                    df = pd.DataFrame(table)
+                    header_index = None
+                    for i, row in df.iterrows():
+                        row_text = " ".join([str(x) for x in row if pd.notna(x)]).lower()
+                        if "due" in row_text and "emi" in row_text and "interest" in row_text:
+                            header_index = i
+                            break
+                    
+                    if header_index is not None:
+                        df.columns = df.iloc[header_index]
+                        df = df[header_index + 1:].reset_index(drop=True)
+                        df.columns = [str(col).strip().replace("\n", " ") for col in df.columns]
 
-                            if df.empty: continue
+                        if df.empty: continue
 
-                            for _, row in df.iterrows():
-                                try:
-                                    raw_date = str(row.get("Due Date") or row.get("Due") or "")
-                                    due_date = re.sub(r"\s+", "", raw_date)
-                                    emi = row.get("EMI")
-                                    emi = float(str(emi).replace(",", "").strip()) if emi and emi != 'None' else None
-                                    interest = row.get("Interest")
-                                    interest = float(str(interest).replace(",", "").strip()) if interest and interest != 'None' else None
+                        for _, row in df.iterrows():
+                            try:
+                                raw_date = str(row.get("Due Date") or row.get("Due") or "")
+                                due_date = re.sub(r"\s+", "", raw_date)
+                                emi = row.get("EMI")
+                                emi = float(str(emi).replace(",", "").strip()) if emi and emi != 'None' else None
+                                interest = row.get("Interest")
+                                interest = float(str(interest).replace(",", "").strip()) if interest and interest != 'None' else None
 
-                                    if not due_date or emi is None:
-                                        continue
-
-                                    schedule.append({
-                                        "date": due_date,
-                                        "amount": emi,
-                                        "interest_amount": interest,
-                                        "cheque_no": "",
-                                        "received_date": None,
-                                        "payment_date": None
-                                    })
-                                except:
+                                if not due_date or emi is None:
                                     continue
+
+                                schedule.append({
+                                    "date": due_date,
+                                    "amount": emi,
+                                    "interest_amount": interest,
+                                    "cheque_no": "",
+                                    "received_date": None,
+                                    "payment_date": None
+                                })
+                            except:
+                                continue
             else:
                 # If it's scanned (OCR), extract_tables() won't work, so we fallback to Regex for Schedule rows
-                if "Amortization" in page_text or "Due Date" in page_text or "EMI" in page_text:
+                if "Amortization" in page_text or "Due Date" in page_text or "EMI" in page_text or "Due" in page_text:
                     # Isolate text after 'Amortization' to prevent matching Agreement Details rows
                     schedule_text = page_text
                     if "Amortization" in page_text:
