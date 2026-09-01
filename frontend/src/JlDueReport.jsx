@@ -340,7 +340,7 @@ const JlDueReport = ({ user }) => {
         try {
             const res = await fetch('/api/sftp/sync', { method: 'POST' });
             const result = await res.json();
-            if (res.ok && result.success) {
+            if (result.success) {
                 setSuccessMessage(result.message);
                 setUpdatedDetails(result.updated_details || []);
                 setSkippedDetails(result.skipped_details || []);
@@ -349,7 +349,7 @@ const JlDueReport = ({ user }) => {
                 fetchLoans();
                 fetchLastSyncTime();
             } else {
-                setUploadError(result.error || 'SFTP Sync failed');
+                setUploadError(result.error || result.message || 'SFTP Sync failed');
             }
         } catch (e) {
             setUploadError('Network error during SFTP sync: ' + e.message);

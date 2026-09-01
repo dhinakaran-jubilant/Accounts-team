@@ -91,7 +91,9 @@ def get_sftp_connection(config=None):
         "hostname": host,
         "port": port,
         "username": username,
-        "timeout": 20
+        "timeout": 10,
+        "banner_timeout": 10,
+        "auth_timeout": 10
     }
 
     if key_path and os.path.exists(key_path):
@@ -262,6 +264,24 @@ def run_sftp_sync(process_day_book_func, target_folder):
 
         return sync_result
 
+    except paramiko.AuthenticationException:
+        err_msg = f"SFTP Authentication Failed for user '{config.get('username')}' at '{config.get('host')}'. Please verify SFTP credentials in Settings."
+        sync_result = {
+            "success": False,
+            "error": err_msg,
+            "total_files": 0,
+            "updated_count": 0,
+            "updated_details": [],
+            "skipped_details": [err_msg],
+            "mismatch_details": []
+        }
+
+        config["last_sync_time"] = now_str
+        config["last_sync_status"] = "FAILED"
+        config["last_sync_details"] = sync_result
+        save_sftp_config(config)
+
+        return sync_result
     except Exception as e:
         err_msg = f"SFTP Sync Error: {str(e)}"
         sync_result = {

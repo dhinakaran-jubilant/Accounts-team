@@ -1875,11 +1875,9 @@ def trigger_sftp_sync_route():
         result = run_sftp_sync(process_day_book_file_internal, sftp_temp_dir)
         if result.get('success'):
             send_sftp_sync_notification(result)
-            return jsonify(result), 200
-        else:
-            return jsonify(result), 400
+        return jsonify(result), 200
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 200
 
 @app.route('/api/staged-folders', methods=['GET'])
 def get_staged_folders():
