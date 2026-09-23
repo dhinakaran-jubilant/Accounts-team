@@ -24,10 +24,70 @@ const ACCOUNTS_PERMISSIONS = [
 ];
 
 const MENU_OPTIONS = [
-    { value: 'db-ac-report', label: 'Bank : All Cloud' },
-    { value: 'jl-due-report', label: 'JL Due Report' },
-    { value: 'short-loan', label: 'Short Loan' },
+    { value: 'db-ac-report', label: 'Bank : All Cloud', icon: 'account_balance' },
+    { value: 'jl-due-report', label: 'JL Due Report', icon: 'account_balance_wallet' },
+    { value: 'short-loan', label: 'Short Loan', icon: 'payments' },
 ];
+
+const parseMenuWisePermissions = (perms, allowedMenus = []) => {
+    if (!perms) return {};
+    let raw = perms;
+    if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch (e) { return {}; }
+    }
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        const isMenuWise = Object.keys(raw).some(k => MENU_OPTIONS.some(m => m.value === k));
+        if (isMenuWise) {
+            const result = {};
+            MENU_OPTIONS.forEach(m => {
+                const list = raw[m.value];
+                if (Array.isArray(list)) {
+                    result[m.value] = list.map(item => String(item).toUpperCase().trim());
+                } else if (typeof list === 'string') {
+                    try {
+                        const parsed = JSON.parse(list);
+                        result[m.value] = Array.isArray(parsed) ? parsed.map(item => String(item).toUpperCase().trim()) : [];
+                    } catch (e) {
+                        result[m.value] = [];
+                    }
+                } else {
+                    result[m.value] = [];
+                }
+            });
+            return result;
+        }
+    }
+
+    // Flat array or key object fallback
+    let legacyList = [];
+    if (Array.isArray(raw)) {
+        legacyList = raw.map(item => {
+            if (typeof item === 'string') {
+                return item.includes(':') ? item.split(':')[0].trim().toUpperCase() : item.trim().toUpperCase();
+            }
+            if (item && typeof item === 'object' && item.value) {
+                return item.value.trim().toUpperCase();
+            }
+            return String(item).toUpperCase();
+        });
+    } else if (raw && typeof raw === 'object') {
+        legacyList = Object.keys(raw).map(k => k.trim().toUpperCase());
+    }
+
+    const result = {};
+    const menusToAssign = Array.isArray(allowedMenus) && allowedMenus.length > 0 
+        ? allowedMenus 
+        : MENU_OPTIONS.map(m => m.value);
+
+    MENU_OPTIONS.forEach(m => {
+        if (menusToAssign.includes(m.value)) {
+            result[m.value] = [...legacyList];
+        } else {
+            result[m.value] = [];
+        }
+    });
+    return result;
+};
 
 const parsePermissionsArray = (perms) => {
     if (!perms) return [];
@@ -64,7 +124,7 @@ const UsersManager = () => {
         mobile: '',
         password: '',
         role: 'user',
-        permissions: [],
+        permissions: {},
         allowed_menus: []
     });
     const [error, setError] = useState(null);
@@ -98,15 +158,64 @@ const UsersManager = () => {
         }
     };
 
-    const togglePermission = (perm) => {
+    const getAllAccountsForMenus = () => {
+        const all = ACCOUNTS_PERMISSIONS.map(p => p.value);
+        const obj = {};
+        MENU_OPTIONS.forEach(m => {
+            obj[m.value] = [...all];
+        });
+        return obj;
+    };
+
+    const togglePermission = (menuKey, perm) => {
         setFormData(prev => {
-            const currentPerms = parsePermissionsArray(prev.permissions);
-            const updatedPerms = currentPerms.includes(perm)
-                ? currentPerms.filter(p => p !== perm)
-                : [...currentPerms, perm];
+            const currentPerms = typeof prev.permissions === 'object' && prev.permissions && !Array.isArray(prev.permissions)
+                ? { ...prev.permissions }
+                : parseMenuWisePermissions(prev.permissions, prev.allowed_menus);
+
+            const menuList = Array.isArray(currentPerms[menuKey]) ? currentPerms[menuKey] : [];
+            const updatedList = menuList.includes(perm)
+                ? menuList.filter(p => p !== perm)
+                : [...menuList, perm];
+
             return {
                 ...prev,
-                permissions: updatedPerms
+                permissions: {
+                    ...currentPerms,
+                    [menuKey]: updatedList
+                }
+            };
+        });
+    };
+
+    const selectAllPermissionsForMenu = (menuKey) => {
+        setFormData(prev => {
+            const currentPerms = typeof prev.permissions === 'object' && prev.permissions && !Array.isArray(prev.permissions)
+                ? { ...prev.permissions }
+                : parseMenuWisePermissions(prev.permissions, prev.allowed_menus);
+
+            return {
+                ...prev,
+                permissions: {
+                    ...currentPerms,
+                    [menuKey]: ACCOUNTS_PERMISSIONS.map(p => p.value)
+                }
+            };
+        });
+    };
+
+    const clearAllPermissionsForMenu = (menuKey) => {
+        setFormData(prev => {
+            const currentPerms = typeof prev.permissions === 'object' && prev.permissions && !Array.isArray(prev.permissions)
+                ? { ...prev.permissions }
+                : parseMenuWisePermissions(prev.permissions, prev.allowed_menus);
+
+            return {
+                ...prev,
+                permissions: {
+                    ...currentPerms,
+                    [menuKey]: []
+                }
             };
         });
     };
@@ -114,12 +223,23 @@ const UsersManager = () => {
     const toggleMenu = (menuValue) => {
         setFormData(prev => {
             const currentMenus = Array.isArray(prev.allowed_menus) ? prev.allowed_menus : [];
-            const updatedMenus = currentMenus.includes(menuValue)
+            const isRemoving = currentMenus.includes(menuValue);
+            const updatedMenus = isRemoving
                 ? currentMenus.filter(m => m !== menuValue)
                 : [...currentMenus, menuValue];
+
+            const currentPerms = typeof prev.permissions === 'object' && prev.permissions && !Array.isArray(prev.permissions)
+                ? { ...prev.permissions }
+                : parseMenuWisePermissions(prev.permissions, prev.allowed_menus);
+
+            if (!isRemoving && !currentPerms[menuValue]) {
+                currentPerms[menuValue] = [];
+            }
+
             return {
                 ...prev,
-                allowed_menus: updatedMenus
+                allowed_menus: updatedMenus,
+                permissions: currentPerms
             };
         });
     };
@@ -170,6 +290,8 @@ const UsersManager = () => {
     };
 
     const handleEditClick = (u) => {
+        const allowed = Array.isArray(u.allowed_menus) ? u.allowed_menus : [];
+        const normalizedPerms = parseMenuWisePermissions(u.permissions, allowed);
         setFormData({
             employee_code: u.employee_code,
             name: u.name,
@@ -177,8 +299,8 @@ const UsersManager = () => {
             mobile: u.mobile || '',
             password: '', // Don't pre-fill password for security
             role: u.role || 'user',
-            permissions: u.permissions || [],
-            allowed_menus: u.allowed_menus || []
+            permissions: normalizedPerms,
+            allowed_menus: allowed
         });
         setEditingUserId(u.id);
         setIsEditing(true);
@@ -196,7 +318,7 @@ const UsersManager = () => {
             mobile: '',
             password: '',
             role: 'user',
-            permissions: [],
+            permissions: {},
             allowed_menus: []
         });
         setError(null);
@@ -295,7 +417,7 @@ const UsersManager = () => {
                                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Emp Code</th>
                                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Mobile</th>
                                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Role</th>
-
+                                <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Allowed Menus</th>
                                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
                                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
                             </tr>
@@ -329,6 +451,27 @@ const UsersManager = () => {
                                                 }`}>
                                                 {u.role}
                                             </span>
+                                        </div>
+                                    </td>
+
+                                    <td className="px-6 py-2 text-center">
+                                        <div className="flex justify-center items-center gap-1.5 flex-wrap max-w-xs mx-auto">
+                                            {u.role === 'admin' ? (
+                                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 uppercase tracking-widest border border-amber-200/50 dark:border-amber-800/40">
+                                                    All Menus
+                                                </span>
+                                            ) : u.allowed_menus && u.allowed_menus.length > 0 ? (
+                                                u.allowed_menus.map(m => {
+                                                    const opt = MENU_OPTIONS.find(o => o.value === m);
+                                                    return (
+                                                        <span key={m} className="px-2 py-0.5 rounded-lg text-[9px] font-bold bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 border border-violet-100 dark:border-violet-800/40">
+                                                            {opt ? opt.label : m}
+                                                        </span>
+                                                    );
+                                                })
+                                            ) : (
+                                                <span className="text-slate-400 text-xs font-bold">—</span>
+                                            )}
                                         </div>
                                     </td>
 
@@ -481,54 +624,76 @@ const UsersManager = () => {
                                 </div>
                             </div>
 
-                            <div className='grid grid-cols-2 gap-2'>
-                                {/* Allowed Menus */}
-                                <div>
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <span className="material-symbols-outlined text-violet-400 text-lg">menu</span>
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Allowed Menus</span>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {showDetailUser.allowed_menus?.length > 0 ? (
-                                            showDetailUser.allowed_menus.map((m, i) => {
-                                                const menuOption = MENU_OPTIONS.find(opt => opt.value === m);
-                                                return (
-                                                    <span key={i} className="px-3 py-1.5 rounded-xl bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 text-xs font-bold border border-violet-100 dark:border-violet-800/50">
-                                                        {menuOption?.label || m}
-                                                    </span>
-                                                );
-                                            })
-                                        ) : (
-                                            <span className="text-sm text-slate-400 font-medium">No menus assigned</span>
-                                        )}
-                                    </div>
+                            {/* Menu Permissions & Privileges */}
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-primary text-lg">shield_person</span>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                        Menu-Wise Permissions & Privileges
+                                    </span>
                                 </div>
 
-                                {/* Permissions */}
-                                <div>
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <span className="material-symbols-outlined text-blue-400 text-lg">shield</span>
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Permissions</span>
+                                {showDetailUser.role === 'admin' ? (
+                                    <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/40 flex items-center gap-3">
+                                        <span className="material-symbols-outlined text-amber-500 text-2xl">verified_user</span>
+                                        <div>
+                                            <h5 className="text-xs font-black uppercase text-amber-600 dark:text-amber-400 tracking-wider">
+                                                Full Administrator Access
+                                            </h5>
+                                            <p className="text-xs text-amber-700/80 dark:text-amber-300/80 mt-0.5">
+                                                Administrator accounts have unrestricted privileges for all application menus and accounts.
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {showDetailUser.role === 'admin' ? (
-                                            <span className="px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-xs font-bold border border-amber-100 dark:border-amber-800/50">
-                                                Full Access (Admin)
-                                            </span>
-                                        ) : parsePermissionsArray(showDetailUser.permissions).length > 0 ? (
-                                            parsePermissionsArray(showDetailUser.permissions).map((p, i) => {
-                                                const perm = ACCOUNTS_PERMISSIONS.find(ap => ap.value === p);
-                                                return (
-                                                    <span key={i} className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-bold border border-blue-100 dark:border-blue-800/50">
-                                                        {perm?.label || p}
-                                                    </span>
-                                                );
-                                            })
-                                        ) : (
-                                            <span className="text-sm text-slate-400 font-medium">No permissions assigned</span>
-                                        )}
+                                ) : (!showDetailUser.allowed_menus || showDetailUser.allowed_menus.length === 0) ? (
+                                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 text-center border border-slate-100 dark:border-slate-800">
+                                        <p className="text-xs font-bold text-slate-400">No menus or permissions assigned to this user.</p>
                                     </div>
-                                </div>
+                                ) : (
+                                    <div className="space-y-3 max-h-64 overflow-y-auto custom-scrollbar pr-1">
+                                        {showDetailUser.allowed_menus.map((menuVal) => {
+                                            const menuOpt = MENU_OPTIONS.find(m => m.value === menuVal) || { value: menuVal, label: menuVal, icon: 'folder' };
+                                            const userMenuPerms = parseMenuWisePermissions(showDetailUser.permissions, showDetailUser.allowed_menus)[menuVal] || [];
+
+                                            return (
+                                                <div key={menuVal} className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="material-symbols-outlined text-primary text-base">{menuOpt.icon || 'menu'}</span>
+                                                            <span className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wide">
+                                                                {menuOpt.label}
+                                                            </span>
+                                                        </div>
+                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 uppercase tracking-widest">
+                                                            {userMenuPerms.length === ACCOUNTS_PERMISSIONS.length 
+                                                                ? 'All Accounts' 
+                                                                : `${userMenuPerms.length} accounts`}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="flex flex-wrap gap-1.5 pt-1">
+                                                        {userMenuPerms.length > 0 ? (
+                                                            userMenuPerms.map((acr) => {
+                                                                const permObj = ACCOUNTS_PERMISSIONS.find(ap => ap.value === acr);
+                                                                return (
+                                                                    <span 
+                                                                        key={acr} 
+                                                                        className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700 shadow-xs"
+                                                                        title={permObj?.label || acr}
+                                                                    >
+                                                                        {acr}
+                                                                    </span>
+                                                                );
+                                                            })
+                                                        ) : (
+                                                            <span className="text-[11px] text-slate-400 font-medium italic">No accounts selected for this menu</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -578,7 +743,7 @@ const UsersManager = () => {
                                             type="text"
                                             required
                                             disabled={isEditing}
-                                            className={`w-full h-10 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white ${isEditing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            className={`w-full uppercase h-10 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-xl px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none dark:text-white ${isEditing ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             placeholder="JC0001"
                                             value={formData.employee_code}
                                             onChange={(e) => setFormData({ ...formData, employee_code: e.target.value })}
@@ -609,7 +774,7 @@ const UsersManager = () => {
                                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                         />
                                     </div>
-                                    <div className="space-y-2">
+                                    <div className="space-y-2"> 
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">
                                             Mobile Number
                                         </label>
@@ -632,7 +797,7 @@ const UsersManager = () => {
                                                 onClick={() => setFormData({
                                                     ...formData,
                                                     role: 'user',
-                                                    permissions: []
+                                                    permissions: {}
                                                 })}
                                                 className={`h-10 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${formData.role === 'user'
                                                         ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20'
@@ -646,7 +811,8 @@ const UsersManager = () => {
                                                 onClick={() => setFormData({
                                                     ...formData,
                                                     role: 'admin',
-                                                    permissions: ACCOUNTS_PERMISSIONS.map(p => p.value)
+                                                    allowed_menus: MENU_OPTIONS.map(m => m.value),
+                                                    permissions: getAllAccountsForMenus()
                                                 })}
                                                 className={`h-10 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${formData.role === 'admin'
                                                         ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20'
@@ -744,27 +910,111 @@ const UsersManager = () => {
                                     </div>
                                 </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Permissions <span className="text-rose-500">*</span></label>
-                                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
-                                        {ACCOUNTS_PERMISSIONS.map(perm => {
-                                            const isSelected = parsePermissionsArray(formData.permissions).includes(perm.value);
-                                            return (
-                                                <button
-                                                    key={perm.value}
-                                                    type="button"
-                                                    onClick={() => togglePermission(perm.value)}
-                                                    className={`h-10 rounded-xl text-[10px] font-black transition-all border ${isSelected
-                                                            ? 'bg-amber-500 border-amber-500 text-white shadow-md'
-                                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-400'
-                                                        }`}
-                                                    title={perm.label}
-                                                >
-                                                    {perm.value}
-                                                </button>
-                                            );
-                                        })}
+                                {/* Menu-Wise Permissions */}
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between px-1">
+                                        <div>
+                                            <label className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                                                <span className="material-symbols-outlined text-primary text-base">shield_person</span>
+                                                Menu-Wise Permissions
+                                            </label>
+                                            <p className="text-xs text-slate-400 font-medium mt-0.5">
+                                                Configure account access separately for each allowed menu.
+                                            </p>
+                                        </div>
                                     </div>
+
+                                    {formData.allowed_menus.length === 0 ? (
+                                        <div className="p-6 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 text-center">
+                                            <span className="material-symbols-outlined text-3xl text-slate-300 dark:text-slate-600 mb-1">touch_app</span>
+                                            <p className="text-sm font-bold text-slate-600 dark:text-slate-400">
+                                                No menus selected
+                                            </p>
+                                            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                                                Select one or more Allowed Menus above to configure menu-specific permissions.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {formData.allowed_menus.map(menuVal => {
+                                                const menuOpt = MENU_OPTIONS.find(m => m.value === menuVal) || { value: menuVal, label: menuVal, icon: 'folder' };
+                                                const currentPermsForMenu = formData.permissions[menuVal] || [];
+                                                const selectedCount = currentPermsForMenu.length;
+                                                const isAllSelected = selectedCount === ACCOUNTS_PERMISSIONS.length;
+
+                                                return (
+                                                    <div 
+                                                        key={menuVal}
+                                                        className="p-4 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3"
+                                                    >
+                                                        {/* Menu Card Header */}
+                                                        <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-3">
+                                                            <div className="flex items-center gap-2.5">
+                                                                <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                                                                    <span className="material-symbols-outlined text-lg">{menuOpt.icon || 'menu'}</span>
+                                                                </div>
+                                                                <div>
+                                                                    <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wide">
+                                                                        {menuOpt.label}
+                                                                    </h4>
+                                                                    <span className="text-[10px] font-bold text-slate-400">
+                                                                        {selectedCount === 0 ? 'No accounts selected' : `${selectedCount} of ${ACCOUNTS_PERMISSIONS.length} accounts enabled`}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Quick Actions */}
+                                                            <div className="flex items-center gap-1.5">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => selectAllPermissionsForMenu(menuVal)}
+                                                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
+                                                                        isAllSelected 
+                                                                            ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400' 
+                                                                            : 'bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 hover:bg-slate-200'
+                                                                    }`}
+                                                                >
+                                                                    Select All
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => clearAllPermissionsForMenu(menuVal)}
+                                                                    className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all"
+                                                                >
+                                                                    Clear
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Account Permissions Grid */}
+                                                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 pt-1">
+                                                            {ACCOUNTS_PERMISSIONS.map(perm => {
+                                                                const isSelected = currentPermsForMenu.includes(perm.value);
+                                                                return (
+                                                                    <button
+                                                                        key={perm.value}
+                                                                        type="button"
+                                                                        onClick={() => togglePermission(menuVal, perm.value)}
+                                                                        className={`h-9 rounded-xl text-[10px] font-black transition-all border flex items-center justify-center gap-1 ${
+                                                                            isSelected
+                                                                                ? 'bg-amber-500 border-amber-500 text-white shadow-sm shadow-amber-500/20 scale-[1.02]'
+                                                                                : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300'
+                                                                        }`}
+                                                                        title={perm.label}
+                                                                    >
+                                                                        <span>{perm.value}</span>
+                                                                        {isSelected && (
+                                                                            <span className="material-symbols-outlined text-[12px]">check</span>
+                                                                        )}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
 
 

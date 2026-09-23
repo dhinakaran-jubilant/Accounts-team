@@ -47,15 +47,32 @@ const getAcronym = (name) => {
     if (!name) return '—';
     const n = name.trim().toLowerCase();
     if (n === 'surge capital solution' || n.includes('surge capital')) return 'SCS';
+    if (n === 'growth capital enterprises' || n.includes('growth capital enterprises') || n.includes('growth capital corp') || n.includes('gce')) return 'GCE';
     if (n === 'growth capital' || n.includes('growth capital')) return 'GC';
-    if (n === 'finova capital' || n.includes('finova capital')) return 'FC';
-    if (n === 'ascend solutions' || n.includes('ascend solutions')) return 'AS';
-    if (n === 'as enterprises' || n.includes('as enterprises')) return 'ASE';
-    if (n === 'sc enterprises' || n.includes('sc enterprises')) return 'SCE';
-    if (n === 'a square enterprises' || n.includes('square enterprises')) return 'ASQ';
-    if (n === 's nirmala' || n.includes('nirmala')) return 'SN';
-    return name;
+    if (n === 'jubilant capital' || n.includes('jubilant capital') || n === 'jc') return 'JC';
+    if (n === 'finova capital' || n.includes('finova capital') || n === 'fc') return 'FC';
+    if (n === 'as enterprises' || n.includes('as enterprises') || n === 'ase') return 'ASE';
+    if (n === 'ascend solutions' || n.includes('ascend solutions') || n === 'as') return 'AS';
+    if (n === 'fortune enterprises' || n.includes('fortune enterprises') || n === 'fe') return 'FE';
+    if (n === 'sc enterprises' || n.includes('sc enterprises') || n === 'sce') return 'SCE';
+    if (n === 'a square enterprises' || n.includes('square enterprises') || n === 'asq') return 'ASQ';
+    if (n === 's nirmala' || n.includes('nirmala') || n === 'sn') return 'SN';
+    if (n === 'raja priya' || n.includes('raja priya') || n === 'rp') return 'RP';
+    return name.toUpperCase();
 };
+const formatVerifier = (verifierStr) => {
+    if (!verifierStr) return '—';
+    try {
+        const parsed = JSON.parse(verifierStr);
+        if (Array.isArray(parsed)) {
+            return parsed.join(', ');
+        }
+    } catch (e) {
+        // Return as-is if it's not a JSON string
+    }
+    return verifierStr;
+};
+
 const toDDMMYYYY = (val) => {
     if (!val || !val.includes('-')) return val;
     const parts = val.split('-');
@@ -209,11 +226,19 @@ const RepaymentTable = ({
         if (!user || !loan) return false;
         if (user.role === 'admin') return false;
         const priAcronym = getAcronym(loan.primary_account_name);
-        if (user.permissions?.includes(priAcronym)) return false;
+        let perms = user.permissions;
+        if (typeof perms === 'string') {
+            try { perms = JSON.parse(perms); } catch (e) { perms = []; }
+        }
+        const userPerms = (perms && typeof perms === 'object' && !Array.isArray(perms))
+            ? (perms['jl-due-report'] || perms['jlduereport'] || [])
+            : (Array.isArray(perms) ? perms : []);
+
+        if (userPerms.includes(priAcronym)) return false;
         const secAcronyms = (loan.remaining_accounts || [])
             .filter(acc => acc.is_need_approval !== false)
             .map(acc => getAcronym(acc.account_name));
-        return (user.permissions || []).some(perm => secAcronyms.includes(perm));
+        return userPerms.some(perm => secAcronyms.includes(perm));
     }, [user, loan]);
     const hasPrimaryTDS = !isManual && data.some(entry => {
         return getSplitTDS(entry.splits, loan?.primary_account_name) > 0;
@@ -1884,23 +1909,34 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
     const fileInputRef = useRef(null);
     const isPanel = Boolean(onClose);
     
+    const userJlPermissions = useMemo(() => {
+        if (!user) return [];
+        let perms = user.permissions;
+        if (typeof perms === 'string') {
+            try { perms = JSON.parse(perms); } catch (e) { perms = []; }
+        }
+        return (perms && typeof perms === 'object' && !Array.isArray(perms))
+            ? (perms['jl-due-report'] || perms['jlduereport'] || [])
+            : (Array.isArray(perms) ? perms : []);
+    }, [user]);
+
     const canEdit = useMemo(() => {
         if (!user || !loan) return false;
         if (user.role === 'admin') return true;
         const priAcronym = getAcronym(loan.primary_account_name);
-        return user.permissions?.includes(priAcronym);
-    }, [user, loan]);
+        return userJlPermissions.includes(priAcronym);
+    }, [user, loan, userJlPermissions]);
 
     const isSecondaryManager = useMemo(() => {
         if (!user || !loan) return false;
         if (user.role === 'admin') return false;
         const priAcronym = getAcronym(loan.primary_account_name);
-        if (user.permissions?.includes(priAcronym)) return false;
+        if (userJlPermissions.includes(priAcronym)) return false;
         const secAcronyms = (loan.remaining_accounts || [])
             .filter(acc => acc.is_need_approval !== false)
             .map(acc => getAcronym(acc.account_name));
-        return (user.permissions || []).some(perm => secAcronyms.includes(perm));
-    }, [user, loan]);
+        return userJlPermissions.some(perm => secAcronyms.includes(perm));
+    }, [user, loan, userJlPermissions]);
 
     const handleApproveDate = async (scheduleId) => {
         try {
@@ -2808,12 +2844,12 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                             loan.approval_status === 'APPROVED' ? (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800/50">
                                     <span className="material-symbols-outlined text-[13px]">verified_user</span>
-                                    {loan.verified_by}
+                                    {formatVerifier(loan.verified_by)}
                                 </span>
                             ) : (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50">
                                     <span className="material-symbols-outlined text-[13px] animate-pulse">pending</span>
-                                    {loan.verified_by}
+                                    {formatVerifier(loan.verified_by)}
                                 </span>
                             )
                         )}
@@ -2843,12 +2879,12 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                                 loan.approval_status === 'APPROVED' ? (
                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800/50">
                                         <span className="material-symbols-outlined text-[13px]">verified_user</span>
-                                        {loan.verified_by}
+                                        {formatVerifier(loan.verified_by)}
                                     </span>
                                 ) : (
                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50">
                                         <span className="material-symbols-outlined text-[13px] animate-pulse">pending</span>
-                                        {loan.verified_by}
+                                        {formatVerifier(loan.verified_by)}
                                     </span>
                                 )
                             )}

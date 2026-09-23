@@ -303,9 +303,13 @@ const Dashboard = ({ user }) => {
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-6 xl:grid-cols-6 gap-4">
                     {ACCOUNT_OPTIONS.map((account) => {
                         // Check permissions: Admins see everything, users see only assigned acronyms
-                        const permissions = typeof user?.permissions === 'string' 
-                            ? JSON.parse(user.permissions) 
-                            : (user?.permissions || []);
+                        let permsRaw = user?.permissions;
+                        if (typeof permsRaw === 'string') {
+                            try { permsRaw = JSON.parse(permsRaw); } catch (e) { permsRaw = []; }
+                        }
+                        const permissions = (permsRaw && typeof permsRaw === 'object' && !Array.isArray(permsRaw))
+                            ? (permsRaw['db-ac-report'] || permsRaw['home'] || [])
+                            : (Array.isArray(permsRaw) ? permsRaw : []);
                         const isLocked = user?.role !== 'admin' && !permissions.includes(account.value);
 
                         return (

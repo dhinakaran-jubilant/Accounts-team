@@ -15,18 +15,18 @@ const getAcronym = (name) => {
     if (!name) return '—';
     const n = name.trim().toLowerCase();
     if (n === 'surge capital solution' || n.includes('surge capital')) return 'SCS';
+    if (n === 'growth capital enterprises' || n.includes('growth capital enterprises') || n.includes('growth capital corp') || n.includes('gce')) return 'GCE';
     if (n === 'growth capital' || n.includes('growth capital')) return 'GC';
-    if (n === 'growth capital enterprises' || n.includes('growth capital corp') || n.includes('gce')) return 'GCE';
-    if (n === 'jubilant capital' || n.includes('jubilant capital')) return 'JC';
-    if (n === 'finova capital' || n.includes('finova capital')) return 'FC';
-    if (n === 'ascend solutions' || n.includes('ascend solutions')) return 'AS';
-    if (n === 'as enterprises' || n.includes('as enterprises')) return 'ASE';
-    if (n === 'fortune enterprises' || n.includes('fortune enterprises')) return 'FE';
-    if (n === 'sc enterprises' || n.includes('sc enterprises')) return 'SCE';
-    if (n === 'a square enterprises' || n.includes('square enterprises')) return 'ASQ';
-    if (n === 's nirmala' || n.includes('nirmala')) return 'SN';
-    if (n === 'raja priya' || n.includes('raja priya')) return 'RP';
-    return name;
+    if (n === 'jubilant capital' || n.includes('jubilant capital') || n === 'jc') return 'JC';
+    if (n === 'finova capital' || n.includes('finova capital') || n === 'fc') return 'FC';
+    if (n === 'as enterprises' || n.includes('as enterprises') || n === 'ase') return 'ASE';
+    if (n === 'ascend solutions' || n.includes('ascend solutions') || n === 'as') return 'AS';
+    if (n === 'fortune enterprises' || n.includes('fortune enterprises') || n === 'fe') return 'FE';
+    if (n === 'sc enterprises' || n.includes('sc enterprises') || n === 'sce') return 'SCE';
+    if (n === 'a square enterprises' || n.includes('square enterprises') || n === 'asq') return 'ASQ';
+    if (n === 's nirmala' || n.includes('nirmala') || n === 'sn') return 'SN';
+    if (n === 'raja priya' || n.includes('raja priya') || n === 'rp') return 'RP';
+    return name.toUpperCase();
 };
 
 const REQUIRED_DAY_BOOK_COLUMNS = [
@@ -236,7 +236,10 @@ const JlDueReport = ({ user }) => {
                 perms = [];
             }
         }
-        return Array.isArray(perms) ? perms : [];
+        if (perms && typeof perms === 'object' && !Array.isArray(perms)) {
+            return (perms['jl-due-report'] || perms['jlduereport'] || []).map(p => String(p).toUpperCase().trim());
+        }
+        return Array.isArray(perms) ? perms.map(p => String(p).toUpperCase().trim()) : [];
     }, [user]);
 
     const [showModal, setShowModal] = useState(false);
@@ -474,6 +477,7 @@ const JlDueReport = ({ user }) => {
     const ACCOUNT_OPTIONS = [
         { value: 'SCS', label: 'Surge Capital Solutions - SCS' },
         { value: 'GC', label: 'Growth Capital - GC' },
+        { value: 'GCE', label: 'Growth Capital Enterprises - GCE' },
         { value: 'FC', label: 'Finova Capital - FC' },
         { value: 'AS', label: 'Ascend Solutions - AS' },
         { value: 'ASE', label: 'AS Enterprises - ASE' },
@@ -722,12 +726,12 @@ const JlDueReport = ({ user }) => {
         const userPerms = userPermissions;
         if (user?.role !== 'admin' && userPerms.length < 10) {
             result = result.filter(row => {
-                const priAcronym = getAcronym(row.primary_account_name);
+                const priAcronym = getAcronym(row.primary_account_name).toUpperCase();
                 if (userPerms.includes(priAcronym)) return true;
 
                 // Check secondary accounts
                 const secAccs = row.secondary_accounts || row.remaining_accounts || [];
-                return secAccs.some(acc => userPerms.includes(getAcronym(acc.account_name)));
+                return secAccs.some(acc => userPerms.includes(getAcronym(acc.account_name || acc.name).toUpperCase()));
             });
         }
 
@@ -2624,7 +2628,7 @@ if (isDetailed) {
                                                 </td>
                                                 <td className="py-2 px-2 text-center text-sm">
                                                     {(() => {
-                                                        const isSecondaryLoan = user?.role !== 'admin' && !userPermissions.includes(getAcronym(row.primary_account_name));
+                                                        const isSecondaryLoan = user?.role !== 'admin' && !userPermissions.includes(getAcronym(row.primary_account_name).toUpperCase());
                                                         return (
                                                             <button
                                                                 onClick={(e) => {

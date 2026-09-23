@@ -321,21 +321,21 @@ def update_google_sheet(user_name, bank_file_name, cloud_file_name, total_entrie
 
 def get_acronym(name):
     if not name:
-        return '—'
-    n = name.strip().lower()
+        return ''
+    n = str(name).strip().lower()
     if 'surge capital' in n: return 'SCS'
     if 'growth capital enterprises' in n or 'growth capital corp' in n or 'gce' in n: return 'GCE'
     if 'growth capital' in n: return 'GC'
-    if 'jubilant capital' in n: return 'JC'
-    if 'finova capital' in n: return 'FC'
-    if 'ascend solutions' in n: return 'AS'
+    if 'jubilant capital' in n or 'jubilant' in n or n == 'jc': return 'JC'
+    if 'finova capital' in n or 'finova' in n or n == 'fc': return 'FC'
     if 'as enterprises' in n: return 'ASE'
-    if 'fortune enterprises' in n: return 'FE'
-    if 'sc enterprises' in n: return 'SCE'
-    if 'square enterprises' in n: return 'ASQ'
-    if 'nirmala' in n: return 'SN'
-    if 'raja priya' in n: return 'RP'
-    return name.upper()
+    if 'ascend solutions' in n or 'ascend' in n or n == 'as': return 'AS'
+    if 'fortune enterprises' in n or 'fortune' in n or n == 'fe': return 'FE'
+    if 'sc enterprises' in n or n == 'sce': return 'SCE'
+    if 'square enterprises' in n or 'asq' in n: return 'ASQ'
+    if 'nirmala' in n or n == 'sn': return 'SN'
+    if 'raja priya' in n or 'rajapriya' in n or n == 'rp': return 'RP'
+    return str(name).strip().upper()
 
 def format_loan_ref_id(ref_id):
     if not ref_id:
@@ -349,11 +349,11 @@ def format_loan_ref_id(ref_id):
         ref_str = f"JL{ref_str[2:]}"
     return ref_str[:11]
 
-def user_has_company_approval(user, acronym):
+def user_has_company_approval(user, acronym, menu='jl-due-report'):
     """
-    Returns True if user has 'approve' or 'full' access level for the specified company acronym.
+    Returns True if user has approval/upload access for the specified company acronym.
     Admins always return True.
-    Legacy string permissions without access level default to True (full access).
+    For menu-wise permissions (dict with menu keys), checks the specified menu (defaults to 'jl-due-report').
     """
     if not user:
         return False
@@ -368,7 +368,9 @@ def user_has_company_approval(user, acronym):
     except Exception:
         return False
 
-    acronym_upper = acronym.strip().upper()
+    acronym_upper = get_acronym(acronym).strip().upper() if acronym else ''
+    if not acronym_upper:
+        return False
 
     def check_level(level):
         if not level:
@@ -377,8 +379,25 @@ def user_has_company_approval(user, acronym):
         return lvl in ['approve', 'full']
 
     if isinstance(perms, dict):
+        is_menu_wise = any(isinstance(v, list) for v in perms.values())
+        if is_menu_wise:
+            if menu and menu in perms:
+                menu_perms = perms.get(menu) or []
+                return acronym_upper in [str(p).strip().upper() for p in menu_perms if p]
+            # Fallback if specific menu not provided: check jl-due-report then all
+            if 'jl-due-report' in perms:
+                jl_perms = perms.get('jl-due-report') or []
+                if acronym_upper in [str(p).strip().upper() for p in jl_perms if p]:
+                    return True
+            all_perms = []
+            for v in perms.values():
+                if isinstance(v, list):
+                    all_perms.extend(v)
+            return acronym_upper in [str(p).strip().upper() for p in all_perms if p]
+
+        # Legacy dict mapping acronym -> access level
         for k, v in perms.items():
-            if k.strip().upper() == acronym_upper:
+            if get_acronym(k).strip().upper() == acronym_upper:
                 return check_level(v)
         return False
 
@@ -387,51 +406,116 @@ def user_has_company_approval(user, acronym):
             if isinstance(item, str):
                 if ':' in item:
                     code, level = item.split(':', 1)
-                    if code.strip().upper() == acronym_upper:
+                    if get_acronym(code).strip().upper() == acronym_upper:
                         return check_level(level)
                 else:
-                    if item.strip().upper() == acronym_upper:
-                        return True # Legacy string = full access
+                    if get_acronym(item).strip().upper() == acronym_upper:
+                        return True
             elif isinstance(item, dict) and 'value' in item:
-                if item['value'].strip().upper() == acronym_upper:
+                if get_acronym(item['value']).strip().upper() == acronym_upper:
                     return check_level(item.get('access', 'full'))
 
     return False
 
-def find_secondary_manager(secondary_accounts):
+def find_secondary_managers(secondary_accounts):
     """
-    Finds a user who manages one of the secondary accounts as their primary.
-    Returns the first matching user's name, or 'System Admin' if no match.
-    Only considers accounts where is_need_approval is enabled.
+    Finds ALL users who have jl-due-report permission for any of the secondary
+    account acronyms (where is_need_approval is enabled).
+    Returns a list of matching user names, or ['System Admin'] if none found.
+    Any one of the returned managers can approve the loan.
     """
     if not secondary_accounts:
-        return 'System Admin'
-    
+        return ['System Admin']
+
     # Get acronyms for all secondary accounts
     sec_acronyms = [get_acronym(acc.get('name') or acc.get('account_name')).strip().upper() for acc in secondary_accounts]
-    
+
     # Filter sec_acronyms to keep only those where is_need_approval is True
     approval_acronyms = []
     for acr in sec_acronyms:
         acc_name_obj = AccountName.query.filter_by(acronym=acr).first()
         if acc_name_obj is None or acc_name_obj.is_need_approval:
             approval_acronyms.append(acr)
-            
+
     if not approval_acronyms:
-        return 'System Admin'
-    
-    # Fetch all users who are not System Admin
-    users = User.query.filter(User.name != 'System Admin').all()
-    
+        return ['System Admin']
+
+    # Fetch all non-admin, non-System Admin users
+    users = User.query.filter(
+        User.name != 'System Admin',
+        User.role != 'admin'
+    ).all()
+
+    matched_names = []
+    seen = set()
     for acronym in approval_acronyms:
         for u in users:
-            try:
-                if user_has_company_approval(u, acronym):
-                    return u.name
-            except Exception:
+            if u.name in seen:
                 continue
-                
-    return 'System Admin'
+            if user_has_company_approval(u, acronym, menu='jl-due-report'):
+                matched_names.append(u.name)
+                seen.add(u.name)
+
+    return matched_names if matched_names else ['System Admin']
+
+def parse_verified_by(verified_by_val):
+    """
+    Safely decode loan.verified_by into a list of manager names.
+    Handles: JSON list, plain string (legacy), None.
+    """
+    if not verified_by_val:
+        return []
+    try:
+        parsed = json.loads(verified_by_val)
+        if isinstance(parsed, list):
+            return parsed
+        return [str(parsed)]
+    except (ValueError, TypeError):
+        return [verified_by_val]  # legacy plain string
+
+def send_loan_creation_notifications(loan):
+    if not loan or loan.approval_status == 'APPROVED':
+        return
+    managers = parse_verified_by(loan.verified_by)
+    real_managers = [m for m in managers if m != 'System Admin']
+    client = loan.client_account_name or 'N/A'
+    loan_ref = loan.loan_ref_id or 'N/A'
+    requester = loan.requester_name or 'N/A'
+    
+    if real_managers:
+        try:
+            for mgr_name in real_managers:
+                notif = Notification(
+                    user_name=mgr_name,
+                    title='New Loan Approval Request',
+                    message=f"A Joint Loan request for {client} ({loan_ref}) has been submitted by {requester} and requires your approval.",
+                    link=f"/approvals?loanId={loan.id}",
+                    created_at=datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
+                )
+                db.session.add(notif)
+            db.session.commit()
+        except Exception as notif_err:
+            print(f"Failed to create loan notifications: {notif_err}")
+    elif loan.approval_status == 'VERIFIED':
+        # Direct to admin (no secondary manager approval needed)
+        try:
+            admin_users = User.query.filter((User.role == 'admin') | (User.name == 'System Admin')).all()
+            for admin in admin_users:
+                notif = Notification(
+                    user_name=admin.name,
+                    title='New Loan Approval Request',
+                    message=f"A Joint Loan request for {client} ({loan_ref}) has been submitted by {requester} and requires your approval.",
+                    link=f"/approvals?loanId={loan.id}",
+                    created_at=datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
+                )
+                db.session.add(notif)
+            db.session.commit()
+        except Exception as notif_err:
+            print(f"Failed to create admin loan notifications: {notif_err}")
+
+    threading.Thread(target=notify_loan_created, args=[loan.id]).start()
+    threading.Timer(86400.0, check_loan_approval_after_24h, args=[loan.id]).start()
+
 
 # Serve React frontend
 @app.route('/', defaults={'path': ''})
@@ -666,27 +750,6 @@ def get_windows_username_from_request(req):
     # For local testing if NTLM isn't fully set up but running on Windows
     return os.getlogin() if hasattr(os, 'getlogin') else 'Unknown'
 
-def get_acronym(name):
-    if not name:
-        return ''
-    n = name.strip().lower()
-    if 'surge capital' in n:
-        return 'SCS'
-    if 'growth capital' in n:
-        return 'GC'
-    if 'finova capital' in n:
-        return 'FC'
-    if 'ascend solutions' in n:
-        return 'AS'
-    if 'as enterprises' in n:
-        return 'ASE'
-    if 'sc enterprises' in n:
-        return 'SCE'
-    if 'square enterprises' in n:
-        return 'ASQ'
-    if 'nirmala' in n:
-        return 'SN'
-    return name
 
 def ensure_db_and_tables():
     try:
@@ -905,19 +968,20 @@ def get_approvals():
                     db.or_(Loan.is_deleted == False, Loan.approval_status == 'REJECTED')
                 ).order_by(Loan.id.desc()).all()
             else:
-                # Verifiers see loans they've verified or rejected
-                loans = Loan.query.filter(
-                    Loan.verified_by == user_name,
+                # Verifiers see loans they've actioned (their name in verified_by, non-PENDING)
+                all_non_pending = Loan.query.filter(
                     Loan.approval_status != 'PENDING',
                     db.or_(Loan.is_deleted == False, Loan.approval_status == 'REJECTED')
                 ).order_by(Loan.id.desc()).all()
+                loans = [l for l in all_non_pending if user_name in parse_verified_by(l.verified_by) or l.actioned_by == user_name]
         else:
             if is_admin:
                 # Admins only see loans that are VERIFIED (approved by secondary manager first)
                 loans = Loan.query.filter(Loan.approval_status == 'VERIFIED', Loan.is_deleted == False).order_by(Loan.id.desc()).all()
             else:
-                # Regular verifiers see PENDING loans assigned to them
-                loans = Loan.query.filter_by(verified_by=user_name, approval_status='PENDING', is_deleted=False).all()
+                # Secondary managers see PENDING loans where their name is in the verified_by JSON list
+                all_pending = Loan.query.filter_by(approval_status='PENDING', is_deleted=False).all()
+                loans = [l for l in all_pending if user_name in parse_verified_by(l.verified_by)]
         
         results = [{
             'id': l.id,
@@ -958,27 +1022,96 @@ def handle_approval_action(loan_id):
         if not user:
             return jsonify({'error': 'User not found in system'}), 404
             
+        # For non-admin users, verify that the actioner is one of the assigned secondary managers
+        if user.role != 'admin':
+            allowed_managers = parse_verified_by(loan.verified_by)
+            if actioner_name not in allowed_managers:
+                return jsonify({'error': 'You are not assigned as an approver for this loan'}), 403
+
         if action == 'REJECT':
             loan.approval_status = 'REJECTED'
             loan.is_deleted = True # Remove from main report but keep for requester/actioner history
         else: # APPROVE
             sys_config = load_system_config()
             require_adm = sys_config.get('require_admin_approval', True)
-            
+
             if (user and user.role == 'admin') or not require_adm:
                 loan.approval_status = 'APPROVED'
             else:
                 loan.approval_status = 'VERIFIED'
-                loan.verified_by = 'System Admin'
-                
+                loan.verified_by = 'System Admin'  # Reset to scalar for admin stage
+
         loan.actioned_by = actioner_name
         loan.actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
         db.session.commit()
-        
+
+        # Mark pending notifications for this loan as read for secondary managers
+        try:
+            pending_notifs = Notification.query.filter(
+                Notification.link.contains(f"loanId={loan.id}"),
+                Notification.is_read == False
+            ).all()
+            for pn in pending_notifs:
+                pn.is_read = True
+            db.session.commit()
+        except Exception:
+            pass
+
         if loan.approval_status == 'VERIFIED':
+            try:
+                admin_users = User.query.filter((User.role == 'admin') | (User.name == 'System Admin')).all()
+                client = loan.client_account_name or 'N/A'
+                loan_ref = loan.loan_ref_id or 'N/A'
+                for admin in admin_users:
+                    notif = Notification(
+                        user_name=admin.name,
+                        title='Loan Verification Request',
+                        message=f"Joint Loan request for {client} ({loan_ref}) has been verified by {actioner_name} and requires your approval.",
+                        link=f"/approvals?loanId={loan.id}",
+                        created_at=datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
+                    )
+                    db.session.add(notif)
+                db.session.commit()
+            except Exception as e:
+                print(f"Failed to create admin notification: {e}")
+
             threading.Thread(target=notify_admin_loan_verified, args=[loan.id, actioner_name]).start()
             threading.Timer(86400.0, check_admin_loan_approval_after_24h, args=[loan.id, actioner_name]).start()
-        
+
+        elif loan.approval_status == 'APPROVED':
+            if loan.requester_name and loan.requester_name != actioner_name:
+                try:
+                    client = loan.client_account_name or 'N/A'
+                    loan_ref = loan.loan_ref_id or 'N/A'
+                    notif = Notification(
+                        user_name=loan.requester_name,
+                        title='Loan Approved',
+                        message=f"Your Joint Loan request for {client} ({loan_ref}) has been approved by {actioner_name}.",
+                        link=f"/jl-due-report",
+                        created_at=datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
+                    )
+                    db.session.add(notif)
+                    db.session.commit()
+                except Exception as e:
+                    print(f"Failed to notify requester of approval: {e}")
+
+        elif loan.approval_status == 'REJECTED':
+            if loan.requester_name and loan.requester_name != actioner_name:
+                try:
+                    client = loan.client_account_name or 'N/A'
+                    loan_ref = loan.loan_ref_id or 'N/A'
+                    notif = Notification(
+                        user_name=loan.requester_name,
+                        title='Loan Rejected',
+                        message=f"Your Joint Loan request for {client} ({loan_ref}) was rejected by {actioner_name}.",
+                        link=f"/my-requests",
+                        created_at=datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
+                    )
+                    db.session.add(notif)
+                    db.session.commit()
+                except Exception as e:
+                    print(f"Failed to notify requester of rejection: {e}")
+
         return jsonify({'success': True, 'message': f'Loan {action}D successfully', 'new_status': loan.approval_status}), 200
     except Exception as e:
         db.session.rollback()
@@ -1025,15 +1158,13 @@ def handle_docx_upload():
         
         # --- PERMISSION VALIDATION ---
         emp_code = request.form.get('employee_code')
+        user = None
         if emp_code:
             user = User.query.filter_by(employee_code=emp_code).first()
             if user and user.role != 'admin':
                 primary_acc = final_output.get('primary_account_name')
                 acronym = get_acronym(primary_acc)
-                user_perms = json.loads(user.permissions) if user.permissions else []
-                
-                # If the acronym is not in the user's permission list, REJECT
-                if acronym not in user_perms:
+                if not user_has_company_approval(user, acronym, menu='jl-due-report'):
                     return jsonify({
                         'success': False, 
                         'error': f"Unauthorized: You do not have permission to upload loans for '{primary_acc}' ({acronym}). Please contact your administrator for access."
@@ -1055,12 +1186,13 @@ def handle_docx_upload():
             actioned_by = user.name
             actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
         else:
-            sec_mgr = None
+            sec_mgrs = []
             if require_sec:
-                sec_mgr = find_secondary_manager(final_output.get('remaining_accounts', []))
-            
-            if sec_mgr and sec_mgr != 'System Admin':
-                target_verifier = sec_mgr
+                sec_mgrs = find_secondary_managers(final_output.get('remaining_accounts', []))
+
+            real_mgrs = [m for m in sec_mgrs if m != 'System Admin']
+            if real_mgrs:
+                target_verifier = json.dumps(real_mgrs)  # JSON list stored in DB
                 loan_status = 'PENDING'
             else:
                 if require_adm:
@@ -1132,9 +1264,7 @@ def handle_docx_upload():
             db.session.add(schedule)
             
         db.session.commit()
-        if loan.approval_status != 'APPROVED':
-            threading.Thread(target=notify_loan_created, args=[loan.id]).start()
-            threading.Timer(86400.0, check_loan_approval_after_24h, args=[loan.id]).start()
+        send_loan_creation_notifications(loan)
         return jsonify({'success': True, 'loan_id': loan.id, 'message': 'Data inserted correctly into PostgreSQL!'}), 200
         
     except Exception as e:
@@ -1186,13 +1316,13 @@ def handle_pdf_upload():
         
         # --- PERMISSION VALIDATION ---
         emp_code = request.form.get('employee_code')
+        user = None
         if emp_code:
             user = User.query.filter_by(employee_code=emp_code).first()
             if user and user.role != 'admin':
                 primary_acc = final_output.get('primary_account_name')
                 acronym = get_acronym(primary_acc)
-                user_perms = json.loads(user.permissions) if user.permissions else []
-                if acronym not in user_perms:
+                if not user_has_company_approval(user, acronym, menu='jl-due-report'):
                     return jsonify({
                         'success': False, 
                         'error': f"Unauthorized: You do not have permission to upload loans for '{primary_acc}' ({acronym})."
@@ -1214,12 +1344,13 @@ def handle_pdf_upload():
             actioned_by = user.name
             actioned_at = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
         else:
-            sec_mgr = None
+            sec_mgrs = []
             if require_sec:
-                sec_mgr = find_secondary_manager(final_output.get('remaining_accounts', []))
-            
-            if sec_mgr and sec_mgr != 'System Admin':
-                target_verifier = sec_mgr
+                sec_mgrs = find_secondary_managers(final_output.get('remaining_accounts', []))
+
+            real_mgrs = [m for m in sec_mgrs if m != 'System Admin']
+            if real_mgrs:
+                target_verifier = json.dumps(real_mgrs)  # JSON list stored in DB
                 loan_status = 'PENDING'
             else:
                 if require_adm:
@@ -1292,9 +1423,7 @@ def handle_pdf_upload():
             db.session.add(schedule)
             
         db.session.commit()
-        if loan.approval_status != 'APPROVED':
-            threading.Thread(target=notify_loan_created, args=[loan.id]).start()
-            threading.Timer(86400.0, check_loan_approval_after_24h, args=[loan.id]).start()
+        send_loan_creation_notifications(loan)
         return jsonify({'success': True, 'loan_id': loan.id, 'message': 'PDF data processed correctly!'}), 200
         
     except Exception as e:
@@ -2330,7 +2459,7 @@ def get_users():
                 'role': u.role,
                 'email': u.email,
                 'mobile': u.mobile,
-                'permissions': json.loads(u.permissions) if u.permissions else [],
+                'permissions': json.loads(u.permissions) if u.permissions else {},
                 'allowed_menus': json.loads(u.allowed_menus) if u.allowed_menus else [],
                 'is_initial_password': u.is_initial_password
             } for u in users]
@@ -2463,7 +2592,7 @@ def add_user():
         else:
             mobile = None
         password = data.get('password') or 'Admin@123'
-        permissions = data.get('permissions', [])
+        permissions = data.get('permissions', {})
         allowed_menus = data.get('allowed_menus', [])
         role = data.get('role', 'user') # Default to user as requested
 
@@ -2564,7 +2693,7 @@ def login():
                     'name': user.name,
                     'role': user.role,
                     'is_initial_password': user.is_initial_password,
-                    'permissions': json.loads(user.permissions) if user.permissions else [],
+                    'permissions': json.loads(user.permissions) if user.permissions else {},
                     'allowed_menus': json.loads(user.allowed_menus) if user.allowed_menus else []
                 }
             })
@@ -2640,9 +2769,11 @@ def get_notifications():
         approvals_data = []
         if user:
             if user.role == 'admin':
-                loans = Loan.query.filter_by(approval_status='PENDING', is_deleted=False).all()
+                loans = Loan.query.filter(Loan.approval_status == 'VERIFIED', Loan.is_deleted == False).all()
             else:
-                loans = Loan.query.filter_by(verified_by=user_name, approval_status='PENDING', is_deleted=False).all()
+                # Match loans where user_name is in the verified_by JSON list
+                all_pending = Loan.query.filter_by(approval_status='PENDING', is_deleted=False).all()
+                loans = [l for l in all_pending if user_name in parse_verified_by(l.verified_by)]
                 
             for l in loans:
                 approvals_data.append({
@@ -2651,7 +2782,7 @@ def get_notifications():
                     'title': 'Pending Approval',
                     'message': f"Clearance request for {l.client_account_name} (₹{int(l.loan_amount):,}) requires your approval.",
                     'time': l.requested_at,
-                    'link': '/approvals'
+                    'link': f"/approvals?loanId={l.id}"
                 })
         
         # 2. Fetch notifications from Notification table for this user
@@ -2671,8 +2802,14 @@ def get_notifications():
                 'link': link
             })
             
-        # Combine them
-        combined = db_notifications + approvals_data
+        # Combine them, deduplicating by link
+        seen_links = set()
+        combined = []
+        for item in db_notifications + approvals_data:
+            key = item.get('link') or item.get('id')
+            if key not in seen_links:
+                seen_links.add(key)
+                combined.append(item)
         
         return jsonify({
             'success': True,

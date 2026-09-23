@@ -185,7 +185,7 @@ const Layout = ({ children, user, onLogout, activeMenu, showFooter = false }) =>
                                 <span className="text-sm font-semibold">Short Loan</span>
                             </Link>
                         )}
-                        {user?.role === 'admin' && (
+                        {(user?.role === 'admin' || approvalCount > 0 || user?.permissions) && (
                             <Link
                                 to="/approvals"
                                 className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all group relative ${activeMenu === 'approvals'

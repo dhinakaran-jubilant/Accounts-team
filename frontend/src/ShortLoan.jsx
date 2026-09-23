@@ -371,6 +371,9 @@ const ShortLoan = ({ user }) => {
                 perms = [];
             }
         }
+        if (perms && typeof perms === 'object' && !Array.isArray(perms)) {
+            return perms['short-loan'] || perms['shortloan'] || [];
+        }
         return Array.isArray(perms) ? perms : [];
     }, [user]);
 

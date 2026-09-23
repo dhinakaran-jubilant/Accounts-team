@@ -26,6 +26,19 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
     const navigate = useNavigate();
     const location = useLocation();
 
+    const formatVerifier = (verifierStr) => {
+        if (!verifierStr) return '—';
+        try {
+            const parsed = JSON.parse(verifierStr);
+            if (Array.isArray(parsed)) {
+                return parsed.join(', ');
+            }
+        } catch (e) {
+            // Return as-is if it's not a JSON string
+        }
+        return verifierStr;
+    };
+
     const fetchApprovals = async (tabOverride) => {
         try {
             setLoading(true);
@@ -50,11 +63,17 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
 
     useEffect(() => {
         if (user?.name) {
-            setActiveTab(defaultTab);
+            const queryParams = new URLSearchParams(location.search);
+            const targetLoanId = queryParams.get('loanId');
+            const initialTab = targetLoanId ? 'pending' : defaultTab;
+            setActiveTab(initialTab);
             setApprovals([]);
-            fetchApprovals(defaultTab);
+            fetchApprovals(initialTab);
+            if (targetLoanId) {
+                fetchLoanDetails(targetLoanId);
+            }
         }
-    }, [user, defaultTab, location.key]);
+    }, [user, defaultTab, location.key, location.search]);
 
     const fetchLoanDetails = async (loanId) => {
         try {
@@ -406,7 +425,7 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                                     <th className="py-4 px-6 text-xs font-black text-slate-500 uppercase tracking-widest text-left">
                                         {activeTab === 'my-requests' ? 'Request Date' : 'Requester'}
                                     </th>
-                                    {activeTab !== 'my-requests' && (
+                                    {activeTab !== 'my-requests' && user?.role === 'admin' && (
                                         <th className="py-4 px-6 text-xs font-black text-slate-500 uppercase tracking-widest text-left">Verifier</th>
                                     )}
                                     <th className="py-4 px-6 text-xs font-black text-slate-500 uppercase tracking-widest text-left uppercase">Client Details</th>
@@ -422,11 +441,15 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {filteredApprovals.map((approval) => (
+                                {filteredApprovals.map((approval) => {
+                                    const queryParams = new URLSearchParams(location.search);
+                                    const targetLoanId = queryParams.get('loanId');
+                                    const isTargetLoan = targetLoanId && String(approval.id) === String(targetLoanId);
+                                    return (
                                     <tr
                                         key={approval.id}
                                         onClick={() => activeTab === 'pending' && !approval.localAction && fetchLoanDetails(approval.id)}
-                                        className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors group ${activeTab === 'pending' && !approval.localAction ? 'cursor-pointer' : ''}`}
+                                        className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors group ${activeTab === 'pending' && !approval.localAction ? 'cursor-pointer' : ''} ${isTargetLoan ? 'bg-blue-50/80 dark:bg-blue-900/30 ring-2 ring-blue-500 shadow-md' : ''}`}
                                     >
                                         <td className="py-4 px-6">
                                             <div className="flex flex-col">
@@ -438,9 +461,9 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                                                 </span>
                                             </div>
                                         </td>
-                                        {activeTab !== 'my-requests' && (
+                                        {activeTab !== 'my-requests' && user?.role === 'admin' && (
                                             <td className="py-4 px-6">
-                                                <span className="text-sm font-bold text-slate-900 dark:text-white">{approval.verified_by || '—'}</span>
+                                                <span className="text-sm font-bold text-slate-900 dark:text-white">{formatVerifier(approval.verified_by)}</span>
                                             </td>
                                         )}
                                         <td className="py-4 px-6 text-sm font-bold text-slate-900 dark:text-white">
@@ -515,7 +538,8 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                                             </td>
                                         )}
                                     </tr>
-                                ))}
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -728,20 +752,50 @@ const Approval = ({ user, defaultTab = 'pending', isMyRequestsPage = false }) =>
                         </div>
 
                         {/* Modal Footer */}
-                        <div className="px-8 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3">
-                            <button 
-                                onClick={() => setIsModalOpen(false)}
-                                className="px-6 py-2 text-xs font-black uppercase tracking-widest text-slate-500 hover:text-slate-700 transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button 
-                                onClick={handleSaveInterest}
-                                disabled={isSaving}
-                                className="p-4 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
-                            >
-                                {isSaving ? <span className="material-symbols-outlined animate-spin text-[18px]">sync</span> : 'Save Changes'}
-                            </button>
+                        <div className="px-8 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                                {activeTab === 'pending' && (
+                                    <>
+                                        <button 
+                                            onClick={async () => {
+                                                await handleAction(modalData.id, 'REJECT');
+                                                setIsModalOpen(false);
+                                            }}
+                                            disabled={actioningId === modalData.id}
+                                            className="px-5 py-2.5 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 hover:bg-rose-600 hover:text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-1.5"
+                                        >
+                                            <span className="material-symbols-outlined text-[18px]">close</span>
+                                            Decline
+                                        </button>
+                                        <button 
+                                            onClick={async () => {
+                                                await handleAction(modalData.id, 'APPROVE');
+                                                setIsModalOpen(false);
+                                            }}
+                                            disabled={actioningId === modalData.id}
+                                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center gap-1.5"
+                                        >
+                                            {actioningId === modalData.id ? <span className="material-symbols-outlined animate-spin text-[18px]">sync</span> : <span className="material-symbols-outlined text-[18px]">check</span>}
+                                            Approve
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <button 
+                                    onClick={() => setIsModalOpen(false)}
+                                    className="px-6 py-2 text-xs font-black uppercase tracking-widest text-slate-500 hover:text-slate-700 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    onClick={handleSaveInterest}
+                                    disabled={isSaving}
+                                    className="p-4 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                                >
+                                    {isSaving ? <span className="material-symbols-outlined animate-spin text-[18px]">sync</span> : 'Save Changes'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
