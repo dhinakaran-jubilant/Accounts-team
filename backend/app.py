@@ -473,6 +473,24 @@ def parse_verified_by(verified_by_val):
     except (ValueError, TypeError):
         return [verified_by_val]  # legacy plain string
 
+def format_approver_names(verified_by_val):
+    """
+    Formats the verified_by value (which may be a JSON list of names, a comma-separated string,
+    or a plain string) into human-readable text:
+      - 1 name: "Sowmiya" -> "Sowmiya"
+      - 2 names: ["Sowmiya", "Pooja"] -> "Sowmiya and Pooja"
+      - 3+ names: ["Sowmiya", "Pooja", "Guna"] -> "Sowmiya, Pooja and Guna"
+    """
+    names = parse_verified_by(verified_by_val)
+    clean_names = [n.strip() for n in names if n and isinstance(n, str) and n.strip()]
+    if not clean_names:
+        return "Approver"
+    if len(clean_names) == 1:
+        return clean_names[0]
+    if len(clean_names) == 2:
+        return f"{clean_names[0]} and {clean_names[1]}"
+    return f"{', '.join(clean_names[:-1])} and {clean_names[-1]}"
+
 def send_loan_creation_notifications(loan):
     if not loan or loan.approval_status == 'APPROVED':
         return
@@ -2851,7 +2869,7 @@ def notify_loan_created(loan_id):
         try:
             loan = db.session.get(Loan, loan_id)
             if loan:
-                approver = loan.verified_by or "Approver"
+                approver = format_approver_names(loan.verified_by)
                 client = loan.client_account_name or "N/A"
                 loan_id_val = loan.loan_ref_id or "N/A"
                 requester = loan.requester_name or "N/A"
@@ -2871,7 +2889,7 @@ def check_loan_approval_after_24h(loan_id):
         try:
             loan = db.session.get(Loan, loan_id)
             if loan and loan.approval_status != 'APPROVED' and not loan.is_deleted:
-                approver = loan.verified_by or "Approver"
+                approver = format_approver_names(loan.verified_by)
                 client = loan.client_account_name or "N/A"
                 loan_id_val = loan.loan_ref_id or "N/A"
                 requester = loan.requester_name or "N/A"
