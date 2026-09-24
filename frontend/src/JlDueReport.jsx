@@ -312,6 +312,21 @@ const JlDueReport = ({ user }) => {
     const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
     const statusDropdownRef = useRef(null);
 
+    const [isDueDateDropdownOpen, setIsDueDateDropdownOpen] = useState(false);
+    const dueDateDropdownRef = useRef(null);
+    const [dueDateApprovalFilter, setDueDateApprovalFilter] = useState(() => {
+        const saved = sessionStorage.getItem('jl_due_report_dueDateApprovalFilter');
+        try {
+            return saved ? JSON.parse(saved) : ['APPROVED', 'PENDING'];
+        } catch {
+            return ['APPROVED', 'PENDING'];
+        }
+    });
+
+    useEffect(() => {
+        sessionStorage.setItem('jl_due_report_dueDateApprovalFilter', JSON.stringify(dueDateApprovalFilter));
+    }, [dueDateApprovalFilter]);
+
     const [showOsDatePopup, setShowOsDatePopup] = useState(false);
     const [osPopupStartDate, setOsPopupStartDate] = useState('');
     const [osPopupEndDate, setOsPopupEndDate] = useState('');
@@ -507,6 +522,9 @@ const JlDueReport = ({ user }) => {
             }
             if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target)) {
                 setIsStatusDropdownOpen(false);
+            }
+            if (dueDateDropdownRef.current && !dueDateDropdownRef.current.contains(event.target)) {
+                setIsDueDateDropdownOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -797,6 +815,19 @@ const JlDueReport = ({ user }) => {
             });
         }
 
+        if (dueDateApprovalFilter && dueDateApprovalFilter.length < 2) {
+            result = result.filter(row => {
+                const hasPending = Array.isArray(row.repayment_schedule) &&
+                    row.repayment_schedule.some(s => s.date_approval_status === 'PENDING');
+
+                if (dueDateApprovalFilter.includes('PENDING') && hasPending) return true;
+                if (dueDateApprovalFilter.includes('APPROVED') && !hasPending) return true;
+                return false;
+            });
+        } else if (dueDateApprovalFilter && dueDateApprovalFilter.length === 0) {
+            result = [];
+        }
+
         if (sortConfig) {
             result = [...result].sort((a, b) => {
                 if (sortConfig.key === 'loan_date') {
@@ -850,7 +881,7 @@ const JlDueReport = ({ user }) => {
         }
 
         return result;
-    }, [data, accountFilter, adminAccountFilter, user, userPermissions, searchTerm, startDate, endDate, statusFilter, sortConfig]);
+    }, [data, accountFilter, adminAccountFilter, user, userPermissions, searchTerm, startDate, endDate, statusFilter, dueDateApprovalFilter, sortConfig]);
 
     const filteredData = useMemo(() => {
         return getFilteredLoans(false);
@@ -1967,7 +1998,7 @@ if (isDetailed) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     report_type: reportPrefix.replace(/_/g, ' '),
-                    filters: `${activeFilterStr} | Status: ${statusFilter.length === 5 ? 'All' : statusFilter.length > 0 ? statusFilter.join(', ') : 'None'} | Date: ${startDate || 'None'} to ${endDate || 'None'} | Search: ${searchTerm || 'None'}`,
+                    filters: `${activeFilterStr} | Status: ${statusFilter.length === 5 ? 'All' : statusFilter.length > 0 ? statusFilter.join(', ') : 'None'} | Due Date Approval: ${dueDateApprovalFilter.length === 2 ? 'All' : dueDateApprovalFilter.join(', ')} | Date: ${startDate || 'None'} to ${endDate || 'None'} | Search: ${searchTerm || 'None'}`,
                     total_entries: exportData.length,
                     sw_categorized: exportData.length,
                     remaining: 0
@@ -2023,7 +2054,7 @@ if (isDetailed) {
                             />
                         </div>
 
-                        {(accountFilter.length > 0 || !isAllAccountsSelected || searchTerm || startDate || endDate || statusFilter.length < 5) && (
+                        {(accountFilter.length > 0 || !isAllAccountsSelected || searchTerm || startDate || endDate || statusFilter.length < 5 || dueDateApprovalFilter.length < 2) && (
                             <button
                                 onClick={() => {
                                     setAccountFilter([]);
@@ -2032,6 +2063,7 @@ if (isDetailed) {
                                     setStartDate('');
                                     setEndDate('');
                                     setStatusFilter(['ACTIVE', 'OVERDUE', 'DATE OVERDUE', 'CLOSED', 'PENDING']);
+                                    setDueDateApprovalFilter(['APPROVED', 'PENDING']);
                                     setCurrentPage(1);
                                 }}
                                 className="h-10 w-10 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all flex items-center justify-center"
@@ -2042,7 +2074,7 @@ if (isDetailed) {
                         )}
                     </div>
                 </div>
-                    <div className="flex items-center gap-3 mb-5 justify-end">
+                    <div className="flex items-center gap-3 mb-5 justify-end flex-wrap">
                         {user?.role === 'admin' ? (
                             <div className="relative" ref={accountDropdownRef}>
                                 <button
@@ -2268,6 +2300,86 @@ if (isDetailed) {
                                             <button
                                                 onClick={() => {
                                                     setStatusFilter([]);
+                                                    setCurrentPage(1);
+                                                }}
+                                                className="w-full p-3 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
+                                            >
+                                                Clear Selection
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Due Date Approval Filter Dropdown */}
+                        <div className="relative" ref={dueDateDropdownRef}>
+                            <button
+                                onClick={() => setIsDueDateDropdownOpen(!isDueDateDropdownOpen)}
+                                className="px-4 h-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-200 w-52 flex items-center justify-between transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-sm cursor-pointer select-none"
+                            >
+                                <span className="truncate">
+                                    {dueDateApprovalFilter.length === 2
+                                        ? 'All Date Approvals'
+                                        : dueDateApprovalFilter.length === 0
+                                            ? 'No Date Approvals'
+                                            : dueDateApprovalFilter[0] === 'APPROVED'
+                                                ? 'Date: Approved'
+                                                : 'Date: Pending'}
+                                </span>
+                                <span className="material-symbols-outlined text-slate-400 text-sm leading-none">expand_more</span>
+                            </button>
+
+                            {isDueDateDropdownOpen && (
+                                <div className="absolute top-full left-0 mt-2 w-60 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-[110] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150 select-none">
+                                    <div className="max-h-60 overflow-y-auto scrollbar-premium">
+                                        <label className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-800/20">
+                                            <input
+                                                type="checkbox"
+                                                checked={dueDateApprovalFilter.length === 2}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setDueDateApprovalFilter(['APPROVED', 'PENDING']);
+                                                    } else {
+                                                        setDueDateApprovalFilter([]);
+                                                    }
+                                                    setCurrentPage(1);
+                                                }}
+                                                className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
+                                            />
+                                            <span className="text-sm text-slate-800 dark:text-slate-100 font-extrabold">All Approvals</span>
+                                        </label>
+                                        {[
+                                            { value: 'APPROVED', label: 'Approved', desc: 'All due dates approved', icon: 'check_circle', color: 'text-emerald-500' },
+                                            { value: 'PENDING', label: 'Pending', desc: 'Awaiting date approval', icon: 'pending', color: 'text-amber-500' }
+                                        ].map((opt) => (
+                                            <label key={opt.value} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={dueDateApprovalFilter.includes(opt.value)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setDueDateApprovalFilter([...dueDateApprovalFilter, opt.value]);
+                                                        } else {
+                                                            setDueDateApprovalFilter(dueDateApprovalFilter.filter(v => v !== opt.value));
+                                                        }
+                                                        setCurrentPage(1);
+                                                    }}
+                                                    className="w-4 h-4 rounded text-primary focus:ring-primary/50 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer"
+                                                />
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm text-slate-700 dark:text-slate-300 font-semibold flex items-center gap-1.5">
+                                                        {opt.label}
+                                                    </span>
+                                                </div>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    {dueDateApprovalFilter.length > 0 && (
+                                        <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                                            <button
+                                                onClick={() => {
+                                                    setDueDateApprovalFilter([]);
                                                     setCurrentPage(1);
                                                 }}
                                                 className="w-full p-3 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
@@ -2619,10 +2731,22 @@ if (isDetailed) {
                                                 <td className="py-2 px-2 text-sm whitespace-nowrap text-left">
                                                     {(() => {
                                                         const s = getLoanStatus(row);
+                                                        const hasPendingDate = row.repayment_schedule?.some(e => e.date_approval_status === 'PENDING');
                                                         return (
-                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${s.color}`}>
-                                                                {s.label}
-                                                            </span>
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${s.color}`}>
+                                                                    {s.label}
+                                                                </span>
+                                                                {hasPendingDate && (
+                                                                    <span 
+                                                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700 uppercase tracking-tight shadow-xs"
+                                                                        title="Due Date Change Pending Approval"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-[11px]">schedule</span>
+                                                                        Date Pending
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         );
                                                     })()}
                                                 </td>

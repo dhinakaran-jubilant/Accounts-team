@@ -8,20 +8,21 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
-const ACCOUNTS_PERMISSIONS = [
-    { value: 'SCS', label: 'Surge Capital Solutions - SCS' },
-    { value: 'GC', label: 'Growth Capital - GC' },
-    { value: 'GCE', label: 'Growth Capital Enterprises - GCE' },
-    { value: 'FC', label: 'Finova Capital - FC' },
-    { value: 'AS', label: 'Ascend Solutions - AS' },
-    { value: 'ASE', label: 'AS Enterprises - ASE' },
-    { value: 'SCE', label: 'SC Enterprises - SCE' },
-    { value: 'ASQ', label: 'A Square Enterprises - ASQ' },
-    { value: 'SN', label: 'S Nirmala - SN' },
-    { value: 'FE', label: 'Fortune Enterprises - FE' },
-    { value: 'JC', label: 'Jubilant Capital - JC' },
-    { value: 'RP', label: 'Raja Priya - RP' }
-];
+const formatAccountPermission = (acc) => {
+    const acr = (acc.acronym || '').trim().toUpperCase();
+    let cleanName = (acc.name || '').trim();
+    const suffixRegex = new RegExp(`\\s*-\\s*${acr}$`, 'i');
+    cleanName = cleanName.replace(suffixRegex, '').trim();
+    return {
+        id: acc.id,
+        value: acr,
+        name: cleanName,
+        label: cleanName ? `${cleanName} - ${acr}` : acr,
+        color: acc.color || 'blue',
+        type: acc.type || 'both',
+        is_need_approval: acc.is_need_approval
+    };
+};
 
 const MENU_OPTIONS = [
     { value: 'db-ac-report', label: 'Bank : All Cloud', icon: 'account_balance' },
@@ -135,11 +136,32 @@ const UsersManager = () => {
     const [showDetailUser, setShowDetailUser] = useState(null);
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 8;
+    const [accountPermissions, setAccountPermissions] = useState([]);
+    const [loadingAccounts, setLoadingAccounts] = useState(true);
 
     const API_URL = '/api';
 
+    const fetchAccountNames = async () => {
+        try {
+            setLoadingAccounts(true);
+            const res = await fetch(`${API_URL}/accounts-name`);
+            const data = await res.json();
+            if (data.success && Array.isArray(data.accounts)) {
+                const formatted = data.accounts.map(formatAccountPermission);
+                setAccountPermissions(formatted);
+                return formatted;
+            }
+        } catch (err) {
+            console.error('Error fetching account names for permissions:', err);
+        } finally {
+            setLoadingAccounts(false);
+        }
+        return [];
+    };
+
     useEffect(() => {
         fetchUsers();
+        fetchAccountNames();
     }, []);
 
     const fetchUsers = async () => {
@@ -158,8 +180,8 @@ const UsersManager = () => {
         }
     };
 
-    const getAllAccountsForMenus = () => {
-        const all = ACCOUNTS_PERMISSIONS.map(p => p.value);
+    const getAllAccountsForMenus = (accountsList = accountPermissions) => {
+        const all = accountsList.map(p => p.value);
         const obj = {};
         MENU_OPTIONS.forEach(m => {
             obj[m.value] = [...all];
@@ -198,7 +220,7 @@ const UsersManager = () => {
                 ...prev,
                 permissions: {
                     ...currentPerms,
-                    [menuKey]: ACCOUNTS_PERMISSIONS.map(p => p.value)
+                    [menuKey]: accountPermissions.map(p => p.value)
                 }
             };
         });
@@ -304,6 +326,7 @@ const UsersManager = () => {
         });
         setEditingUserId(u.id);
         setIsEditing(true);
+        fetchAccountNames();
         setShowAddModal(true);
     };
 
@@ -370,7 +393,10 @@ const UsersManager = () => {
                     </p>
                 </div>
                 <button
-                    onClick={() => setShowAddModal(true)}
+                    onClick={() => {
+                        fetchAccountNames();
+                        setShowAddModal(true);
+                    }}
                     className="flex items-center gap-2 px-6 h-10 bg-primary text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg shadow-primary/20"
                 >
                     <span className="material-symbols-outlined text-lg">person_add</span>
@@ -665,7 +691,7 @@ const UsersManager = () => {
                                                             </span>
                                                         </div>
                                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 uppercase tracking-widest">
-                                                            {userMenuPerms.length === ACCOUNTS_PERMISSIONS.length 
+                                                            {userMenuPerms.length === accountPermissions.length && accountPermissions.length > 0
                                                                 ? 'All Accounts' 
                                                                 : `${userMenuPerms.length} accounts`}
                                                         </span>
@@ -674,14 +700,17 @@ const UsersManager = () => {
                                                     <div className="flex flex-wrap gap-1.5 pt-1">
                                                         {userMenuPerms.length > 0 ? (
                                                             userMenuPerms.map((acr) => {
-                                                                const permObj = ACCOUNTS_PERMISSIONS.find(ap => ap.value === acr);
+                                                                const permObj = accountPermissions.find(ap => ap.value === acr);
                                                                 return (
                                                                     <span 
                                                                         key={acr} 
-                                                                        className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700 shadow-xs"
+                                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700 shadow-xs"
                                                                         title={permObj?.label || acr}
                                                                     >
-                                                                        {acr}
+                                                                        <span className="font-extrabold text-slate-900 dark:text-white">{acr}</span>
+                                                                        {permObj?.name && permObj.name !== acr && (
+                                                                            <span className="text-[9px] text-slate-400 font-normal">({permObj.name})</span>
+                                                                        )}
                                                                     </span>
                                                                 );
                                                             })
@@ -812,7 +841,7 @@ const UsersManager = () => {
                                                     ...formData,
                                                     role: 'admin',
                                                     allowed_menus: MENU_OPTIONS.map(m => m.value),
-                                                    permissions: getAllAccountsForMenus()
+                                                    permissions: getAllAccountsForMenus(accountPermissions)
                                                 })}
                                                 className={`h-10 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${formData.role === 'admin'
                                                         ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20'
@@ -940,7 +969,8 @@ const UsersManager = () => {
                                                 const menuOpt = MENU_OPTIONS.find(m => m.value === menuVal) || { value: menuVal, label: menuVal, icon: 'folder' };
                                                 const currentPermsForMenu = formData.permissions[menuVal] || [];
                                                 const selectedCount = currentPermsForMenu.length;
-                                                const isAllSelected = selectedCount === ACCOUNTS_PERMISSIONS.length;
+                                                const totalAccountsCount = accountPermissions.length;
+                                                const isAllSelected = totalAccountsCount > 0 && selectedCount === totalAccountsCount;
 
                                                 return (
                                                     <div 
@@ -958,7 +988,7 @@ const UsersManager = () => {
                                                                         {menuOpt.label}
                                                                     </h4>
                                                                     <span className="text-[10px] font-bold text-slate-400">
-                                                                        {selectedCount === 0 ? 'No accounts selected' : `${selectedCount} of ${ACCOUNTS_PERMISSIONS.length} accounts enabled`}
+                                                                        {selectedCount === 0 ? 'No accounts selected' : `${selectedCount} of ${totalAccountsCount} accounts enabled`}
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -987,28 +1017,46 @@ const UsersManager = () => {
                                                         </div>
 
                                                         {/* Account Permissions Grid */}
-                                                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 pt-1">
-                                                            {ACCOUNTS_PERMISSIONS.map(perm => {
-                                                                const isSelected = currentPermsForMenu.includes(perm.value);
-                                                                return (
-                                                                    <button
-                                                                        key={perm.value}
-                                                                        type="button"
-                                                                        onClick={() => togglePermission(menuVal, perm.value)}
-                                                                        className={`h-9 rounded-xl text-[10px] font-black transition-all border flex items-center justify-center gap-1 ${
-                                                                            isSelected
-                                                                                ? 'bg-amber-500 border-amber-500 text-white shadow-sm shadow-amber-500/20 scale-[1.02]'
-                                                                                : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300'
-                                                                        }`}
-                                                                        title={perm.label}
-                                                                    >
-                                                                        <span>{perm.value}</span>
-                                                                        {isSelected && (
-                                                                            <span className="material-symbols-outlined text-[12px]">check</span>
-                                                                        )}
-                                                                    </button>
-                                                                );
-                                                            })}
+                                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1">
+                                                            {loadingAccounts ? (
+                                                                <div className="col-span-full py-4 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                                                                    <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
+                                                                    Loading accounts from settings...
+                                                                </div>
+                                                            ) : accountPermissions.length === 0 ? (
+                                                                <div className="col-span-full py-4 text-center text-xs text-slate-400">
+                                                                    No accounts configured in Settings yet.
+                                                                </div>
+                                                            ) : (
+                                                                accountPermissions.map(perm => {
+                                                                    const isSelected = currentPermsForMenu.includes(perm.value);
+                                                                    return (
+                                                                        <button
+                                                                            key={perm.value}
+                                                                            type="button"
+                                                                            onClick={() => togglePermission(menuVal, perm.value)}
+                                                                            className={`p-2.5 rounded-xl text-left transition-all border flex items-center justify-between gap-2 ${
+                                                                                isSelected
+                                                                                    ? 'bg-amber-500 border-amber-500 text-white shadow-sm shadow-amber-500/20'
+                                                                                    : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                                                                            }`}
+                                                                            title={perm.label}
+                                                                        >
+                                                                            <div className="flex flex-col min-w-0 pr-1">
+                                                                                <span className="text-xs font-black tracking-wide truncate">{perm.value}</span>
+                                                                                <span className={`text-[10px] truncate ${isSelected ? 'text-amber-100 font-medium' : 'text-slate-400 font-normal'}`}>
+                                                                                    {perm.name || perm.label}
+                                                                                </span>
+                                                                            </div>
+                                                                            {isSelected ? (
+                                                                                <span className="material-symbols-outlined text-[16px] shrink-0 text-white">check_circle</span>
+                                                                            ) : (
+                                                                                <span className="material-symbols-outlined text-[16px] shrink-0 text-slate-300 dark:text-slate-600">radio_button_unchecked</span>
+                                                                            )}
+                                                                        </button>
+                                                                    );
+                                                                })
+                                                            )}
                                                         </div>
                                                     </div>
                                                 );
