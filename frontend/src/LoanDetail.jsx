@@ -8,6 +8,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import ExcelJS from 'exceljs';
+import { getAcronym } from './accountUtils';
 
 const fmtINR = (val, showSymbol = true, decimals = null) => {
     if (val == null) return '—';
@@ -43,23 +44,7 @@ const parseINR = (val) => {
     return Number(val.toString().replace(/,/g, "")) || 0;
 };
 
-const getAcronym = (name) => {
-    if (!name) return '—';
-    const n = name.trim().toLowerCase();
-    if (n === 'surge capital solution' || n.includes('surge capital')) return 'SCS';
-    if (n === 'growth capital enterprises' || n.includes('growth capital enterprises') || n.includes('growth capital corp') || n.includes('gce')) return 'GCE';
-    if (n === 'growth capital' || n.includes('growth capital')) return 'GC';
-    if (n === 'jubilant capital' || n.includes('jubilant capital') || n === 'jc') return 'JC';
-    if (n === 'finova capital' || n.includes('finova capital') || n === 'fc') return 'FC';
-    if (n === 'as enterprises' || n.includes('as enterprises') || n === 'ase') return 'ASE';
-    if (n === 'ascend solutions' || n.includes('ascend solutions') || n === 'as') return 'AS';
-    if (n === 'fortune enterprises' || n.includes('fortune enterprises') || n === 'fe') return 'FE';
-    if (n === 'sc enterprises' || n.includes('sc enterprises') || n === 'sce') return 'SCE';
-    if (n === 'a square enterprises' || n.includes('square enterprises') || n === 'asq') return 'ASQ';
-    if (n === 's nirmala' || n.includes('nirmala') || n === 'sn') return 'SN';
-    if (n === 'raja priya' || n.includes('raja priya') || n === 'rp') return 'RP';
-    return name.toUpperCase();
-};
+
 const formatVerifier = (verifierStr) => {
     if (!verifierStr) return '—';
     try {

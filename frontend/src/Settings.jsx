@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { loadAccountsFromDb } from './accountUtils';
 
 const Settings = () => {
     const [isSaving, setIsSaving] = useState(false);
@@ -57,6 +58,7 @@ const Settings = () => {
             const result = await res.json();
             if (res.ok && result.success) {
                 setAccounts(result.accounts);
+                loadAccountsFromDb(true);
             } else {
                 setAccountsError(result.message || 'Failed to load accounts');
             }

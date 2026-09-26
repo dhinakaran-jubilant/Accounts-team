@@ -322,20 +322,46 @@ def update_google_sheet(user_name, bank_file_name, cloud_file_name, total_entrie
 def get_acronym(name):
     if not name:
         return ''
-    n = str(name).strip().lower()
-    if 'surge capital' in n: return 'SCS'
-    if 'growth capital enterprises' in n or 'growth capital corp' in n or 'gce' in n: return 'GCE'
-    if 'growth capital' in n: return 'GC'
-    if 'jubilant capital' in n or 'jubilant' in n or n == 'jc': return 'JC'
-    if 'finova capital' in n or 'finova' in n or n == 'fc': return 'FC'
-    if 'as enterprises' in n: return 'ASE'
-    if 'ascend solutions' in n or 'ascend' in n or n == 'as': return 'AS'
-    if 'fortune enterprises' in n or 'fortune' in n or n == 'fe': return 'FE'
-    if 'sc enterprises' in n or n == 'sce': return 'SCE'
-    if 'square enterprises' in n or 'asq' in n: return 'ASQ'
-    if 'nirmala' in n or n == 'sn': return 'SN'
-    if 'raja priya' in n or 'rajapriya' in n or n == 'rp': return 'RP'
-    return str(name).strip().upper()
+    raw_str = str(name).strip()
+    if not raw_str:
+        return ''
+    n = raw_str.lower()
+
+    # Dynamic lookup against database AccountName table
+    try:
+        from models import AccountName
+        all_accounts = AccountName.query.all()
+        
+        # 1. Exact match on acronym or name
+        for acc in all_accounts:
+            acr = (acc.acronym or '').strip().upper()
+            acc_name = (acc.name or '').strip().lower()
+            if acr.lower() == n or acc_name == n:
+                return acr
+
+        # 2. Alphanumeric normalized match (e.g. S.Sudhakar vs SSudhakar vs S Sudhakar)
+        clean_input = re.sub(r'[^a-z0-9]', '', n)
+        for acc in all_accounts:
+            acr = (acc.acronym or '').strip().upper()
+            acc_name = (acc.name or '').strip().lower()
+            clean_acr = re.sub(r'[^a-z0-9]', '', acr.lower())
+            clean_name = re.sub(r'[^a-z0-9]', '', acc_name)
+            if clean_input and (clean_input == clean_acr or clean_input == clean_name):
+                return acr
+
+        # 3. Substring match on name
+        for acc in all_accounts:
+            acr = (acc.acronym or '').strip().upper()
+            acc_name = (acc.name or '').strip().lower()
+            clean_name = re.sub(r'[^a-z0-9]', '', acc_name)
+            if clean_input and clean_name and (clean_name in clean_input or clean_input in clean_name):
+                return acr
+            if acc_name and (acc_name in n or n in acc_name):
+                return acr
+    except Exception as e:
+        print(f"Error resolving acronym from DB: {e}")
+
+    return raw_str.upper()
 
 def format_loan_ref_id(ref_id):
     if not ref_id:
@@ -369,8 +395,21 @@ def user_has_company_approval(user, acronym, menu='jl-due-report'):
         return False
 
     acronym_upper = get_acronym(acronym).strip().upper() if acronym else ''
-    if not acronym_upper:
+    orig_upper = str(acronym).strip().upper() if acronym else ''
+    if not acronym_upper and not orig_upper:
         return False
+
+    def matches_target(item_str):
+        if not item_str:
+            return False
+        clean_item = str(item_str).strip().upper()
+        item_acr = get_acronym(item_str).strip().upper()
+        return (
+            clean_item == acronym_upper or
+            clean_item == orig_upper or
+            item_acr == acronym_upper or
+            item_acr == orig_upper
+        )
 
     def check_level(level):
         if not level:
@@ -383,21 +422,21 @@ def user_has_company_approval(user, acronym, menu='jl-due-report'):
         if is_menu_wise:
             if menu and menu in perms:
                 menu_perms = perms.get(menu) or []
-                return acronym_upper in [str(p).strip().upper() for p in menu_perms if p]
+                if any(matches_target(p) for p in menu_perms):
+                    return True
             # Fallback if specific menu not provided: check jl-due-report then all
             if 'jl-due-report' in perms:
                 jl_perms = perms.get('jl-due-report') or []
-                if acronym_upper in [str(p).strip().upper() for p in jl_perms if p]:
+                if any(matches_target(p) for p in jl_perms):
                     return True
-            all_perms = []
             for v in perms.values():
-                if isinstance(v, list):
-                    all_perms.extend(v)
-            return acronym_upper in [str(p).strip().upper() for p in all_perms if p]
+                if isinstance(v, list) and any(matches_target(p) for p in v):
+                    return True
+            return False
 
         # Legacy dict mapping acronym -> access level
         for k, v in perms.items():
-            if get_acronym(k).strip().upper() == acronym_upper:
+            if matches_target(k):
                 return check_level(v)
         return False
 
@@ -406,13 +445,13 @@ def user_has_company_approval(user, acronym, menu='jl-due-report'):
             if isinstance(item, str):
                 if ':' in item:
                     code, level = item.split(':', 1)
-                    if get_acronym(code).strip().upper() == acronym_upper:
+                    if matches_target(code):
                         return check_level(level)
                 else:
-                    if get_acronym(item).strip().upper() == acronym_upper:
+                    if matches_target(item):
                         return True
             elif isinstance(item, dict) and 'value' in item:
-                if get_acronym(item['value']).strip().upper() == acronym_upper:
+                if matches_target(item['value']):
                     return check_level(item.get('access', 'full'))
 
     return False

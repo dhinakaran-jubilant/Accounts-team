@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
+import { loadAccountsFromDb, getAccountOptions } from './accountUtils';
 
 const Dashboard = ({ user }) => {
     const navigate = useNavigate();
@@ -47,19 +48,17 @@ const Dashboard = ({ user }) => {
         const interval = setInterval(fetchStaged, 5000); // Poll every 5s
         return () => clearInterval(interval);
     }, []);
-    const ACCOUNT_OPTIONS = [
-        { value: 'SCS', label: 'Surge Capital Solutions - SCS', color: 'blue' },
-        { value: 'GC', label: 'Growth Capital - GC', color: 'indigo' },
-        { value: 'FC', label: 'Finova Capital - FC', color: 'emerald' },
-        { value: 'AS', label: 'Ascend Solutions - AS', color: 'amber' },
-        { value: 'ASE', label: 'AS Enterprises - ASE', color: 'rose' },
-        { value: 'SCE', label: 'SC Enterprises - SCE', color: 'violet' },
-        { value: 'ASQ', label: 'A Square Enterprises - ASQ', color: 'cyan' },
-        { value: 'SN', label: 'S Nirmala - SN', color: 'teal' },
-        { value: 'FE', label: 'Fortune Enterprises - FE', color: 'orange' },
-        { value: 'JC', label: 'Jubilant Capital - JC', color: 'sky' },
-        { value: 'RP', label: 'Raja Priya - RP', color: 'pink' }
-    ];
+    const [accountOptionsList, setAccountOptionsList] = useState(() => getAccountOptions());
+
+    useEffect(() => {
+        loadAccountsFromDb().then(accs => {
+            if (Array.isArray(accs) && accs.length > 0) {
+                setAccountOptionsList(getAccountOptions(accs));
+            }
+        });
+    }, []);
+
+    const ACCOUNT_OPTIONS = accountOptionsList;
 
     const getColorClass = (color) => {
         const classes = {

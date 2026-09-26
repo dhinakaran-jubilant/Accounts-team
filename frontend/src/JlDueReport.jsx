@@ -10,24 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import LoanDetail from './LoanDetail';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
-
-const getAcronym = (name) => {
-    if (!name) return '—';
-    const n = name.trim().toLowerCase();
-    if (n === 'surge capital solution' || n.includes('surge capital')) return 'SCS';
-    if (n === 'growth capital enterprises' || n.includes('growth capital enterprises') || n.includes('growth capital corp') || n.includes('gce')) return 'GCE';
-    if (n === 'growth capital' || n.includes('growth capital')) return 'GC';
-    if (n === 'jubilant capital' || n.includes('jubilant capital') || n === 'jc') return 'JC';
-    if (n === 'finova capital' || n.includes('finova capital') || n === 'fc') return 'FC';
-    if (n === 'as enterprises' || n.includes('as enterprises') || n === 'ase') return 'ASE';
-    if (n === 'ascend solutions' || n.includes('ascend solutions') || n === 'as') return 'AS';
-    if (n === 'fortune enterprises' || n.includes('fortune enterprises') || n === 'fe') return 'FE';
-    if (n === 'sc enterprises' || n.includes('sc enterprises') || n === 'sce') return 'SCE';
-    if (n === 'a square enterprises' || n.includes('square enterprises') || n === 'asq') return 'ASQ';
-    if (n === 's nirmala' || n.includes('nirmala') || n === 'sn') return 'SN';
-    if (n === 'raja priya' || n.includes('raja priya') || n === 'rp') return 'RP';
-    return name.toUpperCase();
-};
+import { getAcronym, loadAccountsFromDb, getAccountOptions } from './accountUtils';
 
 const REQUIRED_DAY_BOOK_COLUMNS = [
     'Transaction Date',
@@ -489,20 +472,17 @@ const JlDueReport = ({ user }) => {
         "July", "August", "September", "October", "November", "December"
     ];
 
-    const ACCOUNT_OPTIONS = [
-        { value: 'SCS', label: 'Surge Capital Solutions - SCS' },
-        { value: 'GC', label: 'Growth Capital - GC' },
-        { value: 'GCE', label: 'Growth Capital Enterprises - GCE' },
-        { value: 'FC', label: 'Finova Capital - FC' },
-        { value: 'AS', label: 'Ascend Solutions - AS' },
-        { value: 'ASE', label: 'AS Enterprises - ASE' },
-        { value: 'SCE', label: 'SC Enterprises - SCE' },
-        { value: 'ASQ', label: 'A Square Enterprises - ASQ' },
-        { value: 'SN', label: 'S Nirmala - SN' },
-        { value: 'FE', label: 'Fortune Enterprises - FE' },
-        { value: 'JC', label: 'Jubilant Capital - JC' },
-        { value: 'RP', label: 'Raja Priya - RP' }
-    ];
+    const [accountOptionsList, setAccountOptionsList] = useState(() => getAccountOptions());
+
+    useEffect(() => {
+        loadAccountsFromDb().then(accs => {
+            if (Array.isArray(accs) && accs.length > 0) {
+                setAccountOptionsList(getAccountOptions(accs));
+            }
+        });
+    }, []);
+
+    const ACCOUNT_OPTIONS = accountOptionsList;
 
 
     // Handle click outside to close dropdowns
@@ -1318,6 +1298,15 @@ if (isDetailed) {
                 const anySecPartial = activeSecList.some(x => x.isPartial);
                 const anyStakeholderPartial = isPriPartial || anySecPartial;
                 const totalSecNetOS = activeSecList.reduce((sum, x) => sum + x.netOS, 0);
+                const hasDueDate = Boolean(
+                    e.payment_date &&
+                    e.payment_date.trim() !== '' &&
+                    e.payment_date !== '—' &&
+                    e.payment_date !== 'dd-mm-yyyy' &&
+                    e.payment_date !== '-'
+                );
+                const isWaitingDateApproval = hasDueDate && (e.date_approval_status === 'PENDING' || e.date_approval_status !== 'APPROVED');
+
                 let remarks = '';
                 let statusWeight = 4;
                 if (priOS > 0.99 && totalSecNetOS <= 0.99) {
@@ -1327,7 +1316,7 @@ if (isDetailed) {
                     remarks = 'Partial';
                     statusWeight = 3;
                 } else if (priOS <= 0.99 && totalSecNetOS > 0.99) {
-                    remarks = 'Need To Send';
+                    remarks = isWaitingDateApproval ? 'Approval Pending' : 'Need To Send';
                     statusWeight = 1;
                 } else {
                     remarks = 'Not Received';
@@ -1348,7 +1337,7 @@ if (isDetailed) {
                             dueOS: 0,
                             payable: allSecList.length > 0 ? allSecList[0].name : '',
                             remarks,
-                            daysOutstanding: remarks === 'Need To Send' ? getDaysDiffFromToday(e.received_date) : (remarks === 'Not Received' ? getDaysDiffFromToday(e.date) : ''),
+                            daysOutstanding: (remarks === 'Need To Send' || remarks === 'Approval Pending') ? getDaysDiffFromToday(e.received_date) : (remarks === 'Not Received' ? getDaysDiffFromToday(e.date) : ''),
                             statusWeight,
                             isFirstRow: true
                         });
@@ -1365,7 +1354,7 @@ if (isDetailed) {
                                 dueOS: sec.netOS,
                                 payable: sec.name,
                                 remarks: idx === 0 ? remarks : '',
-                                daysOutstanding: remarks === 'Need To Send' ? getDaysDiffFromToday(e.received_date) : (remarks === 'Not Received' ? getDaysDiffFromToday(e.date) : ''),
+                                daysOutstanding: (remarks === 'Need To Send' || remarks === 'Approval Pending') ? getDaysDiffFromToday(e.received_date) : (remarks === 'Not Received' ? getDaysDiffFromToday(e.date) : ''),
                                 statusWeight,
                                 isFirstRow: idx === 0
                             });
@@ -1374,6 +1363,9 @@ if (isDetailed) {
                 }
 
                 // Populate secondary rows map (one entry per secondary with outstanding)
+                const secRemarks = remarks === 'Need To Send'
+                    ? 'Need To Receive'
+                    : (remarks === 'Approval Pending' ? 'Need To Approve' : remarks);
                 activeSecList.forEach(sec => {
                     if (!secondaryRowsMap.has(sec.name)) secondaryRowsMap.set(sec.name, []);
                     secondaryRowsMap.get(sec.name).push({
@@ -1386,8 +1378,8 @@ if (isDetailed) {
                         primaryOS: 0,
                         dueOS: sec.netOS,
                         payable: sec.name,
-                        remarks,
-                        daysOutstanding: remarks === 'Need To Send' ? getDaysDiffFromToday(e.received_date) : (remarks === 'Not Received' ? getDaysDiffFromToday(e.date) : ''),
+                        remarks: secRemarks,
+                        daysOutstanding: (secRemarks === 'Need To Receive' || secRemarks === 'Need To Approve' || secRemarks === 'Approval Pending' || secRemarks === 'Need To Send') ? getDaysDiffFromToday(e.received_date) : (secRemarks === 'Not Received' ? getDaysDiffFromToday(e.date) : ''),
                         statusWeight,
                         isFirstRow: true
                     });
@@ -1478,6 +1470,8 @@ if (isDetailed) {
                 if (rowItem.remarks) {
                     if (rowItem.remarks === 'Need To Send') {
                         cell10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FF00B050' } };
+                    } else if (rowItem.remarks === 'Approval Pending') {
+                        cell10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FFED7D31' } };
                     } else if (rowItem.remarks === 'Not Received') {
                         cell10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FFFF0000' } };
                     } else if (rowItem.remarks === 'Partial') {
@@ -1624,8 +1618,10 @@ if (isDetailed) {
             c10.alignment = { horizontal: 'center', vertical: 'middle' };
             c10.border = thickBorder;
             if (rowItem.remarks) {
-                if (rowItem.remarks === 'Need To Send') {
+                if (rowItem.remarks === 'Need To Receive' || rowItem.remarks === 'Need To Send') {
                     c10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FF00B050' } };
+                } else if (rowItem.remarks === 'Need To Approve' || rowItem.remarks === 'Approval Pending') {
+                    c10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FFED7D31' } };
                 } else if (rowItem.remarks === 'Not Received') {
                     c10.font = { name: 'Trebuchet MS', size: 10, bold: true, color: { argb: 'FFFF0000' } };
                 } else if (rowItem.remarks === 'Partial') {
