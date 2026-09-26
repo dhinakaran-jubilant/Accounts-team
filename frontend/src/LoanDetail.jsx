@@ -722,9 +722,9 @@ const RepaymentTable = ({
                                                 <td className="sticky right-0 bg-slate-50/95 dark:bg-slate-950/95 group-hover:bg-slate-100 dark:group-hover:bg-slate-900 border-l border-slate-200 dark:border-slate-700 py-3 px-3 text-center z-10 transition-colors">
                                                     {(!entry.payment_date || entry.payment_date === 'dd-mm-yyyy' || entry.payment_date.trim() === '') ? null : (
                                                         (() => {
-                                                            const viewerRole = isSecondaryManager ? 'SECONDARY' : 'PRIMARY';
-                                                            const editorRole = entry.date_editor_role || 'SECONDARY';
-                                                            const isEditor = viewerRole === editorRole;
+                                                            const isEditor = entry.date_editor_name 
+                                                                ? (user?.name && entry.date_editor_name && user.name.trim().toLowerCase() === entry.date_editor_name.trim().toLowerCase())
+                                                                : (entry.date_editor_role === 'SECONDARY' ? isSecondaryManager : canEdit && !isSecondaryManager);
                                                             const canApproveOrReject = (user?.role === 'admin') || ((isSecondaryManager || canEdit) && !isEditor);
 
                                                             if (entry.date_approval_status === 'PENDING') {
@@ -1915,8 +1915,6 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
     const isSecondaryManager = useMemo(() => {
         if (!user || !loan) return false;
         if (user.role === 'admin') return false;
-        const priAcronym = getAcronym(loan.primary_account_name);
-        if (userJlPermissions.includes(priAcronym)) return false;
         const secAcronyms = (loan.remaining_accounts || [])
             .filter(acc => acc.is_need_approval !== false)
             .map(acc => getAcronym(acc.account_name));
@@ -2022,7 +2020,8 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                                 return {
                                     ...s,
                                     date_approval_status: (val && val.trim() !== '' && val !== '—' && val !== 'dd-mm-yyyy') ? 'PENDING' : 'APPROVED',
-                                    date_editor_role: viewerRole
+                                    date_editor_role: viewerRole,
+                                    date_editor_name: user?.name
                                 };
                             }
                             return s;

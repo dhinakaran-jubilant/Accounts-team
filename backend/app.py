@@ -1506,7 +1506,8 @@ def get_loans():
                 'type': s.type,
                 'splits': s.splits,
                 'date_approval_status': s.date_approval_status or 'APPROVED',
-                'date_editor_role': s.date_editor_role
+                'date_editor_role': s.date_editor_role,
+                'date_editor_name': s.date_editor_name
             } for s in loan.repayment_schedule]
             
             loans_data.append({
@@ -1575,7 +1576,8 @@ def get_loan_detail(loan_id):
                 'type': s.type,
                 'splits': s.splits,
                 'date_approval_status': s.date_approval_status or 'APPROVED',
-                'date_editor_role': s.date_editor_role
+                'date_editor_role': s.date_editor_role,
+                'date_editor_name': s.date_editor_name
             }
             for s in loan.repayment_schedule
         ]
@@ -2228,49 +2230,70 @@ def send_due_date_notification(loan, new_date, schedule_item=None, editor_name=N
     from datetime import datetime
     now_str = datetime.now().strftime("%d-%m-%Y %I:%M %p")
     
-    # Determine acronyms
-    pri_acronym = get_acronym(loan.primary_account_name)
-    sec_acronyms = []
-    for acc in loan.remaining_accounts:
-        acr = get_acronym(acc.account_name).strip().upper()
-        acc_name_obj = AccountName.query.filter_by(acronym=acr).first()
-        if acc_name_obj is None or acc_name_obj.is_need_approval:
-            sec_acronyms.append(acr)
-    
-    all_users = User.query.filter(User.role != 'admin').all()
-    
-    # Find primary managers and secondary managers
-    primary_managers = []
-    secondary_managers = []
-    
-    for u in all_users:
-        if user_has_company_approval(u, pri_acronym):
-            primary_managers.append(u)
-        elif any(user_has_company_approval(u, acr) for acr in sec_acronyms):
-            secondary_managers.append(u)
-            
-    # Check if editor is a secondary manager
-    is_editor_sec_manager = False
-    if editor_name:
-        is_editor_sec_manager = any(u.name == editor_name for u in secondary_managers)
-        
-    if is_editor_sec_manager:
-        # If edited by a secondary manager, send notification to primary manager(s)
-        notified_users = primary_managers
+    # 1. Fetch system admin users for fallback or when approval is NO
+    admin_users = User.query.filter_by(role='admin').all()
+    if not admin_users:
+        class DummyUser:
+            def __init__(self, name):
+                self.name = name
+                self.id = 0
+        admin_fallback = [DummyUser('System Admin')]
     else:
-        # Otherwise (edited by primary manager or admin), send to secondary manager(s)
-        notified_users = secondary_managers
-        
-    # FALLBACK TO ADMIN: If notified_users is empty, send to admin users
-    if not notified_users:
-        admin_users = User.query.filter_by(role='admin').all()
-        if not admin_users:
-            class DummyUser:
-                def __init__(self, name):
-                    self.name = name
-            notified_users = [DummyUser('System Admin')]
-        else:
-            notified_users = admin_users
+        admin_fallback = admin_users
+
+    all_non_admin_users = User.query.filter(User.role != 'admin').all()
+
+    # Collect unique users to notify: key -> User object
+    notified_users_dict = {}
+    admin_needed = False
+
+    remaining_accounts = loan.remaining_accounts or []
+
+    if not remaining_accounts:
+        # If there are no secondary accounts on this loan, send to system admin
+        admin_needed = True
+    else:
+        for acc in remaining_accounts:
+            # Resolve account acronym and AccountName record
+            acr = get_acronym(acc.account_name).strip().upper()
+            acc_name_obj = AccountName.query.filter_by(acronym=acr).first()
+            if not acc_name_obj:
+                clean_name = str(acc.account_name).strip().lower()
+                for a in AccountName.query.all():
+                    if (a.name or '').strip().lower() == clean_name:
+                        acc_name_obj = a
+                        break
+
+            # Check if this secondary account requires approval ("approval yes")
+            is_need_approval = acc_name_obj.is_need_approval if acc_name_obj is not None else True
+
+            if is_need_approval:
+                # Approval is YES:
+                # Send due date approval request to users who have permission for this secondary account
+                # If one secondary account is managed by multiple users, send to ALL who manage it!
+                matched_managers = [
+                    u for u in all_non_admin_users
+                    if user_has_company_approval(u, acr, menu='jl-due-report')
+                ]
+                if matched_managers:
+                    for u in matched_managers:
+                        notified_users_dict[u.id] = u
+                else:
+                    # If approval is YES but no manager has permission for this secondary account,
+                    # fallback to System Admin
+                    admin_needed = True
+            else:
+                # Approval is NO:
+                # Send the due date approval to system admin
+                admin_needed = True
+
+    # If any secondary account has approval NO (or no manager found / no secondary accounts),
+    # include system admin in the notified users
+    if admin_needed:
+        for a in admin_fallback:
+            notified_users_dict[getattr(a, 'id', a.name)] = a
+
+    notified_users = list(notified_users_dict.values())
         
     # Get all PENDING schedule items for this loan
     pending_items = [s for s in loan.repayment_schedule if s.date_approval_status == 'PENDING']
@@ -2297,9 +2320,9 @@ def send_due_date_notification(loan, new_date, schedule_item=None, editor_name=N
     emis_str = ", ".join([x[1] for x in changed_emis])
     
     if emis_str:
-        msg = f"Due date changes pending for {loan.client_account_name} ({emis_str})."
+        msg = f"Due date approval requested for {loan.client_account_name} ({emis_str})."
     else:
-        msg = f"Due date changes pending for {loan.client_account_name}."
+        msg = f"Due date approval requested for {loan.client_account_name}."
         
     # Create or update notification for each manager
     for u in notified_users:
@@ -2310,12 +2333,13 @@ def send_due_date_notification(loan, new_date, schedule_item=None, editor_name=N
         ).first()
         
         if existing_notif:
+            existing_notif.title = "Due Date Approval Request"
             existing_notif.message = msg
             existing_notif.created_at = now_str
         else:
             notif = Notification(
                 user_name=u.name,
-                title="New Due Date Set",
+                title="Due Date Approval Request",
                 message=msg,
                 link=f"/jl-due-report/{loan.id}",
                 created_at=now_str,
@@ -2335,6 +2359,7 @@ def add_repayment_schedule(loan_id):
             
         due_date = data.get('date', '')
         payment_date = data.get('payment_date', '')
+        editor_name = data.get('editor_name')
         
         new_entry = RepaymentSchedule(
             loan_id=loan_id,
@@ -2347,14 +2372,13 @@ def add_repayment_schedule(loan_id):
             received_date=data.get('received_date'),
             payment_date=payment_date,
             splits=data.get('splits'),
-            date_approval_status='PENDING' if (due_date or payment_date) else 'APPROVED'
+            date_approval_status='PENDING' if (due_date or payment_date) else 'APPROVED',
+            date_editor_name=editor_name
         )
         
-        editor_name = data.get('editor_name')
         if due_date or payment_date:
             editor_role = 'PRIMARY'
             if editor_name:
-                import json
                 pri_acronym = get_acronym(loan.primary_account_name)
                 sec_acronyms = [get_acronym(acc.account_name) for acc in loan.remaining_accounts]
                 all_users = User.query.filter(User.role != 'admin').all()
@@ -2393,6 +2417,7 @@ def patch_repayment_schedule(schedule_id):
             old_payment_date = schedule_item.payment_date
             new_payment_date = data['payment_date']
             schedule_item.payment_date = new_payment_date
+            schedule_item.date_editor_name = editor_name
             
             # Send notification if new_payment_date is filled and is different
             if new_payment_date and new_payment_date != old_payment_date:
@@ -2402,7 +2427,6 @@ def patch_repayment_schedule(schedule_id):
                 # Determine editor role
                 editor_role = 'PRIMARY'
                 if editor_name:
-                    import json
                     pri_acronym = get_acronym(loan.primary_account_name)
                     sec_acronyms = [get_acronym(acc.account_name) for acc in loan.remaining_accounts]
                     all_users = User.query.filter(User.role != 'admin').all()
@@ -2423,6 +2447,7 @@ def patch_repayment_schedule(schedule_id):
             old_date = schedule_item.date
             new_date = data['date']
             schedule_item.date = new_date
+            schedule_item.date_editor_name = editor_name
             
             # Send notification if new_date is filled and is different
             if new_date and new_date != old_date:
@@ -2432,7 +2457,6 @@ def patch_repayment_schedule(schedule_id):
                 # Determine editor role
                 editor_role = 'PRIMARY'
                 if editor_name:
-                    import json
                     pri_acronym = get_acronym(loan.primary_account_name)
                     sec_acronyms = [get_acronym(acc.account_name) for acc in loan.remaining_accounts]
                     all_users = User.query.filter(User.role != 'admin').all()
@@ -2463,6 +2487,19 @@ def approve_schedule_date(schedule_id):
             return jsonify({'success': False, 'error': 'Schedule item not found'}), 404
             
         schedule_item.date_approval_status = 'APPROVED'
+
+        loan = schedule_item.loan
+        if loan:
+            has_pending = any(s.date_approval_status == 'PENDING' and s.id != schedule_id for s in loan.repayment_schedule)
+            if not has_pending:
+                due_notifs = Notification.query.filter(
+                    Notification.link == f"/jl-due-report/{loan.id}",
+                    Notification.is_read == False,
+                    Notification.title.in_(['New Due Date Set', 'Due Date Approval Request'])
+                ).all()
+                for n in due_notifs:
+                    n.is_read = True
+
         db.session.commit()
         return jsonify({'success': True, 'message': 'Date approved successfully'}), 200
     except Exception as e:
@@ -2478,6 +2515,19 @@ def reject_schedule_date(schedule_id):
             return jsonify({'success': False, 'error': 'Schedule item not found'}), 404
             
         schedule_item.date_approval_status = 'REJECTED'
+
+        loan = schedule_item.loan
+        if loan:
+            has_pending = any(s.date_approval_status == 'PENDING' and s.id != schedule_id for s in loan.repayment_schedule)
+            if not has_pending:
+                due_notifs = Notification.query.filter(
+                    Notification.link == f"/jl-due-report/{loan.id}",
+                    Notification.is_read == False,
+                    Notification.title.in_(['New Due Date Set', 'Due Date Approval Request'])
+                ).all()
+                for n in due_notifs:
+                    n.is_read = True
+
         db.session.commit()
         return jsonify({'success': True, 'message': 'Date rejected successfully'}), 200
     except Exception as e:

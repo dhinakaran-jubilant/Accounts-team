@@ -60,6 +60,7 @@ class RepaymentSchedule(db.Model):
     splits = db.Column(db.Text, nullable=True)
     date_approval_status = db.Column(db.String(50), default='APPROVED', nullable=True)
     date_editor_role = db.Column(db.String(50), nullable=True)
+    date_editor_name = db.Column(db.String(100), nullable=True)
 
 
 class User(db.Model):
