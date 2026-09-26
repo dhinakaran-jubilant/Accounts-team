@@ -2890,18 +2890,99 @@ def mark_notification_read(notif_id):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
-def send_whatsapp_group_msg(group_id, message):
-    import pywhatkit
+def send_whatsapp_group_msg(group_id, message, tab_close=True):
+    import webbrowser
+    import time
+    import pyautogui
+    import pyperclip
+    import ctypes
+    from ctypes import wintypes
+
+    def _focus_browser_window():
+        try:
+            user32 = ctypes.windll.user32
+            target_hwnd = None
+            WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+            def enum_proc(hwnd, _):
+                nonlocal target_hwnd
+                if user32.IsWindowVisible(hwnd):
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buff = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buff, length + 1)
+                        t = buff.value.lower()
+                        if 'whatsapp' in t or 'chrome' in t or 'edge' in t:
+                            target_hwnd = hwnd
+                            return False
+                return True
+
+            user32.EnumWindows(WNDENUMPROC(enum_proc), 0)
+            if target_hwnd:
+                user32.ShowWindow(target_hwnd, 9)  # SW_RESTORE
+                user32.SetForegroundWindow(target_hwnd)
+        except Exception:
+            pass
+
     try:
-        pywhatkit.sendwhatmsg_to_group_instantly(
-            group_id=group_id,
-            message=message,
-            wait_time=15,
-            tab_close=True
-        )
-        print("Group message sent successfully!")
+        print(f"[WhatsApp] Preparing notification for group {group_id}...")
+        # 1. Copy formatted message to clipboard to support full multiline text and special characters
+        pyperclip.copy(message)
+
+        # 2. Open group in browser
+        url = f"https://web.whatsapp.com/accept?code={group_id}"
+        webbrowser.open(url)
+        print(f"[WhatsApp] Opened {url}. Waiting for WhatsApp Web to load...")
+
+        # Get screen size
+        width, height = pyautogui.size()
+
+        # 3. Allow initial page and WhatsApp Web session to load
+        time.sleep(14)
+        _focus_browser_window()
+
+        # 4. Click screen center to accept 'Join Chat' / 'Open Chat' dialog if present
+        center_x = int(width / 2)
+        center_y = int(height / 2)
+        print(f"[WhatsApp] Clicking center ({center_x}, {center_y}) in case popup appears...")
+        pyautogui.click(center_x, center_y)
+
+        # 5. Wait for the chat messages and bottom input bar to render
+        time.sleep(8)
+        _focus_browser_window()
+
+        # 6. Click the message input field at the bottom right of WhatsApp Web
+        # On standard displays, the input field is horizontally centered in the right pane (~60% of width)
+        # and vertically situated ~65px from the bottom
+        input_x = int(width * 0.60)
+        input_y = int(height - 65)
+        print(f"[WhatsApp] Focusing message input box at ({input_x}, {input_y})...")
+        pyautogui.click(input_x, input_y)
+        time.sleep(0.5)
+        pyautogui.click(input_x, input_y)
+        time.sleep(0.5)
+
+        # 7. Paste the message from clipboard
+        print("[WhatsApp] Pasting message from clipboard via Ctrl+V...")
+        pyautogui.hotkey('ctrl', 'v')
+        time.sleep(1.0)
+
+        # 8. Send the message by pressing Enter
+        print("[WhatsApp] Pressing Enter to send...")
+        pyautogui.press('enter')
+        time.sleep(1.0)
+
+        # 9. Wait a few seconds for the network request to deliver the message
+        time.sleep(4.0)
+
+        # 10. Close tab if requested
+        if tab_close:
+            print("[WhatsApp] Closing WhatsApp Web tab...")
+            pyautogui.hotkey('ctrl', 'w')
+
+        print("[WhatsApp] Group message sent successfully!")
     except Exception as e:
-        print(f"Error sending WhatsApp group message: {e}")
+        print(f"[WhatsApp] Error sending WhatsApp group message: {e}")
 
 def notify_loan_created(loan_id):
     with app.app_context():
