@@ -238,7 +238,10 @@ const JlDueReport = ({ user }) => {
     const [verifiedBy, setVerifiedBy] = useState('System Admin');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [accountFilter, setAccountFilter] = useState([]);
-    const [adminAccountFilter, setAdminAccountFilter] = useState(['SCS', 'GC', 'FC', 'AS', 'ASE', 'SCE', 'ASQ', 'SN', 'FE', 'JC', 'RP']);
+    const [adminAccountFilter, setAdminAccountFilter] = useState(() => {
+        const opts = getAccountOptions();
+        return opts.length > 0 ? opts.map(o => o.value) : [];
+    });
     const [statusFilter, setStatusFilter] = useState(() => {
         const saved = sessionStorage.getItem('jl_due_report_statusFilter');
         try {
@@ -475,9 +478,25 @@ const JlDueReport = ({ user }) => {
     const [accountOptionsList, setAccountOptionsList] = useState(() => getAccountOptions());
 
     useEffect(() => {
-        loadAccountsFromDb().then(accs => {
+        loadAccountsFromDb(true).then(accs => {
             if (Array.isArray(accs) && accs.length > 0) {
-                setAccountOptionsList(getAccountOptions(accs));
+                const opts = getAccountOptions(accs);
+                setAccountOptionsList(opts);
+                setAdminAccountFilter(prev => {
+                    const allVals = opts.map(o => o.value);
+                    if (!prev || prev.length === 0) {
+                        return allVals;
+                    }
+                    // If previously nearly all accounts were selected (≥ 90% or all),
+                    // treat it as "select all" and expand to full new list
+                    const prevOpts = accountOptionsList; // options before refresh
+                    const wasAllSelected = prevOpts.length === 0 || prev.length >= prevOpts.length * 0.9;
+                    if (wasAllSelected) {
+                        return allVals;
+                    }
+                    // Otherwise keep only the specific accounts the user had chosen
+                    return prev.filter(v => allVals.includes(v));
+                });
             }
         });
     }, []);
@@ -646,17 +665,25 @@ const JlDueReport = ({ user }) => {
                 const acronym = getAcronym(loan.primary_account_name).toUpperCase();
                 acronymSet.add(acronym);
             }
+            const secAccs = loan.secondary_accounts || loan.remaining_accounts || [];
+            secAccs.forEach(acc => {
+                const name = acc.account_name || acc.name;
+                if (name) {
+                    acronymSet.add(getAcronym(name).toUpperCase());
+                }
+            });
         });
         return acronymSet;
     }, [data]);
 
     const filteredAccountOptions = useMemo(() => {
         return ACCOUNT_OPTIONS.filter(opt => activeAccountAcronyms.has(opt.value.toUpperCase()));
-    }, [activeAccountAcronyms]);
+    }, [activeAccountAcronyms, ACCOUNT_OPTIONS]);
 
     const isAllAccountsSelected = useMemo(() => {
-        if (adminAccountFilter.length === ACCOUNT_OPTIONS.length) return true;
-        return filteredAccountOptions.length > 0 && filteredAccountOptions.every(opt => adminAccountFilter.includes(opt.value));
+        if (adminAccountFilter.length === 0) return false;
+        if (filteredAccountOptions.length === 0) return true;
+        return filteredAccountOptions.every(opt => adminAccountFilter.includes(opt.value));
     }, [filteredAccountOptions, adminAccountFilter]);
 
     const handleDeleteClick = (loanId) => {
@@ -722,7 +749,8 @@ const JlDueReport = ({ user }) => {
 
         // Apply Permissions Filter: If not admin and doesn't have all permissions, show only which primary account acronym is in their list
         const userPerms = userPermissions;
-        if (user?.role !== 'admin' && userPerms.length < 10) {
+        const totalAccountsCount = ACCOUNT_OPTIONS.length || 11;
+        if (user?.role !== 'admin' && userPerms.length < totalAccountsCount) {
             result = result.filter(row => {
                 const priAcronym = getAcronym(row.primary_account_name).toUpperCase();
                 if (userPerms.includes(priAcronym)) return true;
@@ -733,16 +761,18 @@ const JlDueReport = ({ user }) => {
             });
         }
 
-        if (user?.role === 'admin' && adminAccountFilter && adminAccountFilter.length > 0) {
-            result = result.filter(row => {
-                const priAcronym = getAcronym(row.primary_account_name).toUpperCase();
-                if (adminAccountFilter.includes(priAcronym)) return true;
-                if (includeSecondaryForAccountFilter) {
-                    const secAccs = row.secondary_accounts || row.remaining_accounts || [];
-                    return secAccs.some(acc => adminAccountFilter.includes(getAcronym(acc.account_name).toUpperCase()));
-                }
-                return false;
-            });
+        if (user?.role === 'admin' && adminAccountFilter) {
+            if (!isAllAccountsSelected) {
+                result = result.filter(row => {
+                    const priAcronym = getAcronym(row.primary_account_name).toUpperCase();
+                    if (adminAccountFilter.includes(priAcronym)) return true;
+                    if (includeSecondaryForAccountFilter) {
+                        const secAccs = row.secondary_accounts || row.remaining_accounts || [];
+                        return secAccs.some(acc => adminAccountFilter.includes(getAcronym(acc.account_name).toUpperCase()));
+                    }
+                    return false;
+                });
+            }
         } else if (accountFilter && accountFilter.length > 0) {
             result = result.filter(row => {
                 const priAcronym = getAcronym(row.primary_account_name).toUpperCase();
@@ -861,7 +891,7 @@ const JlDueReport = ({ user }) => {
         }
 
         return result;
-    }, [data, accountFilter, adminAccountFilter, user, userPermissions, searchTerm, startDate, endDate, statusFilter, dueDateApprovalFilter, sortConfig]);
+    }, [data, accountFilter, adminAccountFilter, isAllAccountsSelected, user, userPermissions, ACCOUNT_OPTIONS, searchTerm, startDate, endDate, statusFilter, dueDateApprovalFilter, sortConfig]);
 
     const filteredData = useMemo(() => {
         return getFilteredLoans(false);
@@ -939,12 +969,13 @@ const JlDueReport = ({ user }) => {
         const startKey = startDate ? getDateKey(startDate.split('-').reverse().join('-')) : 0;
 
         // Group loans by primary_account_name and secondary_accounts
-        const activeFilter = user?.role === 'admin' ? adminAccountFilter : accountFilter;
+        const activeFilter = user?.role === 'admin' ? (isAllAccountsSelected ? [] : adminAccountFilter) : accountFilter;
+        const totalAccountsCount = ACCOUNT_OPTIONS.length || 11;
         const groups = new Map();
         exportData.forEach(loan => {
             const priAcr = loan.primary_account_name ? getAcronym(loan.primary_account_name).toUpperCase() : 'UNKNOWN';
             
-            let hasPrimaryPermission = user?.role === 'admin' || userPermissions.length >= 10 || userPermissions.includes(priAcr);
+            let hasPrimaryPermission = user?.role === 'admin' || userPermissions.length >= totalAccountsCount || userPermissions.includes(priAcr);
             if (activeFilter && activeFilter.length > 0 && !activeFilter.includes(priAcr)) hasPrimaryPermission = false;
 
             if (hasPrimaryPermission) {
@@ -956,7 +987,7 @@ const JlDueReport = ({ user }) => {
             const secAccs = loan.secondary_accounts || loan.remaining_accounts || [];
             secAccs.forEach(sec => {
                 const secAcr = sec.account_name ? getAcronym(sec.account_name).toUpperCase() : 'UNKNOWN';
-                let hasSecPermission = user?.role === 'admin' || userPermissions.length >= 10 || userPermissions.includes(secAcr);
+                let hasSecPermission = user?.role === 'admin' || userPermissions.length >= totalAccountsCount || userPermissions.includes(secAcr);
                 if (activeFilter && activeFilter.length > 0 && !activeFilter.includes(secAcr)) hasSecPermission = false;
                 
                 if (hasSecPermission) {
@@ -1163,12 +1194,13 @@ const JlDueReport = ({ user }) => {
 if (isDetailed) {
     // Map to collect rows for secondary sheets per account acronym
     const secondaryRowsMap = new Map(); // acronym -> array of row objects
-    const activeFilter = user?.role === 'admin' ? adminAccountFilter : accountFilter;
+    const activeFilter = user?.role === 'admin' ? (isAllAccountsSelected ? [] : adminAccountFilter) : accountFilter;
+    const totalAccountsCount = ACCOUNT_OPTIONS.length || 11;
 
     // Primary Sheets Generation (one per primary account acronym)
     groups.forEach((loans, primaryAccName) => {
         const primaryAcr = getAcronym(primaryAccName).toUpperCase();
-        let hasPrimaryPermission = user?.role === 'admin' || userPermissions.length >= 10 || userPermissions.includes(primaryAcr);
+        let hasPrimaryPermission = user?.role === 'admin' || userPermissions.length >= totalAccountsCount || userPermissions.includes(primaryAcr);
         if (activeFilter && activeFilter.length > 0 && !activeFilter.includes(primaryAcr)) hasPrimaryPermission = false;
 
         let worksheet = null;
@@ -1496,7 +1528,7 @@ if (isDetailed) {
 
     // Generate Secondary Sheets for each secondary account acronym
     secondaryRowsMap.forEach((rows, secAcr) => {
-        let hasSecondaryPermission = user?.role === 'admin' || userPermissions.length >= 10 || userPermissions.includes(secAcr);
+        let hasSecondaryPermission = user?.role === 'admin' || userPermissions.length >= totalAccountsCount || userPermissions.includes(secAcr);
         if (activeFilter && activeFilter.length > 0 && !activeFilter.includes(secAcr)) hasSecondaryPermission = false;
         
         if (!hasSecondaryPermission) return;
@@ -1980,7 +2012,7 @@ if (isDetailed) {
         const dateStr = `_${exportDate}`;
         
         const activeFilterStr = user?.role === 'admin'
-            ? (adminAccountFilter.length > 0 ? adminAccountFilter.join('-') : 'No Accounts')
+            ? (isAllAccountsSelected ? 'All Accounts' : adminAccountFilter.length > 0 ? adminAccountFilter.join('-') : 'No Accounts')
             : (accountFilter.length > 0 && accountFilter[0] !== 'NONE' ? accountFilter.join('-') : accountFilter[0] === 'NONE' ? 'No Accounts' : 'All Accounts');
             
         const filenameFilter = activeFilterStr !== 'All Accounts' ? activeFilterStr : (searchTerm || 'All');
@@ -2054,7 +2086,7 @@ if (isDetailed) {
                             <button
                                 onClick={() => {
                                     setAccountFilter([]);
-                                    setAdminAccountFilter(['SCS', 'GC', 'FC', 'AS', 'ASE', 'SCE', 'ASQ', 'SN', 'FE', 'JC', 'RP']);
+                                    setAdminAccountFilter(filteredAccountOptions.length > 0 ? filteredAccountOptions.map(opt => opt.value) : ACCOUNT_OPTIONS.map(opt => opt.value));
                                     setSearchTerm('');
                                     setStartDate('');
                                     setEndDate('');
@@ -2098,7 +2130,7 @@ if (isDetailed) {
                                                     checked={isAllAccountsSelected}
                                                     onChange={(e) => {
                                                         if (e.target.checked) {
-                                                            setAdminAccountFilter(['SCS', 'GC', 'FC', 'AS', 'ASE', 'SCE', 'ASQ', 'SN', 'FE', 'JC', 'RP']);
+                                                            setAdminAccountFilter(filteredAccountOptions.map(opt => opt.value));
                                                         } else {
                                                             setAdminAccountFilter([]);
                                                         }

@@ -23,9 +23,6 @@ try {
  * Fetch accounts from /api/accounts-name and cache them.
  */
 export const loadAccountsFromDb = async (forceRefresh = false) => {
-    if (!forceRefresh && cachedAccounts.length > 0) {
-        return cachedAccounts;
-    }
     if (fetchPromise) {
         return fetchPromise;
     }
