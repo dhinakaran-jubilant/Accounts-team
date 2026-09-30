@@ -136,16 +136,6 @@ def verify_schema():
 
 def migrate_existing_short_loans():
     try:
-        acronyms = {
-            'AS': 'AS',
-            'ASQ': 'ASQ',
-            'JC': 'JC',
-            'NEXUS': 'NXS',
-            'RE': 'RE',
-            'SCS': 'SCS',
-            'SENTHIL VADIVEL': 'SV',
-            'SN': 'SN'
-        }
         # Fetch all ShortLoan where loan_id is NULL or empty
         loans_to_migrate = ShortLoan.query.filter((ShortLoan.loan_id == None) | (ShortLoan.loan_id == '')).order_by(ShortLoan.id.asc()).all()
         if not loans_to_migrate:
@@ -156,9 +146,11 @@ def migrate_existing_short_loans():
             acc_name = l.account
             prefix = 'SL'
             if acc_name:
+                # Resolve acronym dynamically from the accounts_name DB table
+                resolved = get_acronym(acc_name)
                 acc_name_clean = str(acc_name).upper().strip()
-                if acc_name_clean in acronyms:
-                    prefix = acronyms[acc_name_clean]
+                if resolved and resolved != acc_name_clean:
+                    prefix = resolved
                 else:
                     clean_chars = re.sub(r'[^A-Z]', '', acc_name_clean)
                     prefix = clean_chars[:4] if clean_chars else 'SL'
@@ -250,30 +242,30 @@ with app.app_context():
         if not admin_user:
             admin_user = User(
                 employee_code='admin',
-                password=generate_password_hash('Admin123'),
+                password=generate_password_hash('Jubi@2026'),
                 name='System Admin',
                 role='admin',
                 is_initial_password=False
             )
             db.session.add(admin_user)
-            print("Seeded admin user: Admin123")
+            print("Seeded admin user: Jubi@2026")
         else:
             # Force update for current troubleshooting
-            admin_user.password = generate_password_hash('Admin123')
+            admin_user.password = generate_password_hash('Jubi@2026')
             db.session.commit()
-            print("Force updated admin password to: Admin123")
+            print("Force updated admin password to: Jubi@2026")
 
         # 2. Default E001 User (Reserved for recovery/initial setup)
         if not User.query.filter_by(employee_code='E001').first():
             e001_user = User(
                 employee_code='E001',
-                password=generate_password_hash('admin123'),
+                password=generate_password_hash('Jubi@2026'),
                 name='Senior Administrator',
                 role='admin',
                 is_initial_password=True # Forces setup
             )
             db.session.add(e001_user)
-            print("Seeded recovery user: E001 / admin123")
+            print("Seeded recovery user: E001 / Jubi@2026")
 
         db.session.commit()
     except Exception as e:
@@ -3158,17 +3150,6 @@ def create_short_loan():
     try:
         data = request.json
         
-        acronyms = {
-            'AS': 'AS',
-            'ASQ': 'ASQ',
-            'JC': 'JC',
-            'NEXUS': 'NXS',
-            'RE': 'RE',
-            'SCS': 'SCS',
-            'SENTHIL VADIVEL': 'SV',
-            'SN': 'SN'
-        }
-        
         explicit_loan_id = data.get('loan_id')
         if explicit_loan_id and str(explicit_loan_id).strip():
             generated_loan_id = str(explicit_loan_id).strip()
@@ -3176,9 +3157,11 @@ def create_short_loan():
             acc_name = data.get('account')
             prefix = 'SL'
             if acc_name:
+                # Resolve acronym dynamically from the accounts_name DB table
+                resolved = get_acronym(acc_name)
                 acc_name_clean = str(acc_name).upper().strip()
-                if acc_name_clean in acronyms:
-                    prefix = acronyms[acc_name_clean]
+                if resolved and resolved != acc_name_clean:
+                    prefix = resolved
                 else:
                     clean_chars = re.sub(r'[^A-Z]', '', acc_name_clean)
                     prefix = clean_chars[:4] if clean_chars else 'SL'
