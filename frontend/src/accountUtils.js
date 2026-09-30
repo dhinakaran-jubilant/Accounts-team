@@ -122,3 +122,43 @@ export const getAccountOptions = (accounts = cachedAccounts) => {
     const list = Array.isArray(accounts) && accounts.length > 0 ? accounts : cachedAccounts;
     return list.map(formatAccountOption);
 };
+
+/**
+ * Check if an account needs approval (is_need_approval is true or not explicitly false).
+ * Returns false if is_need_approval is false.
+ */
+export const accountNeedsApproval = (nameOrAcr, accounts = cachedAccounts) => {
+    if (!nameOrAcr) return true;
+    const raw = String(nameOrAcr).trim();
+    if (!raw) return true;
+    const n = raw.toLowerCase();
+    const list = Array.isArray(accounts) && accounts.length > 0 ? accounts : cachedAccounts;
+
+    for (const acc of list) {
+        const acr = (acc.acronym || '').trim().toLowerCase();
+        const accName = (acc.name || '').trim().toLowerCase();
+        if (acr === n || accName === n) {
+            return acc.is_need_approval !== false;
+        }
+    }
+
+    const cleanInput = n.replace(/[^a-z0-9]/g, '');
+    for (const acc of list) {
+        const cleanAcr = (acc.acronym || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanName = (acc.name || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanInput && (cleanInput === cleanAcr || cleanInput === cleanName)) {
+            return acc.is_need_approval !== false;
+        }
+    }
+
+    for (const acc of list) {
+        const cleanAcr = (acc.acronym || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanName = (acc.name || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanInput && cleanName && (cleanName.includes(cleanInput) || cleanInput.includes(cleanName))) {
+            return acc.is_need_approval !== false;
+        }
+    }
+
+    return true;
+};
+

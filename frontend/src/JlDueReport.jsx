@@ -10,7 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import LoanDetail from './LoanDetail';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
-import { getAcronym, loadAccountsFromDb, getAccountOptions } from './accountUtils';
+import { getAcronym, loadAccountsFromDb, getAccountOptions, accountNeedsApproval } from './accountUtils';
 
 const REQUIRED_DAY_BOOK_COLUMNS = [
     'Transaction Date',
@@ -94,8 +94,27 @@ const toYYYYMMDD = (val) => {
     return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
 };
 
+const isLoanNeedsDueDateApproval = (loan) => {
+    if (!loan) return false;
+    const secAccs = loan.secondary_accounts || loan.remaining_accounts || [];
+    if (secAccs.length > 0) {
+        return secAccs.some(acc => {
+            if (acc.is_need_approval !== undefined && acc.is_need_approval !== null) {
+                return acc.is_need_approval !== false;
+            }
+            return accountNeedsApproval(acc.account_name);
+        });
+    }
+    if (loan.primary_account_is_need_approval !== undefined && loan.primary_account_is_need_approval !== null) {
+        return loan.primary_account_is_need_approval !== false;
+    }
+    return accountNeedsApproval(loan.primary_account_name);
+};
+
 const getRowAccountPaid = (entry, accName, targetShare, isPrimary, expectedTds = 0) => {
-    const dVal = isPrimary ? entry.received_date : (entry.date_approval_status === 'APPROVED' ? entry.payment_date : '');
+    const isAutoApproved = !isPrimary && !accountNeedsApproval(accName);
+    const isApproved = entry.date_approval_status === 'APPROVED' || isAutoApproved;
+    const dVal = isPrimary ? entry.received_date : (isApproved ? entry.payment_date : '');
     const hasDate = dVal && dVal !== '—' && dVal !== 'dd-mm-yyyy' && dVal !== '-' && dVal !== '';
 
     // Priority 1: Check splits for actual recorded payments (Amount + TDS)
@@ -827,7 +846,8 @@ const JlDueReport = ({ user }) => {
 
         if (dueDateApprovalFilter && dueDateApprovalFilter.length < 2) {
             result = result.filter(row => {
-                const hasPending = Array.isArray(row.repayment_schedule) &&
+                const needsApproval = isLoanNeedsDueDateApproval(row);
+                const hasPending = needsApproval && Array.isArray(row.repayment_schedule) &&
                     row.repayment_schedule.some(s => s.date_approval_status === 'PENDING');
 
                 if (dueDateApprovalFilter.includes('PENDING') && hasPending) return true;
@@ -1068,7 +1088,8 @@ const JlDueReport = ({ user }) => {
 
                     systemSched.forEach((e, idx) => {
                         const target = parseINR(e.amount) * (accInfo.percentage / 100);
-                        const dVal = isPri ? e.received_date : (e.date_approval_status === 'APPROVED' ? e.payment_date : '');
+                        const isAutoApproved = !isPri && !accountNeedsApproval(accInfo.name);
+                        const dVal = isPri ? e.received_date : ((e.date_approval_status === 'APPROVED' || isAutoApproved) ? e.payment_date : '');
                         const rKey = getDateKey(dVal);
                         
                         if (rKey > 0 && rKey >= startKey && rKey <= endKey) {
@@ -1313,16 +1334,17 @@ if (isDetailed) {
                     const sExpectedTds = isIntRow ? (parseINR(acc.interest_amount) || 0) * 0.10 : 0;
                     const sPaid = getRowAccountPaid(e, acc.account_name, sTarget, false, sExpectedTds);
                     const sOS = Math.max(0, sTarget - sPaid);
-                    const sHasDate = e.payment_date && e.date_approval_status === 'APPROVED' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-' && e.payment_date !== '';
+                    const isAccAutoApproved = acc.is_need_approval === false || !accountNeedsApproval(acc.account_name);
+                    const sHasDate = e.payment_date && (e.date_approval_status === 'APPROVED' || isAccAutoApproved) && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-' && e.payment_date !== '';
                     let sTdsOS = 0;
                     if (!sHasDate) {
                         sTdsOS = Math.max(0, sExpectedTds - getSplitTDS(e.splits, acc.account_name));
                     }
                     const sNetOS = sOS - sTdsOS;
                     const acronym = getAcronym(acc.account_name).toUpperCase();
-                    allSecList.push({ name: acronym, netOS: sNetOS, isPartial: sPaid > 0.99 && sOS > 0.99 });
+                    allSecList.push({ name: acronym, netOS: sNetOS, isPartial: sPaid > 0.99 && sOS > 0.99, isAutoApproved: isAccAutoApproved });
                     if (sNetOS > 0.99) {
-                        activeSecList.push({ name: acronym, netOS: sNetOS, isPartial: sPaid > 0.99 && sOS > 0.99 });
+                        activeSecList.push({ name: acronym, netOS: sNetOS, isPartial: sPaid > 0.99 && sOS > 0.99, isAutoApproved: isAccAutoApproved });
                     }
                 });
 
@@ -1337,7 +1359,7 @@ if (isDetailed) {
                     e.payment_date !== 'dd-mm-yyyy' &&
                     e.payment_date !== '-'
                 );
-                const isWaitingDateApproval = hasDueDate && (e.date_approval_status === 'PENDING' || e.date_approval_status !== 'APPROVED');
+                const isWaitingDateApproval = isLoanNeedsDueDateApproval(loan) && hasDueDate && (e.date_approval_status === 'PENDING' || e.date_approval_status !== 'APPROVED');
 
                 let remarks = '';
                 let statusWeight = 4;
@@ -1395,10 +1417,15 @@ if (isDetailed) {
                 }
 
                 // Populate secondary rows map (one entry per secondary with outstanding)
-                const secRemarks = remarks === 'Need To Send'
-                    ? 'Need To Receive'
-                    : (remarks === 'Approval Pending' ? 'Need To Approve' : remarks);
                 activeSecList.forEach(sec => {
+                    const secNeedsApp = !sec.isAutoApproved;
+                    const effectiveRemarks = (remarks === 'Approval Pending' && !secNeedsApp)
+                        ? 'Need To Send'
+                        : remarks;
+                    const secRemarks = effectiveRemarks === 'Need To Send'
+                        ? 'Need To Receive'
+                        : (effectiveRemarks === 'Approval Pending' ? 'Need To Approve' : effectiveRemarks);
+
                     if (!secondaryRowsMap.has(sec.name)) secondaryRowsMap.set(sec.name, []);
                     secondaryRowsMap.get(sec.name).push({
                         loanDate: loan.loan_date,
@@ -1853,7 +1880,8 @@ if (isDetailed) {
                         return schedule.reduce((sum, e) => {
                             if (e.type === 'manual') return sum;
 
-                            const dVal = isPrimary ? e.received_date : (e.date_approval_status === 'APPROVED' ? e.payment_date : '');
+                            const isAutoApproved = !isPrimary && !accountNeedsApproval(accName);
+                            const dVal = isPrimary ? e.received_date : ((e.date_approval_status === 'APPROVED' || isAutoApproved) ? e.payment_date : '');
                             const rKey = getDateKey(dVal);
                             const inWindow = rKey > 0 && rKey <= cutoffKey;
 
@@ -2759,7 +2787,7 @@ if (isDetailed) {
                                                 <td className="py-2 px-2 text-sm whitespace-nowrap text-left">
                                                     {(() => {
                                                         const s = getLoanStatus(row);
-                                                        const hasPendingDate = row.repayment_schedule?.some(e => e.date_approval_status === 'PENDING');
+                                                        const hasPendingDate = isLoanNeedsDueDateApproval(row) && row.repayment_schedule?.some(e => e.date_approval_status === 'PENDING');
                                                         return (
                                                             <div className="flex items-center gap-1.5 flex-wrap">
                                                                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${s.color}`}>

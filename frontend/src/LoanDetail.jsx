@@ -8,7 +8,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import ExcelJS from 'exceljs';
-import { getAcronym } from './accountUtils';
+import { getAcronym, accountNeedsApproval } from './accountUtils';
 
 const fmtINR = (val, showSymbol = true, decimals = null) => {
     if (val == null) return '—';
@@ -42,6 +42,23 @@ const parseINR = (val) => {
     if (!val) return 0;
     if (typeof val === 'number') return val;
     return Number(val.toString().replace(/,/g, "")) || 0;
+};
+
+const loanNeedsDueDateApproval = (loan) => {
+    if (!loan) return false;
+    const secAccs = loan.remaining_accounts || loan.secondary_accounts || [];
+    if (secAccs.length > 0) {
+        return secAccs.some(acc => {
+            if (acc.is_need_approval !== undefined && acc.is_need_approval !== null) {
+                return acc.is_need_approval !== false;
+            }
+            return accountNeedsApproval(acc.account_name);
+        });
+    }
+    if (loan.primary_account_is_need_approval !== undefined && loan.primary_account_is_need_approval !== null) {
+        return loan.primary_account_is_need_approval !== false;
+    }
+    return accountNeedsApproval(loan.primary_account_name);
 };
 
 
@@ -625,7 +642,7 @@ const RepaymentTable = ({
                                                                             }
                                                                         }}
                                                                         readOnly={isDueDateDisabled}
-                                                                        className={`bg-transparent text-left text-sm w-24 focus:outline-none focus:ring-1 rounded transition-all ${(isPaymentDateInvalid || (blurredFields.has(`${entry.id}-payment_date`) && isDateFormatInvalid(entry.payment_date))) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30 font-bold' : `border-none focus:ring-primary/30 ${entry.date_approval_status === 'PENDING' ? 'text-amber-600 dark:text-amber-400 font-bold' : entry.date_approval_status === 'REJECTED' ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-900 dark:text-slate-100 font-bold'}`} ${isDueDateDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                                        className={`bg-transparent text-left text-sm w-24 focus:outline-none focus:ring-1 rounded transition-all ${(isPaymentDateInvalid || (blurredFields.has(`${entry.id}-payment_date`) && isDateFormatInvalid(entry.payment_date))) ? 'border-[1.5px] border-red-500 text-red-500 focus:ring-red-500/30 font-bold' : `border-none focus:ring-primary/30 ${(entry.date_approval_status === 'PENDING' && loanNeedsDueDateApproval(loan)) ? 'text-amber-600 dark:text-amber-400 font-bold' : entry.date_approval_status === 'REJECTED' ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-900 dark:text-slate-100 font-bold'}`} ${isDueDateDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                                         placeholder="dd-mm-yyyy"
                                                                     />
                                                                     {(canEdit || isSecondaryManager) && loan.approval_status === 'APPROVED' && (
@@ -727,7 +744,8 @@ const RepaymentTable = ({
                                                                 : (entry.date_editor_role === 'SECONDARY' ? isSecondaryManager : canEdit && !isSecondaryManager);
                                                             const canApproveOrReject = (user?.role === 'admin') || ((isSecondaryManager || canEdit) && !isEditor);
 
-                                                            if (entry.date_approval_status === 'PENDING') {
+                                                            const needsApproval = loanNeedsDueDateApproval(loan);
+                                                            if (entry.date_approval_status === 'PENDING' && needsApproval) {
                                                                 if (canApproveOrReject) {
                                                                     return (
                                                                         <div className="flex items-center justify-center gap-1">
@@ -766,7 +784,7 @@ const RepaymentTable = ({
 
                                                             return (
                                                                 <div className="flex items-center justify-center">
-                                                                    {entry.date_approval_status === 'APPROVED' && (
+                                                                    {(entry.date_approval_status === 'APPROVED' || !needsApproval) && (
                                                                         <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
                                                                             <span className="material-symbols-outlined text-[16px]">check</span>                                                
                                                                         </span>
@@ -984,9 +1002,8 @@ const RepaymentTable = ({
                             const totalInt = (loan.primary_account_interest || 0) + (loan.remaining_accounts || []).reduce((s, a) => s + (a.interest_amount || 0), 0);
                             const primaryIntRatio = totalInt > 0 ? loan.primary_account_interest / totalInt : 0;
 
-                            // Helper functions for matching logic
                             const isReceived = (e) => e.received_date && e.received_date.trim() !== '' && e.received_date !== '—' && e.received_date !== 'dd-mm-yyyy';
-                            const hasApprovedDueDate = (e) => e.payment_date && e.date_approval_status === 'APPROVED' && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
+                            const hasApprovedDueDate = (e) => e.payment_date && (e.date_approval_status === 'APPROVED' || !loanNeedsDueDateApproval(loan)) && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
 
                             // 1. Expected totals (Total row)
                             const amtTotal = data.reduce((s, e) => s + parseINR(e.amount), 0);
@@ -2012,21 +2029,26 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
             if (res.ok && result.success) {
                 // local state is already updated optimistically in the inputs
                 if (field === 'payment_date') {
-                    setLoan(prev => ({
-                        ...prev,
-                        repayment_schedule: prev.repayment_schedule.map(s => {
-                            if (s.id === scheduleId) {
-                                const viewerRole = isSecondaryManager ? 'SECONDARY' : 'PRIMARY';
-                                return {
-                                    ...s,
-                                    date_approval_status: (val && val.trim() !== '' && val !== '—' && val !== 'dd-mm-yyyy') ? 'PENDING' : 'APPROVED',
-                                    date_editor_role: viewerRole,
-                                    date_editor_name: user?.name
-                                };
-                            }
-                            return s;
-                        })
-                    }));
+                    setLoan(prev => {
+                        const needsApproval = loanNeedsDueDateApproval(prev);
+                        return {
+                            ...prev,
+                            repayment_schedule: prev.repayment_schedule.map(s => {
+                                if (s.id === scheduleId) {
+                                    const viewerRole = isSecondaryManager ? 'SECONDARY' : 'PRIMARY';
+                                    return {
+                                        ...s,
+                                        date_approval_status: (val && val.trim() !== '' && val !== '—' && val !== 'dd-mm-yyyy')
+                                            ? (needsApproval ? 'PENDING' : 'APPROVED')
+                                            : 'APPROVED',
+                                        date_editor_role: viewerRole,
+                                        date_editor_name: user?.name
+                                    };
+                                }
+                                return s;
+                            })
+                        };
+                    });
                 }
             } else {
                 console.error(result.error || 'Failed to update field');
@@ -2162,7 +2184,8 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                     const updated = { ...s, [field]: value };
                     if (field === 'payment_date') {
                         if (value && value.trim() !== '' && value !== '—' && value !== 'dd-mm-yyyy') {
-                            updated.date_approval_status = 'PENDING';
+                            const needsApproval = loanNeedsDueDateApproval(loan);
+                            updated.date_approval_status = needsApproval ? 'PENDING' : 'APPROVED';
                             const viewerRole = isSecondaryManager ? 'SECONDARY' : 'PRIMARY';
                             updated.date_editor_role = viewerRole;
                         } else {
@@ -2568,7 +2591,8 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
 
             // Acc Share Total
             sysTotalRow.push(systemData.reduce((s, e) => {
-                const hasDueDate = e.payment_date && e.date_approval_status === 'APPROVED' && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
+                const isApproved = e.date_approval_status === 'APPROVED' || acc.is_need_approval === false || !accountNeedsApproval(acc.account_name) || !loanNeedsDueDateApproval(loan);
+                const hasDueDate = e.payment_date && isApproved && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
                 if (!hasDueDate) return s;
                 const isInterestRow = e.id === systemData[0]?.id;
                 const sGross = parseINR(e.amount) * (accRepayPercent / 100);
@@ -2579,7 +2603,8 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
 
             // Acc Interest Share Total
             sysTotalRow.push(systemData.reduce((s, e) => {
-                const hasDueDate = e.payment_date && e.date_approval_status === 'APPROVED' && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
+                const isApproved = e.date_approval_status === 'APPROVED' || acc.is_need_approval === false || !accountNeedsApproval(acc.account_name) || !loanNeedsDueDateApproval(loan);
+                const hasDueDate = e.payment_date && isApproved && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
                 if (!hasDueDate) return s;
                 return s + (parseINR(e.interest_amount) * (excelSIntPercent / 100));
             }, 0));
@@ -2587,7 +2612,8 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
             // TDS Total
             if (hasSecondaryTdsCols[acc.account_name]) {
                 sysTotalRow.push(systemData.reduce((s, e) => {
-                    const hasDueDate = e.payment_date && e.date_approval_status === 'APPROVED' && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
+                    const isApproved = e.date_approval_status === 'APPROVED' || acc.is_need_approval === false || !accountNeedsApproval(acc.account_name) || !loanNeedsDueDateApproval(loan);
+                    const hasDueDate = e.payment_date && isApproved && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
                     if (!hasDueDate) return s;
                     const isInterestRow = e.id === systemData[0]?.id;
                     const autoTds = isInterestRow ? (acc.interest_amount || 0) * 0.10 : 0;
@@ -2645,7 +2671,7 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
                     entry.remarks || '—',
                     entry.received_date || '—',
                     getSplitAmount(entry.splits, loan.primary_account_name) || 0,
-                    (entry.date_approval_status === 'APPROVED' ? entry.payment_date : '') || '—'
+                    ((entry.date_approval_status === 'APPROVED' || !loanNeedsDueDateApproval(loan)) ? entry.payment_date : '') || '—'
                 ];
                 (loan.remaining_accounts || []).forEach(acc => {
                     rowData.push(getSplitAmount(entry.splits, acc.account_name) || 0);
@@ -2670,7 +2696,8 @@ const LoanDetail = ({ user, loanId: propLoanId, onClose, filterDate: propFilterD
             // Secondary Totals
             (loan.remaining_accounts || []).forEach(acc => {
                 manTotalRow.push(manualData.reduce((s, e) => {
-                    const hasDueDate = e.payment_date && e.date_approval_status === 'APPROVED' && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
+                    const isApproved = e.date_approval_status === 'APPROVED' || acc.is_need_approval === false || !accountNeedsApproval(acc.account_name) || !loanNeedsDueDateApproval(loan);
+                    const hasDueDate = e.payment_date && isApproved && e.payment_date.trim() !== '' && e.payment_date !== '—' && e.payment_date !== 'dd-mm-yyyy' && e.payment_date !== '-';
                     if (!hasDueDate) return s;
                     return s + (getSplitAmount(e.splits, acc.account_name) || 0);
                 }, 0));

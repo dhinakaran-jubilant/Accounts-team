@@ -489,6 +489,42 @@ def find_secondary_managers(secondary_accounts):
 
     return matched_names if matched_names else ['System Admin']
 
+def account_needs_approval(account_name):
+    """
+    Checks if an account requires approval by looking up AccountName in DB.
+    Returns True if approval is needed (default), False if is_need_approval is False.
+    """
+    if not account_name:
+        return False
+    acr = get_acronym(str(account_name)).strip().upper()
+    acc_name_obj = AccountName.query.filter_by(acronym=acr).first()
+    if not acc_name_obj:
+        clean_name = str(account_name).strip().lower()
+        for a in AccountName.query.all():
+            if (a.name or '').strip().lower() == clean_name:
+                acc_name_obj = a
+                break
+    if acc_name_obj is not None:
+        return bool(acc_name_obj.is_need_approval if acc_name_obj.is_need_approval is not None else True)
+    return True
+
+def loan_needs_due_date_approval(loan):
+    """
+    Checks if a loan requires due date approval based on account approval settings.
+    Accounts where is_need_approval is False are auto-approved.
+    - If loan has secondary accounts: returns True if ANY secondary account requires approval,
+      and False if ALL secondary accounts have is_need_approval is False.
+    - If loan has NO secondary accounts: returns True if primary account requires approval, False otherwise.
+    """
+    if not loan:
+        return False
+        
+    remaining = loan.remaining_accounts or []
+    if remaining:
+        return any(account_needs_approval(acc.account_name) for acc in remaining)
+    else:
+        return account_needs_approval(loan.primary_account_name)
+
 def parse_verified_by(verified_by_val):
     """
     Safely decode loan.verified_by into a list of manager names.
@@ -1487,6 +1523,9 @@ def get_loans():
         
         loans_data = []
         for index, loan in enumerate(loans, start=1):
+            pri_need_app = account_needs_approval(loan.primary_account_name)
+            needs_approval = loan_needs_due_date_approval(loan)
+
             schedule = [{
                 'id': s.id,
                 'date': s.date,
@@ -1497,7 +1536,7 @@ def get_loans():
                 'remarks': s.remarks,
                 'type': s.type,
                 'splits': s.splits,
-                'date_approval_status': s.date_approval_status or 'APPROVED',
+                'date_approval_status': 'APPROVED' if not needs_approval else (s.date_approval_status or 'APPROVED'),
                 'date_editor_role': s.date_editor_role,
                 'date_editor_name': s.date_editor_name
             } for s in loan.repayment_schedule]
@@ -1510,6 +1549,7 @@ def get_loans():
                 'loan_amount': loan.loan_amount,
                 'loan_date': loan.loan_date,
                 'primary_account_name': loan.primary_account_name,
+                'primary_account_is_need_approval': pri_need_app,
                 'primary_account_amount': loan.primary_account_amount,
                 'primary_account_interest': loan.primary_account_interest,
                 'primary_account_share': loan.primary_account_share,
@@ -1520,7 +1560,8 @@ def get_loans():
                     'account_name': acc.account_name,
                     'percentage': acc.percentage,
                     'share': acc.share,
-                    'interest_amount': acc.interest_amount
+                    'interest_amount': acc.interest_amount,
+                    'is_need_approval': account_needs_approval(acc.account_name)
                 } for acc in loan.remaining_accounts],
                 'repayment_schedule': schedule
             })
@@ -1537,12 +1578,13 @@ def get_loan_detail(loan_id):
         if not loan or (loan.is_deleted and loan.approval_status != 'REJECTED'):
             return jsonify({'error': 'Loan not found'}), 404
 
+        pri_need_app = account_needs_approval(loan.primary_account_name)
+        needs_approval = loan_needs_due_date_approval(loan)
+
         total_i = loan.primary_account_interest + sum(a.interest_amount for a in loan.remaining_accounts)
         remaining = []
         for acc in loan.remaining_accounts:
-            acr = get_acronym(acc.account_name).strip().upper()
-            acc_name_obj = AccountName.query.filter_by(acronym=acr).first()
-            is_need_app = acc_name_obj.is_need_approval if acc_name_obj is not None else True
+            is_need_app = account_needs_approval(acc.account_name)
             
             remaining.append({
                 'id': acc.id,
@@ -1567,7 +1609,7 @@ def get_loan_detail(loan_id):
                 'remarks': s.remarks,
                 'type': s.type,
                 'splits': s.splits,
-                'date_approval_status': s.date_approval_status or 'APPROVED',
+                'date_approval_status': 'APPROVED' if not needs_approval else (s.date_approval_status or 'APPROVED'),
                 'date_editor_role': s.date_editor_role,
                 'date_editor_name': s.date_editor_name
             }
@@ -1581,6 +1623,7 @@ def get_loan_detail(loan_id):
             'loan_date': loan.loan_date,
             'loan_amount': loan.loan_amount,
             'primary_account_name': loan.primary_account_name,
+            'primary_account_is_need_approval': pri_need_app,
             'primary_account_amount': loan.primary_account_amount,
             'primary_account_share': loan.primary_account_share,
             'primary_account_interest': loan.primary_account_interest,
@@ -2222,7 +2265,11 @@ def send_due_date_notification(loan, new_date, schedule_item=None, editor_name=N
     from datetime import datetime
     now_str = datetime.now().strftime("%d-%m-%Y %I:%M %p")
     
-    # 1. Fetch system admin users for fallback or when approval is NO
+    # Check if this loan requires due date approval at all
+    if not loan_needs_due_date_approval(loan):
+        return
+
+    # 1. Fetch system admin users for fallback
     admin_users = User.query.filter_by(role='admin').all()
     if not admin_users:
         class DummyUser:
@@ -2242,27 +2289,19 @@ def send_due_date_notification(loan, new_date, schedule_item=None, editor_name=N
     remaining_accounts = loan.remaining_accounts or []
 
     if not remaining_accounts:
-        # If there are no secondary accounts on this loan, send to system admin
-        admin_needed = True
+        # If there are no secondary accounts on this loan, notify admin only if primary account requires approval
+        if account_needs_approval(loan.primary_account_name):
+            admin_needed = True
     else:
         for acc in remaining_accounts:
-            # Resolve account acronym and AccountName record
-            acr = get_acronym(acc.account_name).strip().upper()
-            acc_name_obj = AccountName.query.filter_by(acronym=acr).first()
-            if not acc_name_obj:
-                clean_name = str(acc.account_name).strip().lower()
-                for a in AccountName.query.all():
-                    if (a.name or '').strip().lower() == clean_name:
-                        acc_name_obj = a
-                        break
-
             # Check if this secondary account requires approval ("approval yes")
-            is_need_approval = acc_name_obj.is_need_approval if acc_name_obj is not None else True
+            is_need_approval = account_needs_approval(acc.account_name)
 
             if is_need_approval:
                 # Approval is YES:
                 # Send due date approval request to users who have permission for this secondary account
                 # If one secondary account is managed by multiple users, send to ALL who manage it!
+                acr = get_acronym(acc.account_name).strip().upper()
                 matched_managers = [
                     u for u in all_non_admin_users
                     if user_has_company_approval(u, acr, menu='jl-due-report')
@@ -2276,16 +2315,17 @@ def send_due_date_notification(loan, new_date, schedule_item=None, editor_name=N
                     admin_needed = True
             else:
                 # Approval is NO:
-                # Send the due date approval to system admin
-                admin_needed = True
+                # Do NOT send due date approval request to admin or sec manager.
+                # These are auto approved!
+                pass
 
-    # If any secondary account has approval NO (or no manager found / no secondary accounts),
-    # include system admin in the notified users
     if admin_needed:
         for a in admin_fallback:
             notified_users_dict[getattr(a, 'id', a.name)] = a
 
     notified_users = list(notified_users_dict.values())
+    if not notified_users:
+        return
         
     # Get all PENDING schedule items for this loan
     pending_items = [s for s in loan.repayment_schedule if s.date_approval_status == 'PENDING']
@@ -2353,6 +2393,8 @@ def add_repayment_schedule(loan_id):
         payment_date = data.get('payment_date', '')
         editor_name = data.get('editor_name')
         
+        needs_approval = loan_needs_due_date_approval(loan)
+
         new_entry = RepaymentSchedule(
             loan_id=loan_id,
             amount=float(data.get('amount', 0)),
@@ -2364,7 +2406,7 @@ def add_repayment_schedule(loan_id):
             received_date=data.get('received_date'),
             payment_date=payment_date,
             splits=data.get('splits'),
-            date_approval_status='PENDING' if (due_date or payment_date) else 'APPROVED',
+            date_approval_status='PENDING' if ((due_date or payment_date) and needs_approval) else 'APPROVED',
             date_editor_name=editor_name
         )
         
@@ -2382,10 +2424,11 @@ def add_repayment_schedule(loan_id):
             
         db.session.add(new_entry)
         
-        if due_date:
-            send_due_date_notification(loan, due_date, new_entry, editor_name)
-        elif payment_date:
-            send_due_date_notification(loan, payment_date, new_entry, editor_name)
+        if needs_approval:
+            if due_date:
+                send_due_date_notification(loan, due_date, new_entry, editor_name)
+            elif payment_date:
+                send_due_date_notification(loan, payment_date, new_entry, editor_name)
             
         db.session.commit()
         return jsonify({'success': True, 'message': 'Entry added successfully'}), 200
@@ -2403,6 +2446,9 @@ def patch_repayment_schedule(schedule_id):
             
         data = request.json
         editor_name = data.get('editor_name')
+        loan = schedule_item.loan
+        needs_approval = loan_needs_due_date_approval(loan) if loan else True
+
         if 'received_date' in data:
             schedule_item.received_date = data['received_date']
         if 'payment_date' in data:
@@ -2413,12 +2459,11 @@ def patch_repayment_schedule(schedule_id):
             
             # Send notification if new_payment_date is filled and is different
             if new_payment_date and new_payment_date != old_payment_date:
-                loan = schedule_item.loan
-                schedule_item.date_approval_status = 'PENDING'
+                schedule_item.date_approval_status = 'PENDING' if needs_approval else 'APPROVED'
                 
                 # Determine editor role
                 editor_role = 'PRIMARY'
-                if editor_name:
+                if editor_name and loan:
                     pri_acronym = get_acronym(loan.primary_account_name)
                     sec_acronyms = [get_acronym(acc.account_name) for acc in loan.remaining_accounts]
                     all_users = User.query.filter(User.role != 'admin').all()
@@ -2428,7 +2473,8 @@ def patch_repayment_schedule(schedule_id):
                         editor_role = 'SECONDARY'
                 schedule_item.date_editor_role = editor_role
                 
-                send_due_date_notification(loan, new_payment_date, schedule_item, editor_name)
+                if needs_approval and loan:
+                    send_due_date_notification(loan, new_payment_date, schedule_item, editor_name)
         if 'remarks' in data:
             schedule_item.remarks = data['remarks']
         if 'amount' in data:
@@ -2443,12 +2489,11 @@ def patch_repayment_schedule(schedule_id):
             
             # Send notification if new_date is filled and is different
             if new_date and new_date != old_date:
-                loan = schedule_item.loan
-                schedule_item.date_approval_status = 'PENDING'
+                schedule_item.date_approval_status = 'PENDING' if needs_approval else 'APPROVED'
                 
                 # Determine editor role
                 editor_role = 'PRIMARY'
-                if editor_name:
+                if editor_name and loan:
                     pri_acronym = get_acronym(loan.primary_account_name)
                     sec_acronyms = [get_acronym(acc.account_name) for acc in loan.remaining_accounts]
                     all_users = User.query.filter(User.role != 'admin').all()
@@ -2458,7 +2503,8 @@ def patch_repayment_schedule(schedule_id):
                         editor_role = 'SECONDARY'
                 schedule_item.date_editor_role = editor_role
                 
-                send_due_date_notification(loan, new_date, schedule_item, editor_name)
+                if needs_approval and loan:
+                    send_due_date_notification(loan, new_date, schedule_item, editor_name)
         if 'cheque_no' in data:
             schedule_item.cheque_no = data['cheque_no']
         if 'splits' in data:
